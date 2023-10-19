@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<head>
+    <title>Test</title>
+    
+    <link data-trunk rel="rust" data-wasm-opt="2" />
+    <base data-trunk-public-url />
+
+    <style>
+        html {
+            touch-action: manipulation;
+        }
+
+        html, body {
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="app"></canvas>
+
+    <script>
+        if(navigator.serviceWorker && window.location.hash !== "#dev"){
+            window.addEventListener('load', () =>  {
+                navigator.serviceWorker.register('sw.js');
+            });
+        }
+    </script>
+</body>
+</html>

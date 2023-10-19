@@ -1,0 +1,19 @@
+{
+  "name": "build-cubedaw",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "scripts": {},
+  "keywords": [],
+  "author": "Colin Cai <therealcreative0708@gmail.com>",
+  "type": "module",
+  "license": "GPL",
+  "dependencies": {
+    "rollup": "^4.1.4"
+  },
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup-plugin-copy": "^3.5.0",
+    "rollup-plugin-html2": "^4.0.0"
+  }
+}
