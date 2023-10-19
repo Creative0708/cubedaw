@@ -19,6 +19,7 @@ export default {
                 minifyCSS: true,
                 minifyJS: true,
             },
+            inject: false
         }),
         terser(),
         copy({
