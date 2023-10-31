@@ -20,6 +20,7 @@ fn main() -> eframe::Result<()> {
 fn main() {
     use cubedaw::TestApp;
 
+    #[cfg(debug_assertions)]
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
     wasm_bindgen_futures::spawn_local(async {

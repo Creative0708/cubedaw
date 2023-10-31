@@ -2,7 +2,7 @@
 
 set -e
 
-trunk build
+trunk build --release
 
 rm -rf rollup/dist_trunk
 mv dist_trunk rollup/
