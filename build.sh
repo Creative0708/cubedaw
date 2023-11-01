@@ -12,4 +12,4 @@ npx rollup -c
 
 cd ..
 rm -rf dist
-cp -r rollup/dist dist
+mv rollup/dist dist

@@ -1,3 +1,2 @@
 [build]
-filehash = false
 dist = "dist_trunk"

@@ -1,9 +1,20 @@
 import html from 'rollup-plugin-html2';
 import terser from '@rollup/plugin-terser';
 import copy from 'rollup-plugin-copy';
+import path from 'path';
+import fs from 'fs';
+
+const TRUNK_DIST_FOLDER = 'dist_trunk/';
+
+const dir = fs.readdirSync(TRUNK_DIST_FOLDER);
+const jsEntry = dir.find(file => /cubedaw.*\.js/.test(file));
+const wasmEntry = dir.find(file => /cubedaw.*\.wasm/.test(file));
 
 export default {
-    input: 'dist_trunk/cubedaw.js',
+    input: [
+        path.join(TRUNK_DIST_FOLDER, jsEntry),
+        path.join(TRUNK_DIST_FOLDER, 'sw.js'),
+    ],
     output: {
         dir: 'dist',
         format: 'esm',
@@ -11,7 +22,7 @@ export default {
     },
     plugins: [
         html({
-            template: 'dist_trunk/index.html',
+            template: path.join(TRUNK_DIST_FOLDER, 'index.html'),
             minify: {
                 removeComments: true,
                 collapseWhitespace: true,
@@ -24,7 +35,7 @@ export default {
         terser(),
         copy({
             targets: [
-                { src: "dist_trunk/cubedaw_bg.wasm", dest: "dist" },
+                { src: path.join(TRUNK_DIST_FOLDER, wasmEntry), dest: "dist" },
             ]
         })
     ]
