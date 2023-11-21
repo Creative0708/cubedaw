@@ -1,0 +1,12 @@
+[package]
+authors = ["Colin Cai <therealcreative0708@gmail.com>"]
+edition = "2021"
+name = "cubedaw_lib"
+rust-version = "1.71.1"
+version = "0.1.0"
+
+[dependencies]
+ciborium = "0.2.1"
+egui = "0.23.0"
+log = "0.4"
+serde = {version = "1.0.190", features = ["derive"]}

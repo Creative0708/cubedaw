@@ -17,19 +17,6 @@ fn main() -> eframe::Result<()> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn main() {
-    use cubedaw::TestApp;
-
-    #[cfg(debug_assertions)]
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
-
-    wasm_bindgen_futures::spawn_local(async {
-        eframe::WebRunner::new()
-            .start(
-                "app",
-                eframe::WebOptions::default(),
-                Box::new(|cc| Box::new(TestApp::new(cc))),
-            ).await
-            .expect("Failed to start web app");
-    })
+fn main() -> ! {
+    panic!("Webassembly entry should be done through wasm_bindgen");
 }

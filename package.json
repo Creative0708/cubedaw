@@ -3,17 +3,21 @@
   "version": "1.0.0",
   "description": "",
   "private": true,
-  "scripts": {},
+  "scripts": {
+    "build": "npx rollup -c",
+    "watch": "npx rollup -c --watch"
+  },
   "keywords": [],
   "author": "Colin Cai <therealcreative0708@gmail.com>",
   "type": "module",
   "license": "GPL",
-  "dependencies": {
-    "rollup": "^4.1.4"
-  },
   "devDependencies": {
     "@rollup/plugin-terser": "^0.4.4",
+    "@wasm-tool/rollup-plugin-rust": "^2.4.5",
+    "rollup": "^4.1.4",
     "rollup-plugin-copy": "^3.5.0",
-    "rollup-plugin-html2": "^4.0.0"
+    "rollup-plugin-html2": "^4.0.0",
+    "rollup-plugin-livereload": "^2.0.5",
+    "rollup-plugin-serve": "^2.0.2"
   }
 }

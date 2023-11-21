@@ -6,9 +6,9 @@ target/
 *.pdb
 
 dist/
-dist_trunk/
 
 .vscode
 
-# i'm like 99% sure this will work but before i get a chance to test this out:
-build.bat
+node_modules
+
+tmp/
