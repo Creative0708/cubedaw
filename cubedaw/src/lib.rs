@@ -1,11 +1,14 @@
 mod app;
+
 pub use app::TestApp;
 pub mod compat;
 mod screen;
 pub mod widget;
 
-pub struct Context<'a> {
-    egui_frame: &'a eframe::Frame,
+pub mod resources;
 
+pub struct Context<'a> {
     paused: bool,
+
+    state: &'a cubedaw_lib::State,
 }

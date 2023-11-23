@@ -6,6 +6,7 @@ rust-version = "1.71.1"
 version = "0.1.0"
 
 [dependencies]
+bytemuck = "1.14.0"
 ciborium = "0.2.1"
 cubedaw_lib = {path = "../cubedaw_lib"}
 eframe = "0.23.0"

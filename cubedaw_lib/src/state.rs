@@ -1,5 +1,4 @@
-
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct State {
@@ -7,6 +6,9 @@ pub struct State {
 }
 
 impl State {
+    pub fn new() -> Self {
+        Self {}
+    }
 }
 
 /// State changes used to efficiently broadcast changes to workers and also for the undo system

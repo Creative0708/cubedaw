@@ -1,7 +1,8 @@
 import html from 'rollup-plugin-html2';
 import terser from '@rollup/plugin-terser';
 import serve from 'rollup-plugin-serve';
-import livereload from "rollup-plugin-livereload";
+// Livereload breaks the audio worklet script so it isn't used
+// import livereload from "rollup-plugin-livereload";
 import rust from '@wasm-tool/rollup-plugin-rust';
 
 const isWatch = Boolean(process.env.ROLLUP_WATCH);

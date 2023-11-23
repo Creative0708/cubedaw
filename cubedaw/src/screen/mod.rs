@@ -1,10 +1,19 @@
+use egui::{Id, WidgetText};
 
-pub mod handler;
+pub mod viewer;
 
 pub mod test;
 pub mod test2;
 
+mod track;
+pub use track::TrackScreen;
+
 pub trait Screen {
-    fn get_id(&self) -> egui::Id;
-    fn update(&mut self, state: &crate::Context, ui: &mut egui::Ui);
+    fn id(&self) -> Id;
+    fn title(&self) -> WidgetText;
+    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui);
+
+    fn closeable(&self) -> bool {
+        true
+    }
 }

@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "npx rollup -c",
+    "build_prod": "NODE_ENV=production npx rollup -c",
     "watch": "npx rollup -c --watch"
   },
   "keywords": [],
@@ -17,7 +18,6 @@
     "rollup": "^4.1.4",
     "rollup-plugin-copy": "^3.5.0",
     "rollup-plugin-html2": "^4.0.0",
-    "rollup-plugin-livereload": "^2.0.5",
     "rollup-plugin-serve": "^2.0.2"
   }
 }

@@ -701,6 +701,7 @@ dependencies = [
 name = "cubedaw"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "ciborium",
  "cubedaw_lib",
  "eframe",

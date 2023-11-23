@@ -1,4 +1,5 @@
-use egui::{CursorIcon, Id};
+use egui::{CursorIcon, Id, Label, RichText, Sense, WidgetText};
+use log::info;
 
 use super::Screen;
 
@@ -13,23 +14,28 @@ impl TestScreen {
     pub fn new(id: Id) -> Self {
         Self {
             id,
-            ..Default::default()
+            counter: 0,
+
+            checkbox_values: [false; 32],
         }
     }
 }
 
 impl Screen for TestScreen {
-    fn get_id(&self) -> egui::Id {
+    fn id(&self) -> Id {
         self.id
     }
-    fn update(&mut self, ctx: &crate::Context, ui: &mut egui::Ui) {
+    fn title(&self) -> WidgetText {
+        "Test Screen 1".into()
+    }
+    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         if ui.heading("Lorem Ipsum").hovered() {
             ui.ctx().set_cursor_icon(CursorIcon::AllScroll);
         }
 
         let lorem_ipsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus a fermentum urna, sed tempor lorem. Mauris aliquet nisl a purus imperdiet hendrerit. Quisque vel magna orci. Phasellus fermentum consequat massa, et condimentum sem pellentesque ut. Suspendisse a velit erat. Nullam eget velit at eros porta luctus vel non nunc. Curabitur eget tempus metus.";
 
-        ui.label(lorem_ipsum);
+        ui.label(RichText::new(lorem_ipsum).weak());
 
         if ui.button("Click me").clicked() {
             self.counter += 1;
@@ -37,9 +43,10 @@ impl Screen for TestScreen {
 
         ui.label(format!("You have clicked {} times", self.counter));
 
-        ui.label("Right click on me!").context_menu(|ui| {
-            ui.label("You right clicked on me!");
-        });
+        ui.add(Label::new("Right click on me!").sense(Sense::click()))
+            .context_menu(|ui| {
+                ui.label("You right clicked on me!");
+            });
         ui.add_space(12.0);
         ui.heading("Here are some checkboxes to make this screen taller");
 
@@ -47,17 +54,6 @@ impl Screen for TestScreen {
             std::iter::zip(lorem_ipsum.split(' '), self.checkbox_values.iter_mut())
         {
             ui.checkbox(checked, text);
-        }
-    }
-}
-
-impl Default for TestScreen {
-    fn default() -> Self {
-        Self {
-            id: Id::from("test1"),
-            counter: 0,
-
-            checkbox_values: [false; 32],
         }
     }
 }
