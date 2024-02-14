@@ -104,6 +104,14 @@
         </div>
     </div>
     <canvas id="app" style="display: none;"></canvas>
+
+    <script>
+        if ('serviceWorker' in navigator && window.location.hash !== "#dev") {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('sw.js');
+            });
+        }
+    </script>
 </body>
 
 </html>
