@@ -1,0 +1,7 @@
+{
+    "editor.formatOnSave": true,
+    "rust-analyzer.linkedProjects": [
+        "./crates/cubedaw_lib/Cargo.toml"
+    ],
+    "rust-analyzer.showUnlinkedFileNotification": false
+}

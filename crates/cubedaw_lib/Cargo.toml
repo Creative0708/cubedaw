@@ -1,0 +1,9 @@
+[package]
+authors = ["Colin Cai <therealcreative0708@gmail.com>"]
+edition.workspace = true
+name = "cubedaw_lib"
+rust-version.workspace = true
+version = "0.1.0"
+
+[dependencies]
+egui = "0.26.2"

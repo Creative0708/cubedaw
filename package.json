@@ -1,0 +1,24 @@
+{
+  "name": "build-cubedaw",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "scripts": {
+    "build": "npx rollup -c",
+    "build_prod": "NODE_ENV=production npx rollup -c",
+    "watch": "npx rollup -c --watch"
+  },
+  "keywords": [],
+  "author": "Colin Cai <therealcreative0708@gmail.com>",
+  "type": "module",
+  "license": "GPL",
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "@wasm-tool/rollup-plugin-rust": "^2.4.5",
+    "rollup": "^4.1.4",
+    "rollup-plugin-copy": "^3.5.0",
+    "rollup-plugin-html2": "^4.0.0",
+    "rollup-plugin-serve": "^2.0.2",
+    "rollup-plugin-watch-globs": "^2.0.1"
+  }
+}
