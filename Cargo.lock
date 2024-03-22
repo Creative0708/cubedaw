@@ -873,7 +873,7 @@ dependencies = [
 name = "cubedaw"
 version = "0.1.0"
 dependencies = [
- "cubedaw_lib",
+ "cubedaw-lib",
  "eframe",
  "egui",
  "egui_dock",
@@ -881,9 +881,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "cubedaw_lib"
+name = "cubedaw-lib"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "egui",
 ]
 

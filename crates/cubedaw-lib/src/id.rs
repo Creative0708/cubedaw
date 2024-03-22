@@ -5,7 +5,7 @@ use std::{
     marker::PhantomData,
 };
 
-use egui::ahash::{AHasher, HashMap, HashMapExt, HashSet, RandomState};
+use ahash::{AHasher, HashMap, HashMapExt, HashSet, RandomState};
 
 fn new_hasher() -> AHasher {
     // `printf cubedaw | sha256sum`
@@ -92,6 +92,7 @@ impl<T> Hash for Id<T> {
     }
 }
 
+#[cfg(feature = "egui")]
 impl<T> From<Id<T>> for egui::Id {
     fn from(value: Id<T>) -> Self {
         egui::Id::new(value.0)
