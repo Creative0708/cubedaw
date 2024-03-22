@@ -2,6 +2,7 @@ use cubedaw_lib::{Id, Track};
 
 use crate::app::Tab;
 
+#[derive(Debug)]
 pub struct TrackTab {
     id: Id<Tab>,
     track: Id<Track>,
@@ -26,8 +27,8 @@ impl crate::Screen for TrackTab {
         "Tracks".into()
     }
 
-    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
-        todo!()
+    fn update(&mut self, _ctx: &mut crate::Context, ui: &mut egui::Ui) {
+        ui.label("TODO");
     }
 }
 

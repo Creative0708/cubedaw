@@ -5,6 +5,7 @@ use crate::app::Tab;
 
 use super::track::TrackTab;
 
+#[derive(Debug)]
 pub struct PianoRollTab {
     id: Id<Tab>,
 

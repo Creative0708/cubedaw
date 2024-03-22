@@ -2,7 +2,11 @@ use cubedaw_lib::{Id, State};
 use egui::ahash::{HashMap, HashMapExt};
 use egui_dock::{DockArea, DockState};
 
-use crate::{context::Tabs, tab::pianoroll::PianoRollTab, Context, Screen};
+use crate::{
+    context::{ContextResult, Tabs},
+    tab::{pianoroll::PianoRollTab, track::TrackTab},
+    Context, Screen,
+};
 
 pub struct CubedawApp {
     dock_state: egui_dock::DockState<Id<Tab>>,
@@ -12,45 +16,47 @@ pub struct CubedawApp {
 }
 
 impl CubedawApp {
-    pub fn new(_: &eframe::CreationContext) -> Self {
-        let mut tabs = HashMap::new();
-
-        let mut tab_obj_vec = Vec::new();
-
-        let mut state = Default::default();
-
+    fn with_ctx<F: FnOnce(&mut Context)>(&mut self, f: F) {
+        let mut result = ContextResult::new();
         let mut ctx = Context::new(
-            &mut state,
-            Tabs { map: &mut tabs },
+            &mut self.state,
+            Tabs {
+                map: &mut self.tabs,
+            },
+            &mut result,
             // paused: false,
         );
 
-        tab_obj_vec.push(Box::new(PianoRollTab::create(&mut ctx)));
+        f(&mut ctx);
 
-        let mut tab_vec = Vec::new();
+        result.apply_dock_changes(&mut self.dock_state);
+    }
 
-        for tab in tab_obj_vec {
-            tab_vec.push(tab.id());
-            tabs.insert(tab.id(), tab);
-        }
+    pub fn new(_: &eframe::CreationContext) -> Self {
+        let mut s = Self {
+            dock_state: DockState::new(Vec::new()),
+            tabs: HashMap::new(),
+            state: Default::default(),
+        };
 
-        let dock_state = DockState::new(tab_vec);
+        s.with_ctx(|ctx| {
+            ctx.create_tab::<TrackTab>();
+            ctx.create_tab::<PianoRollTab>();
+        });
 
-        Self {
-            dock_state,
-            tabs,
-            state,
-        }
+        s
     }
 }
 
 impl eframe::App for CubedawApp {
     fn update(&mut self, egui_ctx: &egui::Context, _egui_frame: &mut eframe::Frame) {
-        let context = Context::new(
+        let mut result = ContextResult::new();
+        let mut ctx = Context::new(
             &mut self.state,
             Tabs {
                 map: &mut self.tabs,
             },
+            &mut result,
             // paused: false,
         );
 
@@ -72,27 +78,22 @@ impl eframe::App for CubedawApp {
                 });
             });
         });
-
         egui::CentralPanel::default()
             // .frame(egui::Frame::central_panel(&style).fill(style.visuals.extreme_bg_color))
             .show(egui_ctx, |ui| {
                 DockArea::new(&mut self.dock_state)
                     .style(egui_dock::Style::from_egui(ui.style().as_ref()))
-                    .show_inside(ui, &mut CubedawTabViewer::new(context))
+                    .show_inside(ui, &mut CubedawTabViewer { ctx: &mut ctx });
             });
+
+        result.apply_dock_changes(&mut self.dock_state);
     }
 }
 
 pub type Tab = Box<dyn Screen>;
 
 pub struct CubedawTabViewer<'a> {
-    ctx: Context<'a>,
-}
-
-impl<'a> CubedawTabViewer<'a> {
-    pub fn new(ctx: Context<'a>) -> Self {
-        Self { ctx }
-    }
+    ctx: &'a mut Context<'a>,
 }
 
 impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {

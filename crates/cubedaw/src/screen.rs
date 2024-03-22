@@ -1,8 +1,10 @@
+use std::any::Any;
+
 use cubedaw_lib::Id;
 
 use crate::{app::Tab, Context};
 
-pub trait Screen: 'static {
+pub trait Screen: Any {
     fn create(ctx: &mut Context) -> Self
     where
         Self: Sized;
