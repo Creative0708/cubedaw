@@ -1,5 +1,5 @@
 {
-    "editor.formatOnSave": true,
+    "editor.formatOnSave": false,
     "rust-analyzer.linkedProjects": [
         "./crates/cubedaw_lib/Cargo.toml"
     ],

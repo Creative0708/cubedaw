@@ -4,6 +4,7 @@ use crate::{Note, Range};
 
 #[derive(Clone, Debug)]
 pub struct Section {
+    pub name: String,
     pub range: Range,
 
     // Notes sorted by starting position
@@ -11,8 +12,9 @@ pub struct Section {
 }
 
 impl Section {
-    pub fn empty(range: Range) -> Self {
+    pub fn empty(name: String, range: Range) -> Self {
         Self {
+            name,
             range,
             notes: BTreeMap::new(),
         }

@@ -20,7 +20,7 @@ impl Track {
             .sections
             .range(section.start()..)
             .next_back()
-            .map_or(false, |(&pos, _)| pos >= section.end())
+            .map_or(false, |(&pos, _)| pos < section.end())
         {
             panic!(
                 "Section {:?} would overlap with other section {:?}",
@@ -35,5 +35,12 @@ impl Track {
                 )
             )
         }
+        dbg!();
+        self.sections
+            .insert(section.start(), sections.create(section));
+    }
+
+    pub fn sections(&self) -> impl Iterator<Item = (i64, Id<Section>)> + '_ {
+        self.sections.iter().map(|x| (*x.0, *x.1))
     }
 }

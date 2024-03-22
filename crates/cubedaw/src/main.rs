@@ -1,4 +1,5 @@
 #![feature(trait_upcasting)]
+#![feature(int_roundings)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub mod app;
@@ -16,7 +17,7 @@ fn main() -> eframe::Result<()> {
     env_logger::init();
 
     eframe::run_native(
-        "Hello, World!",
+        "cubedaw",
         eframe::NativeOptions {
             ..Default::default()
         },

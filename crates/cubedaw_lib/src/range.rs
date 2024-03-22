@@ -30,7 +30,7 @@ impl Range {
         }
     }
     pub fn surrounding_pos(pos: i64) -> Self {
-        let start = pos / Self::UNITS_PER_BEAT * Self::UNITS_PER_BEAT;
+        let start = pos.div_floor(Self::UNITS_PER_BEAT) * Self::UNITS_PER_BEAT;
         Self {
             start,
             end: start + Self::UNITS_PER_BEAT,

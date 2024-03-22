@@ -1,3 +1,5 @@
+#![feature(int_roundings)]
+
 mod note;
 pub use note::Note;
 mod section;
