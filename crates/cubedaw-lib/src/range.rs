@@ -1,3 +1,5 @@
+use std::ops;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug, Default)]
 pub struct Range {
     pub start: i64,
@@ -23,7 +25,7 @@ impl Range {
             end: range.end,
         }
     }
-    pub fn new_at(pos: i64) -> Self {
+    pub fn at(pos: i64) -> Self {
         Self {
             start: pos,
             end: pos,
@@ -68,5 +70,34 @@ impl Range {
     }
     pub fn intersects(&self, other: Self) -> bool {
         self.start < other.end && self.end > other.start
+    }
+}
+
+impl ops::Add<i64> for Range {
+    type Output = Self;
+    fn add(self, rhs: i64) -> Self::Output {
+        Self {
+            start: self.start + rhs,
+            end: self.end + rhs,
+        }
+    }
+}
+
+impl ops::AddAssign<i64> for Range {
+    fn add_assign(&mut self, rhs: i64) {
+        *self = *self + rhs;
+    }
+}
+
+impl ops::Sub<i64> for Range {
+    type Output = Self;
+    fn sub(self, rhs: i64) -> Self::Output {
+        self + -rhs
+    }
+}
+
+impl ops::SubAssign<i64> for Range {
+    fn sub_assign(&mut self, rhs: i64) {
+        *self = *self - rhs;
     }
 }

@@ -2,6 +2,7 @@ use crate::Range;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Default)]
 pub struct Note {
+    // The relative position from the start of the section.
     pub range: Range,
     // Logarithmic pitch. Middle C (261.626 Hz) == 0, so in 12TET C# == 1, E == 4, etc.
     pub pitch: i32,

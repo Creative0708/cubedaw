@@ -2,19 +2,26 @@ use std::any::Any;
 
 use cubedaw_lib::{Id, State};
 
-use crate::{app, Screen};
+use crate::{app::Tab, Screen, UiState};
 
 pub struct Context<'a> {
     pub state: &'a mut State,
+    pub ui_state: &'a mut UiState,
     pub tabs: Tabs<'a>,
 
     result: &'a mut ContextResult,
 }
 
 impl<'a> Context<'a> {
-    pub fn new(state: &'a mut State, tabs: Tabs<'a>, result: &'a mut ContextResult) -> Self {
+    pub fn new(
+        state: &'a mut State,
+        ui_state: &'a mut UiState,
+        tabs: Tabs<'a>,
+        result: &'a mut ContextResult,
+    ) -> Self {
         Self {
             state,
+            ui_state,
             tabs,
 
             result,
@@ -43,7 +50,7 @@ impl<'a> Context<'a> {
 }
 
 pub struct Tabs<'a> {
-    pub map: &'a mut egui::ahash::HashMap<Id<app::Tab>, app::Tab>,
+    pub map: &'a mut egui::ahash::HashMap<Id<Tab>, Tab>,
 }
 
 impl<'a> Tabs<'a> {
@@ -79,7 +86,7 @@ impl ContextResult {
         }
     }
 
-    pub fn apply_dock_changes(&mut self, dock_state: &mut egui_dock::DockState<Id<app::Tab>>) {
+    pub fn apply_dock_changes(&mut self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {
         while let Some(event) = self.dock_queue.pop() {
             event.apply(dock_state);
         }
@@ -88,11 +95,11 @@ impl ContextResult {
 
 #[derive(Debug)]
 pub enum DockEvent {
-    Create(Id<app::Tab>),
+    Create(Id<Tab>),
 }
 
 impl DockEvent {
-    fn apply(self, dock_state: &mut egui_dock::DockState<Id<app::Tab>>) {
+    fn apply(self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {
         match self {
             Self::Create(tab_id) => {
                 let surface = dock_state.main_surface_mut();

@@ -1,5 +1,6 @@
-use cubedaw_lib::{Id, Range, Section, Track};
+use cubedaw_lib::{Id, IdMap, Note, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
+use smallvec::SmallVec;
 
 use crate::app::Tab;
 
@@ -15,11 +16,21 @@ pub struct PianoRollTab {
     horizontal_zoom: f32,
 
     last_mouse_position: (i64, i32),
+
+    currently_drawn_note: Option<Note>,
+    drag_offset: Option<(f32, i64)>,
 }
 
-const SONG_PADDING: i64 = 8 * Range::UNITS_PER_BEAT;
+const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT;
 const MIN_NOTE_SHOWN: i32 = -39;
 const MAX_NOTE_SHOWN: i32 = 47;
+
+fn snap_pos(pos: i64, horizontal_zoom: f32) -> i64 {
+    let step = ((Range::UNITS_PER_BEAT as f32 / horizontal_zoom * 0.05).min(256.0) as u32)
+        .next_power_of_two() as i64;
+
+    (pos + step / 2).div_floor(step) * step
+}
 
 impl crate::Screen for PianoRollTab {
     fn create(ctx: &mut crate::Context) -> Self {
@@ -32,9 +43,12 @@ impl crate::Screen for PianoRollTab {
                 .map(|t| t.get_single_selected_track()),
 
             vertical_zoom: 16.0,
-            horizontal_zoom: 1.0,
+            horizontal_zoom: 0.5,
 
             last_mouse_position: (0, 0),
+
+            currently_drawn_note: None,
+            drag_offset: None,
         }
     }
 
@@ -65,9 +79,11 @@ impl PianoRollTab {
             unreachable!()
         };
 
-        let track = ctx.state.tracks.get(track_id);
+        let mut single_thing_clicked: Option<Id> = None;
 
-        let (_, resp) = ui.allocate_exact_size(
+        let track = ctx.state.tracks.get_mut(track_id);
+
+        let (_, canvas_resp) = ui.allocate_exact_size(
             vec2(
                 (ctx.state.song_boundary.length() + SONG_PADDING * 2) as f32 * self.horizontal_zoom,
                 (MAX_NOTE_SHOWN - MIN_NOTE_SHOWN) as f32 * self.vertical_zoom,
@@ -100,6 +116,16 @@ impl PianoRollTab {
             );
             ui_pos + top_left
         };
+        let pos_range_to_screen_range = |range: Range| -> Rangef {
+            Rangef::new(
+                (range.start - ctx.state.song_boundary.start + SONG_PADDING) as f32
+                    * self.horizontal_zoom
+                    + top_left.x,
+                (range.end - ctx.state.song_boundary.start + SONG_PADDING) as f32
+                    * self.horizontal_zoom
+                    + top_left.x,
+            )
+        };
 
         let (min_pos, min_pitch) = (
             (viewport.left() / self.horizontal_zoom) as i64 + ctx.state.song_boundary.start
@@ -130,13 +156,15 @@ impl PianoRollTab {
 
         // Vertical bar/beat/whatever indicators
 
-        let step = ((Range::UNITS_PER_BEAT as f32 / self.horizontal_zoom * 0.1).min(256.0) as u32)
+        let vbar_step = ((Range::UNITS_PER_BEAT as f32 / self.horizontal_zoom * 0.1).min(256.0)
+            as u32)
             .next_power_of_two() as i64;
 
-        for i in min_pos / step..=max_pos / step {
-            let pos = i * step;
-            // TODO make this not hardcoded
-            const BEATS_PER_BAR: i64 = 4;
+        // TODO make this not hardcoded
+        const BEATS_PER_BAR: i64 = 4;
+
+        for i in min_pos.div_ceil(vbar_step)..=max_pos.div_floor(vbar_step) {
+            let pos = i * vbar_step;
             let stroke = if pos % (BEATS_PER_BAR * Range::UNITS_PER_BEAT) == 0 {
                 ui.visuals().widgets.hovered.bg_stroke
             } else {
@@ -162,23 +190,83 @@ impl PianoRollTab {
         // TODO implement section colors
         const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
 
-        for (_, section_id) in track.sections() {
-            let section = ctx.state.sections.get(section_id);
+        let draw_note = |offset, note: &Note| {
+            let note_screen_range_x = pos_range_to_screen_range(note.range + offset);
 
-            let section_stroke = egui::Stroke::new(2.0, SECTION_COLOR.gamma_multiply(0.5));
-
-            let screen_range = Rangef::new(
-                note_pos_to_screen_pos((section.start(), 0)).x,
-                note_pos_to_screen_pos((section.end(), 0)).x,
-            );
+            let note_y = note_pos_to_screen_pos((0, note.pitch)).y;
 
             painter.rect_filled(
-                Rect::from_x_y_ranges(screen_range, screen_rect.y_range()),
+                Rect::from_x_y_ranges(
+                    note_screen_range_x,
+                    Rangef::new(note_y, note_y + self.vertical_zoom),
+                ),
                 Rounding::ZERO,
-                SECTION_COLOR.gamma_multiply(0.2),
+                Color32::DEBUG_COLOR,
             );
-            painter.vline(screen_range.min, screen_rect.y_range(), section_stroke);
-            painter.vline(screen_range.max, screen_rect.y_range(), section_stroke);
+        };
+
+        // using a closure would result in a "reference cannot escape FnMut" or whatever so a macro is needed here
+        macro_rules! prepare_section {
+            ($section:tt) => {
+                ({
+                    let (section_range, section_id) = $section;
+
+                    let section_ui_data = ctx.ui_state.sections.get_mut_or_default(section_id);
+
+                    let section_range = if section_ui_data.selected {
+                        section_range + self.drag_offset.unwrap_or_default().1
+                    } else {
+                        section_range
+                    };
+
+                    if section_range.start > max_pos {
+                        continue;
+                    } else if section_range.end < min_pos {
+                        continue;
+                    } else {
+                        let section = ctx.state.sections.get_mut(section_id);
+
+                        (section_id, section, section_ui_data, section_range)
+                    }
+                })
+            };
+        }
+
+        for section in track.sections() {
+            let (section_id, section, section_ui_data, section_range) = prepare_section!(section);
+
+            let section_stroke = egui::Stroke::new(
+                2.0,
+                SECTION_COLOR
+                    .gamma_multiply(0.5 * if section_ui_data.selected { 1.5 } else { 1.0 }),
+            );
+
+            let section_screen_range_x = pos_range_to_screen_range(section_range);
+
+            painter.rect_filled(
+                Rect::from_x_y_ranges(section_screen_range_x, screen_rect.y_range()),
+                Rounding::ZERO,
+                SECTION_COLOR
+                    .gamma_multiply(0.2 * if section_ui_data.selected { 1.5 } else { 1.0 }),
+            );
+            painter.vline(
+                section_screen_range_x.min,
+                screen_rect.y_range(),
+                section_stroke,
+            );
+            painter.vline(
+                section_screen_range_x.max,
+                screen_rect.y_range(),
+                section_stroke,
+            );
+
+            // Notes
+            for note in section.notes() {
+                draw_note(section_range.start, note);
+            }
+        }
+        if let Some(ref note) = self.currently_drawn_note {
+            draw_note(0, note);
         }
 
         // Top area (for displaying sections, etc)
@@ -197,16 +285,16 @@ impl PianoRollTab {
         );
 
         // Section headers
-        for (_, section_id) in track.sections() {
-            let section = ctx.state.sections.get(section_id);
+        let mut finished_drag_offset = None;
+        for section in track.sections() {
+            let (section_id, section, section_ui_data, section_range) = prepare_section!(section);
 
-            let screen_range = Rangef::new(
-                note_pos_to_screen_pos((section.start(), 0)).x,
-                note_pos_to_screen_pos((section.end(), 0)).x,
-            );
+            let section_screen_range_x = pos_range_to_screen_range(section_range);
 
             let header_rect =
-                Rect::from_x_y_ranges(screen_range.expand(1.0), top_bar_rect.y_range());
+                Rect::from_x_y_ranges(section_screen_range_x.expand(1.0), top_bar_rect.y_range());
+
+            let header_resp = ui.allocate_rect(header_rect, egui::Sense::click_and_drag());
 
             painter.rect_filled(
                 header_rect,
@@ -216,7 +304,11 @@ impl PianoRollTab {
                     sw: 0.0,
                     se: 0.0,
                 },
-                SECTION_COLOR.gamma_multiply(0.5),
+                if section_ui_data.selected {
+                    SECTION_COLOR.gamma_multiply(0.7)
+                } else {
+                    SECTION_COLOR.gamma_multiply(0.5)
+                },
             );
 
             let padding = header_rect.height() * 0.5;
@@ -225,31 +317,124 @@ impl PianoRollTab {
                 egui::Align2::LEFT_CENTER,
                 &section.name,
                 egui::FontId::proportional(12.0),
-                ui.visuals().widgets.inactive.text_color(),
+                if section_ui_data.selected {
+                    &ui.visuals().widgets.hovered
+                } else {
+                    ui.visuals().widgets.style(&header_resp)
+                }
+                .text_color(),
             );
 
-            // let header_res = ui.allocate_rect(header_rect, egui::Sense::click_and_drag());
+            if header_resp.clicked() || header_resp.drag_started() {
+                if header_resp.clicked() || !section_ui_data.selected {
+                    section_ui_data.selected = true;
+                    if !ui.input(|i| i.modifiers.shift) {
+                        single_thing_clicked = Some(section_id.transmute());
+                    }
+                }
+            }
+            if header_resp.dragged() {
+                let drag_offset = self.drag_offset.unwrap_or_default().0
+                    + header_resp.drag_delta().x / self.horizontal_zoom;
+                let snapped_drag_offset = drag_offset as i64;
+                let snapped_drag_offset =
+                    snap_pos(section.start() + snapped_drag_offset, self.horizontal_zoom)
+                        - section.start();
+                self.drag_offset = Some((drag_offset, snapped_drag_offset));
+            }
+            if header_resp.drag_released() {
+                if let Some(drag_offset) = self.drag_offset {
+                    finished_drag_offset = Some(drag_offset.1);
+                } else {
+                    unreachable!();
+                }
+            }
+        }
+
+        if let Some(finished_drag_offset) = finished_drag_offset {
+            self.drag_offset = None;
+
+            let mut sections_to_move = SmallVec::<[Range; 8]>::new();
+            for (section_range, section_id) in track.sections() {
+                let section_ui_data = ctx.ui_state.sections.get_mut_or_default(section_id);
+                if section_ui_data.selected {
+                    sections_to_move.push(section_range);
+                }
+            }
+            for &section_range in &sections_to_move {
+                track.move_section(
+                    &mut ctx.state.sections,
+                    section_range,
+                    section_range + finished_drag_offset,
+                );
+            }
+            track.check_overlap();
+        }
+
+        // Bar indicators
+        for bar in min_pos.div_floor(BEATS_PER_BAR * Range::UNITS_PER_BEAT)
+            ..=max_pos.div_ceil(BEATS_PER_BAR * Range::UNITS_PER_BEAT)
+        {
+            let pos = bar * (BEATS_PER_BAR * Range::UNITS_PER_BEAT);
+            painter.text(
+                pos2(note_pos_to_screen_pos((pos, 0)).x, top_bar_rect.center().y),
+                egui::Align2::CENTER_CENTER,
+                bar.to_string(),
+                egui::FontId::proportional(12.0),
+                ui.visuals().widgets.hovered.text_color(),
+            );
         }
 
         let track = ctx.state.tracks.get_mut(track_id);
 
-        if let Some(mouse_pos) = resp.hover_pos() {
+        if let Some(mouse_pos) = canvas_resp.hover_pos() {
             let (pos, pitch) = screen_pos_to_note_pos(mouse_pos);
+            let pos = snap_pos(pos, self.horizontal_zoom);
             self.last_mouse_position = (pos, pitch);
 
             if ui.input(|i| i.modifiers.ctrl) {
-                let screen_pos = note_pos_to_screen_pos((pos, pitch));
-                painter.vline(
-                    screen_pos.x,
-                    Rangef::new(screen_pos.y, screen_pos.y + self.vertical_zoom),
-                    egui::Stroke::new(2.0, ui.visuals().text_color()),
-                );
+                let mouse_down = ui.input(|i| i.pointer.primary_down());
 
                 ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                if mouse_down {
+                    if let Some(ref mut currently_drawn_note) = self.currently_drawn_note {
+                        currently_drawn_note.range.end = currently_drawn_note.start().max(pos);
+                    } else {
+                        self.currently_drawn_note =
+                            Some(Note::from_range_pitch(Range::at(pos), pitch));
+                    }
+                } else {
+                    if let Some(note) = self.currently_drawn_note.take() {
+                        let section = match track.get_section_at(note.start()) {
+                            Some(id) => ctx.state.sections.get_mut(id),
+                            None => {
+                                let section = Section::empty(
+                                    "New Section".into(),
+                                    Range::surrounding_pos(note.start()),
+                                );
+                                track.check_overlap_with(section.range);
+                                track.add_section(&mut ctx.state.sections, section)
+                            }
+                        };
+                        section.insert_note(note);
+                    }
+
+                    let screen_pos = note_pos_to_screen_pos((pos, pitch));
+                    painter.vline(
+                        screen_pos.x,
+                        Rangef::new(screen_pos.y, screen_pos.y + self.vertical_zoom),
+                        if mouse_down {
+                            ui.visuals().widgets.active
+                        } else {
+                            ui.visuals().widgets.hovered
+                        }
+                        .fg_stroke,
+                    );
+                }
             }
         }
 
-        resp.context_menu(|ui| {
+        canvas_resp.context_menu(|ui| {
             if ui.button("Add section").clicked() {
                 track.add_section(
                     &mut ctx.state.sections,
@@ -261,6 +446,21 @@ impl PianoRollTab {
                 ui.close_menu();
             }
         });
+
+        // self.ui_data.delete_unneeded(&mut ctx.state.sections);
+
+        if canvas_resp.clicked() && single_thing_clicked.is_none() {
+            single_thing_clicked = Some(Id::invalid());
+        }
+
+        if let Some(single_thing_clicked) = single_thing_clicked {
+            // deselect all the other sections
+            for (&id, ui_data) in ctx.ui_state.sections.iter_mut() {
+                if id.transmute() != single_thing_clicked {
+                    ui_data.selected = false;
+                }
+            }
+        }
     }
 
     fn pianoroll_empty(&mut self, ui: &mut egui::Ui) {

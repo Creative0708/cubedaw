@@ -1,11 +1,12 @@
 use cubedaw_lib::{Id, State};
 use egui::ahash::{HashMap, HashMapExt};
 use egui_dock::{DockArea, DockState};
+use smallvec::SmallVec;
 
 use crate::{
     context::{ContextResult, Tabs},
     tab::{pianoroll::PianoRollTab, track::TrackTab},
-    Context, Screen,
+    Context, Screen, UiState,
 };
 
 pub struct CubedawApp {
@@ -13,6 +14,7 @@ pub struct CubedawApp {
     tabs: HashMap<Id<Tab>, Tab>,
 
     state: State,
+    ui_state: UiState,
 }
 
 impl CubedawApp {
@@ -20,6 +22,7 @@ impl CubedawApp {
         let mut result = ContextResult::new();
         let mut ctx = Context::new(
             &mut self.state,
+            &mut self.ui_state,
             Tabs {
                 map: &mut self.tabs,
             },
@@ -36,7 +39,8 @@ impl CubedawApp {
         let mut s = Self {
             dock_state: DockState::new(Vec::new()),
             tabs: HashMap::new(),
-            state: Default::default(),
+            state: State::tracking(),
+            ui_state: Default::default(),
         };
 
         s.with_ctx(|ctx| {
@@ -53,6 +57,7 @@ impl eframe::App for CubedawApp {
         let mut result = ContextResult::new();
         let mut ctx = Context::new(
             &mut self.state,
+            &mut self.ui_state,
             Tabs {
                 map: &mut self.tabs,
             },
@@ -78,15 +83,28 @@ impl eframe::App for CubedawApp {
                 });
             });
         });
-        egui::CentralPanel::default()
+        let deleted_tabs = egui::CentralPanel::default()
             // .frame(egui::Frame::central_panel(&style).fill(style.visuals.extreme_bg_color))
             .show(egui_ctx, |ui| {
+                let mut tab_viewer = CubedawTabViewer {
+                    ctx: &mut ctx,
+                    deleted_tabs: SmallVec::new(),
+                };
                 DockArea::new(&mut self.dock_state)
                     .style(egui_dock::Style::from_egui(ui.style().as_ref()))
-                    .show_inside(ui, &mut CubedawTabViewer { ctx: &mut ctx });
-            });
+                    .show_inside(ui, &mut tab_viewer);
+                tab_viewer.deleted_tabs
+            })
+            .inner;
+
+        for tab in deleted_tabs {
+            println!("deleting {tab:?}");
+            self.tabs.remove(&tab);
+        }
 
         result.apply_dock_changes(&mut self.dock_state);
+
+        self.ui_state.track(&self.state);
     }
 }
 
@@ -94,6 +112,7 @@ pub type Tab = Box<dyn Screen>;
 
 pub struct CubedawTabViewer<'a> {
     ctx: &'a mut Context<'a>,
+    deleted_tabs: SmallVec<[Id<Tab>; 2]>,
 }
 
 impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
@@ -113,5 +132,10 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
         let mut tab = self.ctx.tabs.map.remove(id).unwrap();
         tab.update(&mut self.ctx, ui);
         self.ctx.tabs.map.insert(tab.id(), tab);
+    }
+
+    fn on_close(&mut self, id: &mut Self::Tab) -> bool {
+        self.deleted_tabs.push(*id);
+        true
     }
 }
