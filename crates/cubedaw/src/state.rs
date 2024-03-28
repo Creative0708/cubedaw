@@ -1,9 +1,11 @@
-use cubedaw_lib::{IdMap, Section, State, Track};
+use cubedaw_lib::{IdMap, IdSet, Section, State, Track};
 
 #[derive(Debug)]
 pub struct UiState {
     pub sections: IdMap<Section, SectionUiState>,
     pub tracks: IdMap<Track, TrackUiState>,
+
+    pub section_drag: Option<(IdSet<Section>, f32, i64)>,
 }
 
 impl UiState {
@@ -18,6 +20,8 @@ impl Default for UiState {
         Self {
             sections: IdMap::nontracking(),
             tracks: IdMap::nontracking(),
+
+            section_drag: None,
         }
     }
 }

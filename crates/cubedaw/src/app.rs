@@ -77,6 +77,14 @@ impl eframe::App for CubedawApp {
                         panic!("PANIC!!!!!");
                     };
                 });
+                ui.menu_button("Window", |ui| {
+                    if ui.button("Tracks").clicked() {
+                        ctx.create_tab::<TrackTab>();
+                    }
+                    if ui.button("Piano Roll").clicked() {
+                        ctx.create_tab::<PianoRollTab>();
+                    }
+                });
                 #[cfg(debug_assertions)]
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::warn_if_debug_build(ui);

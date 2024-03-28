@@ -1,4 +1,4 @@
-use cubedaw_lib::{Id, IdMap, Note, Range, Section, Track};
+use cubedaw_lib::{Id, Note, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
 use smallvec::SmallVec;
 
@@ -18,7 +18,6 @@ pub struct PianoRollTab {
     last_mouse_position: (i64, i32),
 
     currently_drawn_note: Option<Note>,
-    drag_offset: Option<(f32, i64)>,
 }
 
 const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT;
@@ -48,7 +47,6 @@ impl crate::Screen for PianoRollTab {
             last_mouse_position: (0, 0),
 
             currently_drawn_note: None,
-            drag_offset: None,
         }
     }
 
@@ -213,8 +211,12 @@ impl PianoRollTab {
 
                     let section_ui_data = ctx.ui_state.sections.get_mut_or_default(section_id);
 
-                    let section_range = if section_ui_data.selected {
-                        section_range + self.drag_offset.unwrap_or_default().1
+                    let section_range = if let Some(ref section_drag) = ctx.ui_state.section_drag {
+                        if section_drag.0.contains(&section_id) {
+                            section_range + section_drag.2
+                        } else {
+                            section_range
+                        }
                     } else {
                         section_range
                     };
@@ -286,6 +288,7 @@ impl PianoRollTab {
 
         // Section headers
         let mut finished_drag_offset = None;
+        let mut drag_started = false;
         for section in track.sections() {
             let (section_id, section, section_ui_data, section_range) = prepare_section!(section);
 
@@ -326,6 +329,10 @@ impl PianoRollTab {
             );
 
             if header_resp.clicked() || header_resp.drag_started() {
+                if header_resp.drag_started() {
+                    drag_started = true;
+                    ctx.ui_state.section_drag = Some((Default::default(), 0.0, 0));
+                }
                 if header_resp.clicked() || !section_ui_data.selected {
                     section_ui_data.selected = true;
                     if !ui.input(|i| i.modifiers.shift) {
@@ -334,25 +341,40 @@ impl PianoRollTab {
                 }
             }
             if header_resp.dragged() {
-                let drag_offset = self.drag_offset.unwrap_or_default().0
+                let drag_offset = ctx
+                    .ui_state
+                    .section_drag
+                    .as_ref()
+                    .map(|x| x.1)
+                    .unwrap_or_default()
                     + header_resp.drag_delta().x / self.horizontal_zoom;
                 let snapped_drag_offset = drag_offset as i64;
                 let snapped_drag_offset =
                     snap_pos(section.start() + snapped_drag_offset, self.horizontal_zoom)
                         - section.start();
-                self.drag_offset = Some((drag_offset, snapped_drag_offset));
+                let section_drag = ctx.ui_state.section_drag.as_mut().unwrap();
+                section_drag.1 = drag_offset;
+                section_drag.2 = snapped_drag_offset;
             }
             if header_resp.drag_released() {
-                if let Some(drag_offset) = self.drag_offset {
-                    finished_drag_offset = Some(drag_offset.1);
+                if let Some(ref drag_offset) = ctx.ui_state.section_drag {
+                    finished_drag_offset = Some(drag_offset.2);
                 } else {
                     unreachable!();
                 }
             }
         }
 
+        if drag_started {
+            let section_drag = ctx.ui_state.section_drag.as_mut().unwrap();
+            for (_, section_id) in track.sections() {
+                if ctx.ui_state.sections.get(section_id).selected {
+                    section_drag.0.insert(section_id);
+                }
+            }
+        }
         if let Some(finished_drag_offset) = finished_drag_offset {
-            self.drag_offset = None;
+            ctx.ui_state.section_drag = None;
 
             let mut sections_to_move = SmallVec::<[Range; 8]>::new();
             for (section_range, section_id) in track.sections() {

@@ -1,6 +1,7 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![feature(trait_upcasting)]
 #![feature(int_roundings)]
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![feature(option_get_or_insert_default)]
 
 pub mod app;
 mod screen;

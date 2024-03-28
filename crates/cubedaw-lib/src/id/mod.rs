@@ -6,7 +6,7 @@ use std::{
     marker::PhantomData,
 };
 
-use ahash::{AHasher, HashMap, RandomState};
+use ahash::{AHasher, HashMap, HashSet, RandomState};
 
 fn new_hasher() -> AHasher {
     // `printf cubedaw | sha256sum`
@@ -220,3 +220,5 @@ pub enum TrackingMapEvent<T> {
 impl<T> TrackingMapEvent<T> {
     // TODO
 }
+
+pub type IdSet<T> = HashSet<Id<T>>;

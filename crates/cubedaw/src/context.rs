@@ -104,7 +104,7 @@ impl DockEvent {
             Self::Create(tab_id) => {
                 let surface = dock_state.main_surface_mut();
                 let root_node = surface.root_node_mut().expect("no root node found?");
-                if root_node.tabs_count() == 0 {
+                if root_node.is_leaf() && root_node.tabs_count() == 0 {
                     root_node.insert_tab(egui_dock::TabIndex(0), tab_id);
                 } else {
                     surface.split_left(egui_dock::NodeIndex::root(), 0.4, vec![tab_id]);

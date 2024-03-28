@@ -8,7 +8,7 @@ pub use section::Section;
 mod range;
 pub use range::Range;
 mod id;
-pub use id::{Id, IdMap};
+pub use id::{Id, IdMap, IdSet};
 mod state;
 pub use state::State;
 mod track;
