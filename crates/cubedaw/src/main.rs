@@ -2,6 +2,7 @@
 #![feature(trait_upcasting)]
 #![feature(int_roundings)]
 #![feature(option_get_or_insert_default)]
+#![feature(let_chains)]
 
 pub mod app;
 mod screen;

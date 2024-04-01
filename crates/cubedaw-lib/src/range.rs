@@ -32,10 +32,10 @@ impl Range {
         }
     }
     pub fn surrounding_pos(pos: i64) -> Self {
-        let start = pos.div_floor(Self::UNITS_PER_BEAT) * Self::UNITS_PER_BEAT;
+        let start = pos.div_floor(Self::UNITS_PER_BEAT * 4) * (Self::UNITS_PER_BEAT * 4);
         Self {
             start,
-            end: start + Self::UNITS_PER_BEAT,
+            end: start + Self::UNITS_PER_BEAT * 4,
         }
     }
     pub fn unbounded_start(end: i64) -> Self {

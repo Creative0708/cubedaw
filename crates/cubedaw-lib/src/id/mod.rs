@@ -55,6 +55,10 @@ fn arbitrary_impl() -> IdInner {
 }
 
 impl<T> Id<T> {
+    pub const fn zero() -> Self {
+        Self::from_raw(0)
+    }
+
     pub const fn invalid() -> Self {
         // Random number. Most likely won't be equal to anything, ever.
         Self::from_raw(0x4fccc597ae63b037)
@@ -120,6 +124,17 @@ impl<T> Clone for Id<T> {
     }
 }
 impl<T> Copy for Id<T> {}
+
+impl<T> PartialOrd for Id<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+impl<T> Ord for Id<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
 
 // TODO if these are a performance bottleneck copy egui's id hasher implementation
 #[derive(Debug)]
@@ -208,6 +223,15 @@ impl<T, V> IdMap<T, V> {
 
     pub fn events(&self) -> Option<&[TrackingMapEvent<T>]> {
         self.events.as_deref()
+    }
+}
+
+impl<T, V> IntoIterator for IdMap<T, V> {
+    type IntoIter = impl Iterator<Item = (Id<T>, V)>;
+    type Item = (Id<T>, V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.into_iter()
     }
 }
 

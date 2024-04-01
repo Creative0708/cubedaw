@@ -1,9 +1,10 @@
-use crate::{id::IdMap, track::Track, Range, Section};
+use crate::{id::IdMap, track::Track, Note, Range, Section};
 
 #[derive(Debug)]
 pub struct State {
-    pub sections: IdMap<Section>,
     pub tracks: IdMap<Track>,
+    pub sections: IdMap<Section>,
+    pub notes: IdMap<Note>,
     pub song_boundary: Range,
 }
 
@@ -12,6 +13,7 @@ impl State {
         Self {
             sections: IdMap::tracking(),
             tracks: IdMap::tracking(),
+            notes: IdMap::tracking(),
             song_boundary: Range::new(0, 16 * Range::UNITS_PER_BEAT * 4),
         }
     }

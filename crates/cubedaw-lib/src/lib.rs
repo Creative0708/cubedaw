@@ -1,5 +1,6 @@
 #![feature(int_roundings)]
 #![feature(iter_map_windows)]
+#![feature(impl_trait_in_assoc_type)]
 
 mod note;
 pub use note::Note;
