@@ -9,7 +9,7 @@ pub use section::Section;
 mod range;
 pub use range::Range;
 mod id;
-pub use id::{Id, IdMap, IdSet};
+pub use id::{Id, IdMap, IdSet, TrackingMapEvent};
 mod state;
 pub use state::State;
 mod track;

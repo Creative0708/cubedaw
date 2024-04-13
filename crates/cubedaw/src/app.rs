@@ -1,70 +1,45 @@
 use cubedaw_lib::{Id, State};
-use egui::ahash::{HashMap, HashMapExt};
 use egui_dock::{DockArea, DockState};
 use smallvec::SmallVec;
 
 use crate::{
-    context::{ContextResult, Tabs},
     tab::{pianoroll::PianoRollTab, track::TrackTab},
-    Context, Screen, UiState,
+    Context, Screen,
 };
 
 pub struct CubedawApp {
+    ctx: Context,
     dock_state: egui_dock::DockState<Id<Tab>>,
-    tabs: HashMap<Id<Tab>, Tab>,
-
-    state: State,
-    ui_state: UiState,
 }
 
 impl CubedawApp {
-    fn with_ctx<F: FnOnce(&mut Context)>(&mut self, f: F) {
-        let mut result = ContextResult::new();
-        let mut ctx = Context::new(
-            &mut self.state,
-            &mut self.ui_state,
-            Tabs {
-                map: &mut self.tabs,
-            },
-            &mut result,
-            // paused: false,
-        );
-
-        f(&mut ctx);
-
-        result.apply_dock_changes(&mut self.dock_state);
-    }
-
     pub fn new(_: &eframe::CreationContext) -> Self {
-        let mut s = Self {
-            dock_state: DockState::new(Vec::new()),
-            tabs: HashMap::new(),
-            state: State::tracking(),
-            ui_state: Default::default(),
-        };
+        let mut ctx = Context::new(State::tracking(), Default::default(), Default::default());
 
-        s.with_ctx(|ctx| {
-            ctx.create_tab::<TrackTab>();
-            ctx.create_tab::<PianoRollTab>();
+        let track_id = ctx.state.tracks.create(cubedaw_lib::Track::new());
+        ctx.ui_state.track(&ctx.state);
+        ctx.state.clear_events();
+
+        ctx.ui_state.tracks.set_mut(track_id, {
+            let mut ui_state = crate::state::TrackUiState::default();
+            ui_state.name = "Default Track".into();
+            ui_state.selected = true;
+            ui_state
         });
 
-        s
+        ctx.create_tab::<TrackTab>();
+        ctx.create_tab::<PianoRollTab>();
+
+        let mut dock_state = DockState::new(Vec::new());
+        ctx.result().apply_dock_changes(&mut dock_state);
+
+        Self { ctx, dock_state }
     }
 }
 
 impl eframe::App for CubedawApp {
     fn update(&mut self, egui_ctx: &egui::Context, _egui_frame: &mut eframe::Frame) {
-        let mut result = ContextResult::new();
-        let mut ctx = Context::new(
-            &mut self.state,
-            &mut self.ui_state,
-            Tabs {
-                map: &mut self.tabs,
-            },
-            &mut result,
-            // paused: false,
-        );
-
+        let ctx = &mut self.ctx;
         egui::TopBottomPanel::top("top_panel").show(egui_ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -95,7 +70,7 @@ impl eframe::App for CubedawApp {
             // .frame(egui::Frame::central_panel(&style).fill(style.visuals.extreme_bg_color))
             .show(egui_ctx, |ui| {
                 let mut tab_viewer = CubedawTabViewer {
-                    ctx: &mut ctx,
+                    ctx,
                     deleted_tabs: SmallVec::new(),
                 };
                 DockArea::new(&mut self.dock_state)
@@ -104,22 +79,25 @@ impl eframe::App for CubedawApp {
                 tab_viewer.deleted_tabs
             })
             .inner;
+        ctx.frame_finished(egui_ctx);
 
         for tab in deleted_tabs {
             println!("deleting {tab:?}");
-            self.tabs.remove(&tab);
+            ctx.tabs.map.remove(&tab);
         }
 
-        result.apply_dock_changes(&mut self.dock_state);
+        ctx.result().apply_dock_changes(&mut self.dock_state);
 
-        self.ui_state.track(&self.state);
+        ctx.ui_state.track(&ctx.state);
+        ctx.state.clear_events();
+        ctx.selection_rect.finish();
     }
 }
 
 pub type Tab = Box<dyn Screen>;
 
 pub struct CubedawTabViewer<'a> {
-    ctx: &'a mut Context<'a>,
+    ctx: &'a mut Context,
     deleted_tabs: SmallVec<[Id<Tab>; 2]>,
 }
 
@@ -127,18 +105,19 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
     type Tab = Id<Tab>;
 
     fn title(&mut self, id: &mut Self::Tab) -> egui::WidgetText {
-        let tab = self.ctx.tabs.map.get_mut(id).unwrap();
+        let tab = self.ctx.tabs.map.get(id).unwrap();
         tab.title().into()
     }
 
     fn id(&mut self, id: &mut Self::Tab) -> egui::Id {
-        let tab = self.ctx.tabs.map.get_mut(id).unwrap();
+        let tab = self.ctx.tabs.map.get(id).unwrap();
         tab.id().into()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, id: &mut Self::Tab) {
-        let mut tab = self.ctx.tabs.map.remove(id).unwrap();
+    fn ui(&mut self, ui: &mut egui::Ui, &mut id: &mut Self::Tab) {
+        let mut tab = self.ctx.tabs.map.remove(&id).unwrap();
         tab.update(&mut self.ctx, ui);
+        self.ctx.selection_rect.draw(ui, id);
         self.ctx.tabs.map.insert(tab.id(), tab);
     }
 

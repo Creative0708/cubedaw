@@ -892,6 +892,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cubedaw-worker"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "cubedaw-lib",
+ "smallvec",
+]
+
+[[package]]
 name = "cursor-icon"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

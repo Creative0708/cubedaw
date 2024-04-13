@@ -224,6 +224,12 @@ impl<T, V> IdMap<T, V> {
     pub fn events(&self) -> Option<&[TrackingMapEvent<T>]> {
         self.events.as_deref()
     }
+    pub fn clear_events(&mut self) {
+        let Some(ref mut events) = self.events else {
+            panic!("IdMap::clear_events called on non-tracking map");
+        };
+        events.clear();
+    }
 }
 
 impl<T, V> IntoIterator for IdMap<T, V> {

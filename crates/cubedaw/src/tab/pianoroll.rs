@@ -4,8 +4,6 @@ use smallvec::SmallVec;
 
 use crate::app::Tab;
 
-use super::track::TrackTab;
-
 #[derive(Debug)]
 pub struct PianoRollTab {
     id: Id<Tab>,
@@ -39,10 +37,21 @@ impl crate::Screen for PianoRollTab {
         Self {
             id: Id::arbitrary(),
 
-            track: ctx
-                .tabs
-                .get_tab::<TrackTab>()
-                .map(|t| t.get_single_selected_track()),
+            track: {
+                let mut selected_track = None;
+                for &track_id in &ctx.ui_state.track_list {
+                    let selected = ctx.ui_state.tracks.get(track_id).selected;
+                    if selected {
+                        if selected_track.is_some() {
+                            selected_track = None;
+                            break;
+                        } else {
+                            selected_track = Some(track_id);
+                        }
+                    }
+                }
+                selected_track
+            },
 
             units_per_pitch: 16.0,
             units_per_tick: 0.5,
@@ -100,29 +109,31 @@ impl PianoRollTab {
 
         painter.rect_filled(max_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
 
+        let screen_x_to_note_x = |pos: f32| -> i64 {
+            ((pos - top_left.x) / self.units_per_tick) as i64 + ctx.state.song_boundary.start
+                - SONG_PADDING
+        };
         let screen_pos_to_note_pos = |screen_pos: Pos2| -> (i64, i32) {
-            let ui_pos = screen_pos - top_left;
             (
-                (ui_pos.x / self.units_per_tick) as i64 + ctx.state.song_boundary.start
-                    - SONG_PADDING,
-                (ui_pos.y / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
+                screen_x_to_note_x(screen_pos.x),
+                ((screen_pos.y - top_left.y) / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
             )
+        };
+        let note_x_to_screen_x = |pos: f32| -> f32 {
+            (pos - (ctx.state.song_boundary.start - SONG_PADDING) as f32) * self.units_per_tick
+                + top_left.x
         };
         let note_pos_to_screen_pos = |(pos, pitch): (i64, i32)| -> Pos2 {
             let ui_pos = pos2(
-                (pos - ctx.state.song_boundary.start + SONG_PADDING) as f32 * self.units_per_tick,
+                note_x_to_screen_x(pos as _),
                 (pitch - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
             );
             ui_pos + top_left
         };
         let pos_range_to_screen_range = |range: Range| -> Rangef {
             Rangef::new(
-                (range.start - ctx.state.song_boundary.start + SONG_PADDING) as f32
-                    * self.units_per_tick
-                    + top_left.x,
-                (range.end - ctx.state.song_boundary.start + SONG_PADDING) as f32
-                    * self.units_per_tick
-                    + top_left.x,
+                note_x_to_screen_x(range.start as _),
+                note_x_to_screen_x(range.end as _),
             )
         };
 
@@ -178,7 +189,7 @@ impl PianoRollTab {
                 )
             };
             painter.vline(
-                painter.round_to_pixel(note_pos_to_screen_pos((pos, 0)).x),
+                painter.round_to_pixel(note_x_to_screen_x(pos as _)),
                 screen_rect.y_range(),
                 stroke,
             );
@@ -216,11 +227,13 @@ impl PianoRollTab {
 
         let (finished_drag_offset, _) = ctx.ui_state.note_drag.handle_snapped(&mut ctx.ui_state.notes, |prepared| {
             let mut handle_note = |offset, note: &Note, note_id: Option<Id<Note>>| {
-                let selected = note_id.map_or(false, |id| prepared.data_mut().get_mut_or_default(id).selected);
+                let movement = prepared.movement().unwrap_or_default();
+
+                let ui_data = note_id.map(|id| prepared.data_mut().get_mut_or_default(id));
+                let selected = ui_data.as_ref().is_some_and(|ui_data| ui_data.selected);
 
                 let mut note_range = note.range;
                 let mut note_pitch = note.pitch;
-                let movement = prepared.movement().unwrap_or_default();
                 if selected {
                     note_range += movement.x as i64;
                     note_pitch += movement.y as i32;
@@ -233,17 +246,23 @@ impl PianoRollTab {
                     Rangef::new(note_y, note_y + self.units_per_pitch),
                 );
 
-                if selected {
+                if selected || ctx.selection_rect.rect().intersects(note_rect) {
                     painter.rect(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR, egui::Stroke::new(3.0, Color32::WHITE));
                 }else{
                     painter.rect_filled(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR);
+                }
+                if ctx.selection_rect.released_rect(self.id).is_some_and(|rect| rect.intersects(note_rect)) {
+                    if let Some(ui_data) = ui_data {
+                        ui_data.selected = true;
+                    }
                 }
 
                 // if the note actually exists (it's not the currently drawn note)
                 if let Some(note_id) = note_id {
                     // let ui_data = ctx.ui_state.notes.get(note_id);
 
-                    let note_interaction = ui.allocate_rect(note_rect, egui::Sense::click_and_drag());
+                    const STRETCH_AREA_WIDTH: f32 = 4.0;
+                    let note_interaction = ui.allocate_rect(note_rect.expand2(vec2(STRETCH_AREA_WIDTH / 2.0, 0.0)), egui::Sense::click_and_drag());
                     if note_interaction.dragged() {
                         prepared.set_scale((1.0 / self.units_per_tick, 1.0 / self.units_per_pitch));
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -342,6 +361,7 @@ impl PianoRollTab {
             screen_rect.x_range(),
             Rangef::new(screen_rect.top(), screen_rect.top() + TOP_BAR_HEIGHT),
         );
+        let top_bar_interaction = ui.allocate_rect(top_bar_rect, egui::Sense::click_and_drag());
 
         painter.rect_filled(top_bar_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
         painter.hline(
@@ -356,7 +376,7 @@ impl PianoRollTab {
         {
             let pos = bar * (BEATS_PER_BAR * Range::UNITS_PER_BEAT);
             painter.text(
-                pos2(note_pos_to_screen_pos((pos, 0)).x, top_bar_rect.center().y),
+                pos2(note_x_to_screen_x(pos as _), top_bar_rect.center().y),
                 egui::Align2::CENTER_CENTER,
                 bar.to_string(),
                 egui::FontId::proportional(12.0),
@@ -396,7 +416,9 @@ impl PianoRollTab {
                             sw: 0.0,
                             se: 0.0,
                         },
-                        if section_ui_data.selected {
+                        if section_ui_data.selected
+                            || ctx.selection_rect.rect().intersects(header_rect)
+                        {
                             SECTION_COLOR.gamma_multiply(0.7)
                         } else {
                             SECTION_COLOR.gamma_multiply(0.5)
@@ -507,10 +529,11 @@ impl PianoRollTab {
             }
         });
 
-        // self.ui_data.delete_unneeded(&mut ctx.state.sections);
-
         if interaction.clicked() && single_thing_clicked.is_none() {
             single_thing_clicked = Some(Id::invalid());
+        }
+        if self.currently_drawn_note.is_none() || interaction.drag_released() {
+            ctx.selection_rect.process_interaction(interaction, self.id);
         }
 
         if let Some(single_thing_clicked) = single_thing_clicked {
@@ -524,6 +547,32 @@ impl PianoRollTab {
                     ui_data.selected = false;
                 }
             }
+        }
+
+        // Needle
+        let needle_screen_x = painter.round_to_pixel(note_x_to_screen_x(ctx.state.needle_pos));
+        if screen_rect.x_range().expand(8.0).contains(needle_screen_x) {
+            let needle_stroke = ui.visuals().widgets.inactive.fg_stroke;
+            // add a small amount to screen_rect.top() so the line doesn't poke through the triangle
+            ui.painter().vline(
+                needle_screen_x,
+                Rangef::new(screen_rect.top() + 3.0, screen_rect.bottom()),
+                needle_stroke,
+            );
+            let needle_top_pos = pos2(needle_screen_x, top_bar_rect.top());
+            ui.painter().add(egui::Shape::convex_polygon(
+                vec![
+                    pos2(needle_top_pos.x + 5.0, needle_top_pos.y),
+                    pos2(needle_top_pos.x, needle_top_pos.y + 7.0),
+                    pos2(needle_top_pos.x - 5.0, needle_top_pos.y),
+                ],
+                needle_stroke.color,
+                egui::Stroke::NONE,
+            ));
+        }
+        if let Some(pointer_pos) = top_bar_interaction.interact_pointer_pos() {
+            ctx.state.needle_pos =
+                snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _;
         }
     }
 

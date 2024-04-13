@@ -1,31 +1,51 @@
-use std::any::Any;
+use std::{
+    any::Any,
+    time::{Duration, Instant},
+};
 
-use cubedaw_lib::{Id, State};
+use cubedaw_lib::{Id, Range, State};
 
-use crate::{app::Tab, Screen, UiState};
+use crate::{app::Tab, Screen, SelectionRect, UiState};
 
-pub struct Context<'a> {
-    pub state: &'a mut State,
-    pub ui_state: &'a mut UiState,
-    pub tabs: Tabs<'a>,
+pub struct Context {
+    // State: global data required to render the music; i.e. volumes, notes, etc
+    pub state: State,
+    // Ui State: global data persisted across launches, but not required to render the music; track names, track ordering, etc.
+    pub ui_state: UiState,
+    // Tabs: per-tab state persisted across launches; scroll position, zoom, etc.
+    pub tabs: Tabs,
 
-    result: &'a mut ContextResult,
+    // Everything else: ephemeral state not persisted; selection box state, etc.
+    pub selection_rect: SelectionRect,
+
+    pub is_playing: bool,
+
+    instant: Instant,
+    duration_of_last_frame: Duration,
+
+    result: ContextResult,
 }
 
-impl<'a> Context<'a> {
-    pub fn new(
-        state: &'a mut State,
-        ui_state: &'a mut UiState,
-        tabs: Tabs<'a>,
-        result: &'a mut ContextResult,
-    ) -> Self {
+impl Context {
+    pub fn new(state: State, ui_state: UiState, tabs: Tabs) -> Self {
         Self {
             state,
             ui_state,
             tabs,
 
-            result,
+            selection_rect: SelectionRect::new(),
+
+            is_playing: false,
+
+            instant: Instant::now(),
+            duration_of_last_frame: Duration::ZERO,
+
+            result: ContextResult::new(),
         }
+    }
+
+    pub fn result(&mut self) -> &mut ContextResult {
+        &mut self.result
     }
 
     pub fn get_or_create_tab<T: Screen>(&mut self) -> &mut T {
@@ -47,13 +67,32 @@ impl<'a> Context<'a> {
 
         (tab as &mut dyn Any).downcast_mut().unwrap()
     }
+
+    pub fn frame_finished(&mut self, ctx: &egui::Context) {
+        let elapsed = self.instant.elapsed();
+        if self.is_playing {
+            // time * bpm * 60.0 = # of beats
+            self.state.needle_pos += ((self.instant.elapsed() - self.duration_of_last_frame)
+                .as_micros()
+                * Range::UNITS_PER_BEAT as u128
+                * 60) as f32
+                / (self.state.bpm * 1_000_000f32);
+            ctx.request_repaint();
+        }
+        self.duration_of_last_frame = elapsed;
+
+        if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            self.is_playing = !self.is_playing;
+        }
+    }
 }
 
-pub struct Tabs<'a> {
-    pub map: &'a mut egui::ahash::HashMap<Id<Tab>, Tab>,
+#[derive(Default)]
+pub struct Tabs {
+    pub map: egui::ahash::HashMap<Id<Tab>, Tab>,
 }
 
-impl<'a> Tabs<'a> {
+impl Tabs {
     pub fn get_tabs<T: Screen>(&mut self) -> impl Iterator<Item = &mut T> {
         return self
             .map
@@ -84,6 +123,10 @@ impl ContextResult {
         Self {
             dock_queue: Vec::new(),
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.dock_queue.clear();
     }
 
     pub fn apply_dock_changes(&mut self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {

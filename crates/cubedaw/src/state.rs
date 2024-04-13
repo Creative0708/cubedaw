@@ -1,4 +1,4 @@
-use cubedaw_lib::{IdMap, Note, Section, State, Track};
+use cubedaw_lib::{Id, IdMap, Note, Section, State, Track};
 
 use crate::util::{DragHandler, SelectableUiData};
 
@@ -7,6 +7,9 @@ pub struct UiState {
     pub sections: IdMap<Section, SectionUiState>,
     pub notes: IdMap<Note, NoteUiState>,
     pub tracks: IdMap<Track, TrackUiState>,
+
+    // An ordered track list. This is the order with which the tracks are displayed in the track tab.
+    pub track_list: Vec<Id<Track>>,
 
     pub section_drag: DragHandler,
     pub note_drag: DragHandler,
@@ -17,6 +20,15 @@ impl UiState {
         self.sections.track(&state.sections);
         self.tracks.track(&state.tracks);
         self.notes.track(&state.notes);
+
+        for event in state.tracks.events().unwrap() {
+            match event {
+                cubedaw_lib::TrackingMapEvent::Create(id) => {
+                    self.track_list.push(*id);
+                }
+                cubedaw_lib::TrackingMapEvent::Delete(id) => self.track_list.retain(|o| o != id),
+            }
+        }
     }
 }
 
@@ -26,6 +38,8 @@ impl Default for UiState {
             sections: IdMap::nontracking(),
             tracks: IdMap::nontracking(),
             notes: IdMap::nontracking(),
+
+            track_list: Vec::new(),
 
             section_drag: DragHandler::new(),
             note_drag: DragHandler::new(),
@@ -50,6 +64,8 @@ impl SelectableUiData<Section> for SectionUiState {
 #[derive(Debug, Default)]
 pub struct TrackUiState {
     pub selected: bool,
+    pub name: String,
+    pub is_editing_name: bool,
 }
 
 impl SelectableUiData<Track> for TrackUiState {

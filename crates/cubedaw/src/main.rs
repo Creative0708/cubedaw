@@ -13,6 +13,8 @@ mod state;
 pub mod tab;
 pub mod util;
 pub use state::UiState;
+mod selection_rect;
+pub use selection_rect::SelectionRect;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
