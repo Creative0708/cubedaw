@@ -1,8 +1,12 @@
+use cubedaw_command::{
+    note::NoteMove,
+    section::SectionMove,
+};
 use cubedaw_lib::{Id, Note, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
 use smallvec::SmallVec;
 
-use crate::app::Tab;
+use crate::{app::Tab, command::{misc::UiSetPlayhead, note::{UiNoteAddOrRemove, UiNoteSelect}, section::{UiSectionAddOrRemove, UiSectionSelect}}};
 
 #[derive(Debug)]
 pub struct PianoRollTab {
@@ -17,7 +21,7 @@ pub struct PianoRollTab {
 
     last_mouse_position: (i64, i32),
 
-    currently_drawn_note: Option<Note>,
+    currently_drawn_note: Option<(i64, Note)>,
 }
 
 // Number of empty ticks to display on either side of the song
@@ -38,19 +42,24 @@ impl crate::Screen for PianoRollTab {
             id: Id::arbitrary(),
 
             track: {
-                let mut selected_track = None;
+                let mut single_selected_track = None;
                 for &track_id in &ctx.ui_state.track_list {
-                    let selected = ctx.ui_state.tracks.get(track_id).selected;
-                    if selected {
-                        if selected_track.is_some() {
-                            selected_track = None;
+                    let track = ctx
+                        .ui_state
+                        .tracks
+                        .get(track_id)
+                        .expect("ui_state.track_list not synchronized with ui_state.tracks");
+                    if track.selected {
+                        if single_selected_track.is_some() {
+                            // more than one selected track, give up
+                            single_selected_track = None;
                             break;
                         } else {
-                            selected_track = Some(track_id);
+                            single_selected_track = Some(track_id);
                         }
                     }
                 }
-                selected_track
+                single_selected_track
             },
 
             units_per_pitch: 16.0,
@@ -89,9 +98,14 @@ impl PianoRollTab {
             unreachable!()
         };
 
-        let track = ctx.state.tracks.get_mut(track_id);
+        let Some(track) = ctx.state.tracks.get(track_id) else {
+            // track got deleted :(
+            self.track = None;
+            return;
+        };
 
-        let mut single_thing_clicked: Option<Id> = None;
+        // None if nothing is clicked, Some(None) if the background is clicked (clicked but not on a selectable thing), Some(Id) if selectable thing clicked
+        let mut single_thing_clicked: Option<Option<Id>> = None;
 
         let (_, interaction) = ui.allocate_exact_size(
             vec2(
@@ -203,7 +217,7 @@ impl PianoRollTab {
         macro_rules! get_section_render_data {
             ($section:tt, $movement:tt, $sections:tt) => {{
                 let (section_range, section_id) = $section;
-                let section_ui_state = $sections.get_mut_or_default(section_id);
+                let section_ui_state = $sections.get(section_id).expect("nonexistent section");
 
                 let section_range = if let Some(section_drag) = $movement {
                     if section_ui_state.selected {
@@ -225,20 +239,20 @@ impl PianoRollTab {
             }};
         }
 
-        let (finished_drag_offset, _) = ctx.ui_state.note_drag.handle_snapped(&mut ctx.ui_state.notes, |prepared| {
-            let mut handle_note = |offset, note: &Note, note_id: Option<Id<Note>>| {
+        let finished_drag_offset = ctx.ephemeral_state.note_drag.handle_snapped(&ctx.ui_state.notes, |prepared| {
+            let mut handle_note = |relative_start_pos: i64, note: &Note, note_id: Option<Id<Note>>| {
                 let movement = prepared.movement().unwrap_or_default();
 
-                let ui_data = note_id.map(|id| prepared.data_mut().get_mut_or_default(id));
+                let ui_data = note_id.map(|id| prepared.data().get(id).expect("nonexistent note on section"));
                 let selected = ui_data.as_ref().is_some_and(|ui_data| ui_data.selected);
 
-                let mut note_range = note.range;
+                let mut note_range = note.range_with(relative_start_pos);
                 let mut note_pitch = note.pitch;
                 if selected {
                     note_range += movement.x as i64;
                     note_pitch += movement.y as i32;
                 }
-                let note_screen_range_x = pos_range_to_screen_range(note_range + offset);
+                let note_screen_range_x = pos_range_to_screen_range(note_range);
 
                 let note_y = note_pos_to_screen_pos((0, note_pitch)).y;
                 let note_rect = Rect::from_x_y_ranges(
@@ -246,17 +260,17 @@ impl PianoRollTab {
                     Rangef::new(note_y, note_y + self.units_per_pitch),
                 );
 
-                if selected || ctx.selection_rect.rect().intersects(note_rect) {
+                if selected || ctx.ephemeral_state.selection_rect.rect().intersects(note_rect) {
                     painter.rect(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR, egui::Stroke::new(3.0, Color32::WHITE));
                 }else{
                     painter.rect_filled(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR);
                 }
-                if ctx.selection_rect.released_rect(self.id).is_some_and(|rect| rect.intersects(note_rect)) {
-                    if let Some(ui_data) = ui_data {
-                        ui_data.selected = true;
+                if ctx.ephemeral_state.selection_rect.released_rect(self.id).is_some_and(|rect| rect.intersects(note_rect)) {
+                    if let Some(note_id) = note_id {
+                        ctx.tracker.add(UiNoteSelect::new(note_id, true));   
                     }
                 }
-
+                
                 // if the note actually exists (it's not the currently drawn note)
                 if let Some(note_id) = note_id {
                     // let ui_data = ctx.ui_state.notes.get(note_id);
@@ -275,7 +289,7 @@ impl PianoRollTab {
                 let Some((section_id, section_ui_data, section_range)) = get_section_render_data!(
                     section,
                     {
-                        ctx.ui_state
+                        ctx.ephemeral_state
                             .section_drag
                             .raw_movement_x()
                             .map(|m| snap_pos(m.round() as _, self.units_per_tick))
@@ -285,7 +299,7 @@ impl PianoRollTab {
                     continue;
                 };
 
-                let section = ctx.state.sections.get_mut(section_id);
+                let section = ctx.state.sections.get(section_id).expect("nonexistent section id on track");
 
                 let section_stroke = egui::Stroke::new(
                     2.0,
@@ -313,20 +327,21 @@ impl PianoRollTab {
                 );
 
                 // Notes
-                for (_note_range, note_id) in section.notes() {
+                for (note_start, note_id) in section.notes() {
                     handle_note(
-                        section_range.start,
-                        ctx.state.notes.get(note_id),
+                        section_range.start + note_start,
+                        ctx.state.notes.get(note_id).expect("nonexistent note in section"),
                         Some(note_id),
                     );
                 }
             }
-            if let Some(ref note) = self.currently_drawn_note {
-                handle_note(0, note, None);
+            if let Some((start_pos, ref note)) = self.currently_drawn_note {
+                handle_note(start_pos, note, None);
             }
         }, |egui::Vec2 { x, y }| {
             vec2(snap_pos(x.round() as _, self.units_per_tick) as _, y.round())
-        });
+        }).apply(&mut ctx.tracker).movement();
+
         if let Some(finished_drag_offset) = finished_drag_offset {
             let pos_offset = finished_drag_offset.x.round() as i64;
             let pitch_offset = finished_drag_offset.y.round() as i32;
@@ -334,22 +349,30 @@ impl PianoRollTab {
             for (_section_range, section_id) in track.sections() {
                 // let section_ui_data = ctx.ui_state.sections.get(section_id);
                 // if section_ui_data.selected {
-                let section = ctx.state.sections.get_mut(section_id);
-                let mut notes_to_move = SmallVec::<[(Range, Id<Note>); 8]>::new();
+                let section = ctx
+                    .state
+                    .sections
+                    .get(section_id)
+                    .expect("nonexistent section on track");
+                let mut notes_to_move: SmallVec<[(i64, Id<Note>); 8]> = SmallVec::new();
                 for (note_range, note_id) in section.notes() {
-                    let note_ui_data = ctx.ui_state.notes.get_mut_or_default(note_id);
+                    let note_ui_data = ctx
+                        .ui_state
+                        .notes
+                        .get(note_id)
+                        .expect("nonexistent note in section");
                     if note_ui_data.selected {
                         notes_to_move.push((note_range, note_id));
                     }
                 }
-                for &(note_range, note_id) in &notes_to_move {
-                    section.move_note(
-                        &mut ctx.state.notes,
-                        note_range,
+                for &(note_start, note_id) in &notes_to_move {
+                    ctx.tracker.add(NoteMove::new(
+                        section_id,
                         note_id,
-                        note_range + pos_offset,
+                        note_start,
+                        note_start + pos_offset,
                         pitch_offset,
-                    );
+                    ));
                 }
                 // }
             }
@@ -386,18 +409,22 @@ impl PianoRollTab {
 
         // Section headers
 
-        let (finished_drag_offset, _) = ctx.ui_state.section_drag.handle_snapped(
-            &mut ctx.ui_state.sections,
+        let finished_drag_offset = ctx.ephemeral_state.section_drag.handle_snapped(
+            &ctx.ui_state.sections,
             |prepared| {
                 for section in track.sections() {
                     let movement = prepared.movement_x();
                     let Some((section_id, section_ui_data, section_range)) =
-                        get_section_render_data!(section, movement, (prepared.data_mut()))
+                        get_section_render_data!(section, movement, (prepared.data()))
                     else {
                         continue;
                     };
 
-                    let section = ctx.state.sections.get_mut(section_id);
+                    let section = ctx
+                        .state
+                        .sections
+                        .get(section_id)
+                        .expect("nonexistent section on track");
 
                     let section_screen_range_x = pos_range_to_screen_range(section_range);
 
@@ -417,7 +444,7 @@ impl PianoRollTab {
                             se: 0.0,
                         },
                         if section_ui_data.selected
-                            || ctx.selection_rect.rect().intersects(header_rect)
+                            || ctx.ephemeral_state.selection_rect.rect().intersects(header_rect)
                         {
                             SECTION_COLOR.gamma_multiply(0.7)
                         } else {
@@ -446,28 +473,26 @@ impl PianoRollTab {
                 }
             },
             |unsnapped| vec2(snap_pos(unsnapped.x as _, self.units_per_tick) as _, 0.0),
-        );
+        ).apply(&mut ctx.tracker).movement();
+
         if let Some(finished_drag_offset) = finished_drag_offset {
             let finished_drag_offset = finished_drag_offset.x.round() as i64;
 
             let mut sections_to_move = SmallVec::<[Range; 8]>::new();
             for (section_range, section_id) in track.sections() {
-                let section_ui_data = ctx.ui_state.sections.get_mut_or_default(section_id);
-                if section_ui_data.selected {
+                if ctx.ui_state.sections.get(section_id).is_some_and(|data| data.selected) {
                     sections_to_move.push(section_range);
                 }
             }
             for &section_range in &sections_to_move {
-                track.move_section(
-                    &mut ctx.state.sections,
+                ctx.tracker.add(SectionMove::new(
+                    track_id,
                     section_range,
-                    section_range + finished_drag_offset,
-                );
+                    section_range.start + finished_drag_offset,
+                ));
             }
             track.check_overlap();
         }
-
-        let track = ctx.state.tracks.get_mut(track_id);
 
         if let Some(mouse_pos) = interaction.hover_pos() {
             let (pos, pitch) = screen_pos_to_note_pos(mouse_pos);
@@ -479,26 +504,38 @@ impl PianoRollTab {
 
                 ui.ctx().set_cursor_icon(egui::CursorIcon::None);
                 if mouse_down {
-                    if let Some(ref mut currently_drawn_note) = self.currently_drawn_note {
-                        currently_drawn_note.range.end = currently_drawn_note.start().max(pos);
+                    if let Some((starting_pos, ref mut note)) = self.currently_drawn_note {
+                        note.length = (pos - starting_pos).max(0) as _;
                     } else {
-                        self.currently_drawn_note =
-                            Some(Note::from_range_pitch(Range::at(pos), pitch));
+                        self.currently_drawn_note = Some((pos, Note::new(0, pitch)));
                     }
                 } else {
-                    if let Some(note) = self.currently_drawn_note.take() {
-                        let section = match track.get_section_at(note.start()) {
-                            Some(id) => ctx.state.sections.get_mut(id),
+                    if let Some((start_pos, note)) = self.currently_drawn_note.take() {
+                        let (section_range, section_id) = match track.get_section_at(start_pos) {
+                            Some(data) => data,
                             None => {
+                                let section_id = Id::arbitrary();
+                                let section_range = Range::surrounding_pos(start_pos);
                                 let section = Section::empty(
                                     "New Section".into(),
-                                    Range::surrounding_pos(note.start()),
+                                    section_range.length() as _,
                                 );
-                                track.check_overlap_with(section.range);
-                                track.add_section(&mut ctx.state.sections, section)
+                                track.check_overlap_with(section_range);
+                                ctx.tracker.add(UiSectionAddOrRemove::addition(
+                                    section_id,
+                                    section_range.start,
+                                    section,
+                                    track_id,
+                                ));
+                                (section_range, section_id)
                             }
                         };
-                        section.insert_note(&mut ctx.state.notes, note);
+                        ctx.tracker.add(UiNoteAddOrRemove::addition(
+                            Id::arbitrary(),
+                            start_pos - section_range.start,
+                            note,
+                            section_id,
+                        ));
                     }
 
                     let screen_pos = note_pos_to_screen_pos((pos, pitch));
@@ -518,61 +555,65 @@ impl PianoRollTab {
 
         interaction.context_menu(|ui| {
             if ui.button("Add section").clicked() {
-                track.add_section(
-                    &mut ctx.state.sections,
-                    Section::empty(
-                        "New Section".into(),
-                        Range::surrounding_pos(self.last_mouse_position.0),
-                    ),
-                );
+                let section_range = Range::surrounding_pos(self.last_mouse_position.0);
+                ctx.tracker.add(UiSectionAddOrRemove::addition(
+                    Id::arbitrary(),
+                    section_range.start,
+                    Section::empty("New Section".into(), section_range.length() as _),
+                    track_id,
+                ));
                 ui.close_menu();
             }
         });
 
         if interaction.clicked() && single_thing_clicked.is_none() {
-            single_thing_clicked = Some(Id::invalid());
+            single_thing_clicked = Some(None);
         }
         if self.currently_drawn_note.is_none() || interaction.drag_released() {
-            ctx.selection_rect.process_interaction(interaction, self.id);
+            ctx.ephemeral_state.selection_rect.process_interaction(interaction, self.id);
         }
 
         if let Some(single_thing_clicked) = single_thing_clicked {
-            for (&id, ui_data) in ctx.ui_state.sections.iter_mut() {
-                if ui_data.selected && id.transmute() != single_thing_clicked {
-                    ui_data.selected = false;
+            for (&id, ui_data) in ctx.ui_state.sections.iter() {
+                if ui_data.selected && Some(id.transmute()) != single_thing_clicked {
+                    ctx.tracker.add(UiSectionSelect::new(id, false));
                 }
             }
-            for (&id, ui_data) in ctx.ui_state.notes.iter_mut() {
-                if ui_data.selected && id.transmute() != single_thing_clicked {
-                    ui_data.selected = false;
+            for (&id, ui_data) in ctx.ui_state.notes.iter() {
+                if ui_data.selected && Some(id.transmute()) != single_thing_clicked {
+                    ctx.tracker.add(UiNoteSelect::new(id, false));
                 }
             }
         }
 
-        // Needle
-        let needle_screen_x = painter.round_to_pixel(note_x_to_screen_x(ctx.state.needle_pos));
-        if screen_rect.x_range().expand(8.0).contains(needle_screen_x) {
-            let needle_stroke = ui.visuals().widgets.inactive.fg_stroke;
+        // playhead
+        let playhead_screen_x =
+            painter.round_to_pixel(note_x_to_screen_x(ctx.ui_state.playhead_pos));
+        if screen_rect
+            .x_range()
+            .expand(8.0)
+            .contains(playhead_screen_x)
+        {
+            let playhead_stroke = ui.visuals().widgets.inactive.fg_stroke;
             // add a small amount to screen_rect.top() so the line doesn't poke through the triangle
             ui.painter().vline(
-                needle_screen_x,
+                playhead_screen_x,
                 Rangef::new(screen_rect.top() + 3.0, screen_rect.bottom()),
-                needle_stroke,
+                playhead_stroke,
             );
-            let needle_top_pos = pos2(needle_screen_x, top_bar_rect.top());
+            let playhead_top_pos = pos2(playhead_screen_x, top_bar_rect.top());
             ui.painter().add(egui::Shape::convex_polygon(
                 vec![
-                    pos2(needle_top_pos.x + 5.0, needle_top_pos.y),
-                    pos2(needle_top_pos.x, needle_top_pos.y + 7.0),
-                    pos2(needle_top_pos.x - 5.0, needle_top_pos.y),
+                    pos2(playhead_top_pos.x + 5.0, playhead_top_pos.y),
+                    pos2(playhead_top_pos.x, playhead_top_pos.y + 7.0),
+                    pos2(playhead_top_pos.x - 5.0, playhead_top_pos.y),
                 ],
-                needle_stroke.color,
+                playhead_stroke.color,
                 egui::Stroke::NONE,
             ));
         }
         if let Some(pointer_pos) = top_bar_interaction.interact_pointer_pos() {
-            ctx.state.needle_pos =
-                snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _;
+            ctx.tracker.add(UiSetPlayhead::new(snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _));
         }
     }
 

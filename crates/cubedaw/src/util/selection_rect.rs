@@ -5,7 +5,7 @@ use crate::app::Tab;
 
 pub struct SelectionRect {
     drag_start_pos: Option<Pos2>,
-    tab_id: Id<Tab>,
+    tab_id: Option<Id<Tab>>,
     rect: Option<egui::Rect>,
     released: bool,
     // process_interaction is usually called at the very end, so if we reset at the end of every
@@ -18,7 +18,7 @@ impl SelectionRect {
     pub fn new() -> Self {
         Self {
             drag_start_pos: None,
-            tab_id: Id::invalid(),
+            tab_id: None,
             rect: None,
             released: false,
             should_reset: false,
@@ -28,7 +28,7 @@ impl SelectionRect {
     pub fn process_interaction(&mut self, interaction: egui::Response, tab_id: Id<Tab>) {
         if interaction.drag_started() {
             self.drag_start_pos = interaction.ctx.input(|i| i.pointer.interact_pos());
-            self.tab_id = tab_id;
+            self.tab_id = Some(tab_id);
         }
         if interaction.drag_released() {
             self.released = true;
@@ -36,7 +36,7 @@ impl SelectionRect {
     }
 
     pub fn released_rect(&mut self, tab_id: Id<Tab>) -> Option<egui::Rect> {
-        if self.released && self.tab_id == tab_id {
+        if self.released && self.tab_id == Some(tab_id) {
             self.rect
         } else {
             None
@@ -48,7 +48,7 @@ impl SelectionRect {
     }
 
     pub fn draw(&mut self, ui: &mut egui::Ui, tab_id: Id<Tab>) {
-        if self.tab_id != tab_id {
+        if self.tab_id != Some(tab_id) {
             return;
         }
         if let Some(drag_start_pos) = self.drag_start_pos {
@@ -67,6 +67,7 @@ impl SelectionRect {
     }
 
     pub fn finish(&mut self) {
+        // TODO why are released and should_reset separate???? i vaguely remember having a reason for this but now i have no idea
         if self.should_reset {
             self.should_reset = false;
             self.released = false;

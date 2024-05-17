@@ -1,7 +1,7 @@
 use cubedaw_lib::{Id, Range, Track};
 use egui::vec2;
 
-use crate::app::Tab;
+use crate::{app::Tab, command::track::UiTrackRename};
 
 #[derive(Debug)]
 pub struct TrackTab {
@@ -11,9 +11,46 @@ pub struct TrackTab {
     units_per_track_unit: f32,
     // Horizontal zoom. Each tick is this wide
     units_per_tick: f32,
+
+    // TODO rename this
+    track_whose_name_is_being_edited: Option<(Id<Track>, String)>,
 }
 
 const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT;
+
+impl TrackTab {
+    fn track_header(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui, track_id: Id<Track>) {
+        let ui_state = ctx
+            .ui_state
+            .tracks
+            .get(track_id)
+            .expect("existing track has no ui state");
+
+        // TODO dear god
+        if if let Some((edited_track_id, ref mut string)) = self.track_whose_name_is_being_edited {
+            if edited_track_id == track_id {
+                let resp = ui.add(egui::TextEdit::singleline(string));
+                if resp.lost_focus() {
+                    ctx.tracker
+                        .add(UiTrackRename::new(track_id, core::mem::take(string)));
+                    self.track_whose_name_is_being_edited = None;
+                } else {
+                    resp.request_focus();
+                }
+                false
+            } else {
+                true
+            }
+        } else {
+            true
+        } {
+            let resp = ui.heading(&ui_state.name);
+            if resp.double_clicked() {
+                self.track_whose_name_is_being_edited = Some((track_id, String::new()));
+            }
+        }
+    }
+}
 
 impl crate::Screen for TrackTab {
     fn create(_ctx: &mut crate::Context) -> Self
@@ -25,6 +62,8 @@ impl crate::Screen for TrackTab {
 
             units_per_track_unit: 1.0,
             units_per_tick: 0.125,
+
+            track_whose_name_is_being_edited: None,
         }
     }
 
@@ -53,27 +92,8 @@ impl crate::Screen for TrackTab {
                         ),
                         egui::Sense::click_and_drag(),
                     );
-                    track_header(ctx, &mut ui.child_ui(rect, *ui.layout()), track_id);
+                    self.track_header(ctx, &mut ui.child_ui(rect, *ui.layout()), track_id);
                 }
             });
-
-        fn track_header(ctx: &mut crate::Context, ui: &mut egui::Ui, track_id: Id<Track>) {
-            // let track = ctx.state.tracks.get_mut(track_id);
-            let ui_data = ctx.ui_state.tracks.get_mut(track_id);
-
-            if ui_data.is_editing_name {
-                let resp = ui.add(egui::TextEdit::singleline(&mut ui_data.name));
-                if resp.lost_focus() {
-                    ui_data.is_editing_name = false;
-                } else {
-                    resp.request_focus();
-                }
-            } else {
-                let resp = ui.heading(&ui_data.name);
-                if resp.double_clicked() {
-                    ui_data.is_editing_name = true;
-                }
-            }
-        }
     }
 }

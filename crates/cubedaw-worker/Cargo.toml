@@ -9,3 +9,7 @@ version = "0.1.0"
 ahash = "0.8.11"
 smallvec = "1.13.2"
 cubedaw-lib = { path = "../cubedaw-lib" }
+egui = { version = "0.26.2", optional = true }
+
+[features]
+egui = ["dep:egui"]

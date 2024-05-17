@@ -1,33 +1,25 @@
 use crate::Range;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Default)]
+/// A struct representing a note independent of start position.
 pub struct Note {
-    // The relative position from the start of the section.
-    pub range: Range,
+    pub length: u64,
+
     // Logarithmic pitch. Middle C (261.626 Hz) == 0, so in 12TET C# == 1, E == 4, etc.
     pub pitch: i32,
 }
 
 impl Note {
-    #[inline]
-    pub fn from_range_pitch(range: Range, pitch: i32) -> Self {
-        Self { range, pitch }
+    pub fn new(length: u64, pitch: i32) -> Self {
+        Self { length, pitch }
     }
 
-    #[inline]
-    pub fn start(&self) -> i64 {
-        self.range.start
-    }
-    #[inline]
-    pub fn end(&self) -> i64 {
-        self.range.end
-    }
-    #[inline]
-    pub fn start_mut(&mut self) -> &mut i64 {
-        &mut self.range.start
-    }
-    #[inline]
-    pub fn end_mut(&mut self) -> &mut i64 {
-        &mut self.range.end
+    pub fn range_with(&self, start_pos: i64) -> Range {
+        Range::new(
+            start_pos,
+            start_pos
+                .checked_add_unsigned(self.length)
+                .expect("start + length overflows i64"),
+        )
     }
 }

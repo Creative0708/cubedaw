@@ -1,4 +1,9 @@
 {
     "editor.formatOnSave": true,
-    "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    "rust-analyzer.check.command": "clippy",
+    "files.associations": {
+        "unistd.h": "c",
+        "mman.h": "c"
+    }
 }

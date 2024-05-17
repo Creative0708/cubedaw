@@ -42,11 +42,11 @@ fn with_impl(source: IdInner, child: impl Hash) -> IdInner {
     hasher.finish()
 }
 
-std::thread_local! {
-    static COUNTER: RefCell<IdInner> = RefCell::new(0);
-}
-
 fn arbitrary_impl() -> IdInner {
+    std::thread_local! {
+        static COUNTER: RefCell<IdInner> = const { RefCell::new(0) };
+    }
+
     COUNTER.with(|x| {
         let mut x = x.borrow_mut();
         *x += 1;
@@ -127,7 +127,7 @@ impl<T> Copy for Id<T> {}
 
 impl<T> PartialOrd for Id<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 impl<T> Ord for Id<T> {
@@ -137,24 +137,17 @@ impl<T> Ord for Id<T> {
 }
 
 // TODO if these are a performance bottleneck copy egui's id hasher implementation
-#[derive(Debug)]
 pub struct IdMap<T, V = T> {
     map: HashMap<Id<T>, V>,
-    events: Option<Vec<TrackingMapEvent<T>>>,
+    // TODO revise the entire "tracking" thing
+    // events: Option<Vec<TrackingMapEvent<T>>>,
 }
 
 impl<T, V> IdMap<T, V> {
-    pub fn tracking() -> Self {
+    pub fn new() -> Self {
         Self {
             map: Default::default(),
-            events: Some(Default::default()),
-        }
-    }
-
-    pub fn nontracking() -> Self {
-        Self {
-            map: Default::default(),
-            events: None,
+            // events: Some(Default::default()),
         }
     }
 
@@ -162,38 +155,52 @@ impl<T, V> IdMap<T, V> {
         self.map.contains_key(&id)
     }
 
-    pub fn get(&self, id: Id<T>) -> &V {
-        self.map
-            .get(&id)
-            .unwrap_or_else(|| panic!("Invalid id for State::get: {id:?}"))
+    pub fn get(&self, id: Id<T>) -> Option<&V> {
+        self.map.get(&id)
     }
-    pub fn get_mut(&mut self, id: Id<T>) -> &mut V {
-        self.map
-            .get_mut(&id)
-            .unwrap_or_else(|| panic!("Invalid id for State::get_mut: {id:?}"))
+    pub fn get_mut(&mut self, id: Id<T>) -> Option<&mut V> {
+        self.map.get_mut(&id)
     }
     pub fn get_mut_or_default(&mut self, id: Id<T>) -> &mut V
     where
         V: Default,
     {
-        self.map.entry(id).or_insert_with(Default::default)
+        self.map
+            .entry(id)
+            .and_modify(|_| panic!("hash collision in IdMap"))
+            .or_default()
     }
-    pub fn set_mut(&mut self, id: Id<T>, val: V) -> Option<V> {
-        if let Some(ref mut events) = self.events {
-            events.push(TrackingMapEvent::Create(id));
-        }
+    pub fn set(&mut self, id: Id<T>, val: V) -> Option<V> {
+        // if let Some(ref mut events) = self.events {
+        //     events.push(TrackingMapEvent::Create(id));
+        // }
         self.map.insert(id, val)
+    }
+    pub fn set_and_get_mut(&mut self, id: Id<T>, val: V) -> &mut V {
+        // TODO currently there's no way to not have two hashmap accesses, change this when entry_insert is stabilized
+        self.set(id, val);
+        self.get_mut(id).unwrap_or_else(|| unreachable!())
     }
     pub fn create(&mut self, val: V) -> Id<T> {
         let id = Id::arbitrary();
-        self.set_mut(id, val);
+        self.set(id, val);
         id
+    }
+    pub fn create_and_get_mut(&mut self, val: V) -> (Id<T>, &mut V) {
+        let id = Id::arbitrary();
+        (
+            id,
+            self.map
+                .entry(id)
+                .and_modify(|_| panic!("hash collision in IdMap"))
+                .or_insert(val),
+        )
     }
 
     pub fn remove(&mut self, id: Id<T>) -> Option<V> {
-        if let Some(ref mut events) = self.events {
-            events.push(TrackingMapEvent::Delete(id));
-        }
+        // if let Some(ref mut events) = self.events {
+        //     events.push(TrackingMapEvent::Delete(id));
+        // }
         self.map.remove(&id)
     }
 
@@ -207,48 +214,43 @@ impl<T, V> IdMap<T, V> {
         self.map.iter_mut()
     }
 
-    pub fn track(&mut self, tracking: &IdMap<T>) {
-        for event in tracking
-            .events()
-            .expect("IdMap::track called with non-tracking map")
-        {
-            match event {
-                TrackingMapEvent::Delete(id) => {
-                    assert!(self.remove(*id).is_some());
-                }
-                _ => (),
-            }
-        }
-    }
+    // pub fn track(&mut self, tracking: &IdMap<T>) {
+    //     for event in tracking
+    //         .events()
+    //         .expect("IdMap::track called with non-tracking map")
+    //     {
+    //         match event {
+    //             TrackingMapEvent::Delete(id) => {
+    //                 assert!(self.remove(*id).is_some());
+    //             }
+    //             _ => (),
+    //         }
+    //     }
+    // }
 
-    pub fn events(&self) -> Option<&[TrackingMapEvent<T>]> {
-        self.events.as_deref()
-    }
-    pub fn clear_events(&mut self) {
-        let Some(ref mut events) = self.events else {
-            panic!("IdMap::clear_events called on non-tracking map");
-        };
-        events.clear();
-    }
+    // pub fn events(&self) -> Option<&[TrackingMapEvent<T>]> {
+    //     self.events.as_deref()
+    // }
+    // pub fn clear_events(&mut self) {
+    //     let Some(ref mut events) = self.events else {
+    //         panic!("IdMap::clear_events called on non-tracking map");
+    //     };
+    //     events.clear();
+    // }
 }
 
 impl<T, V> IntoIterator for IdMap<T, V> {
-    type IntoIter = impl Iterator<Item = (Id<T>, V)>;
+    type IntoIter = std::collections::hash_map::IntoIter<Id<T>, V>;
     type Item = (Id<T>, V);
 
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
     }
 }
-
-#[derive(Debug)]
-pub enum TrackingMapEvent<T> {
-    Create(Id<T>),
-    Delete(Id<T>),
-}
-
-impl<T> TrackingMapEvent<T> {
-    // TODO
+impl<T, V: Debug> Debug for IdMap<T, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.map.fmt(f)
+    }
 }
 
 pub type IdSet<T> = HashSet<Id<T>>;

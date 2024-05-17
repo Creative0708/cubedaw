@@ -9,12 +9,14 @@ mod screen;
 pub use screen::Screen;
 mod context;
 pub use context::Context;
-mod state;
+mod ephemeral_state;
 pub mod tab;
+mod ui_state;
 pub mod util;
-pub use state::UiState;
-mod selection_rect;
-pub use selection_rect::SelectionRect;
+pub use ephemeral_state::EphemeralState;
+pub use ui_state::UiState;
+mod command;
+mod node;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {

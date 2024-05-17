@@ -1,51 +1,58 @@
-use std::{
-    any::Any,
-    time::{Duration, Instant},
-};
+use std::{any::Any, time::Duration};
 
-use cubedaw_lib::{Id, Range, State};
+use cubedaw_lib::{Id, State};
 
-use crate::{app::Tab, Screen, SelectionRect, UiState};
+use crate::{app::Tab, command::UiStateCommand, EphemeralState, Screen, UiState};
 
-pub struct Context {
+pub struct Context<'a> {
     // State: global data required to render the music; i.e. volumes, notes, etc
-    pub state: State,
-    // Ui State: global data persisted across launches, but not required to render the music; track names, track ordering, etc.
-    pub ui_state: UiState,
+    // This can't be mutated directly, but instead done through commands that can be tracked (for the undo system, synchronizing state to workers, etc.)
+    pub state: &'a State,
+
+    // Ui State: global data saved and persisted across launches, but not required to render the music; track names, track ordering, etc.
+    // This also can't be mutated directly and is tracked.
+    pub ui_state: &'a UiState,
+
+    // Ephemeral State: global data not persisted across launches and is not required to render the music; Drag state
+    // This can be mutated directly and is not tracked.
+    pub ephemeral_state: &'a mut EphemeralState,
+
     // Tabs: per-tab state persisted across launches; scroll position, zoom, etc.
-    pub tabs: Tabs,
+    // Also mutable directly and not tracked.
+    pub tabs: &'a mut Tabs,
 
-    // Everything else: ephemeral state not persisted; selection box state, etc.
-    pub selection_rect: SelectionRect,
+    // State tracker to track events that mutate state or ui_state.
+    pub tracker: StateTracker,
 
-    pub is_playing: bool,
+    dock_events: Vec<DockEvent>,
 
-    instant: Instant,
-    duration_of_last_frame: Duration,
-
-    result: ContextResult,
+    duration_since_last_frame: Duration,
 }
 
-impl Context {
-    pub fn new(state: State, ui_state: UiState, tabs: Tabs) -> Self {
+impl<'a> Context<'a> {
+    pub fn new(
+        state: &'a State,
+        ui_state: &'a UiState,
+        ephemeral_state: &'a mut EphemeralState,
+        tabs: &'a mut Tabs,
+        duration_since_last_frame: Duration,
+    ) -> Self {
         Self {
             state,
             ui_state,
+
+            ephemeral_state,
             tabs,
 
-            selection_rect: SelectionRect::new(),
+            tracker: StateTracker::new(),
+            dock_events: Vec::new(),
 
-            is_playing: false,
-
-            instant: Instant::now(),
-            duration_of_last_frame: Duration::ZERO,
-
-            result: ContextResult::new(),
+            duration_since_last_frame,
         }
     }
 
-    pub fn result(&mut self) -> &mut ContextResult {
-        &mut self.result
+    pub fn duration_since_last_frame(&self) -> Duration {
+        self.duration_since_last_frame
     }
 
     pub fn get_or_create_tab<T: Screen>(&mut self) -> &mut T {
@@ -59,30 +66,21 @@ impl Context {
         let tab = T::create(self);
         let id = tab.id();
 
-        self.result.dock_queue.push(DockEvent::Create(id));
+        self.dock_events.push(DockEvent::Create(id));
 
-        self.tabs.map.insert(id, Box::new(tab));
+        let tab = self.tabs.map.entry(id).or_insert(Box::new(tab));
 
-        let tab = &mut **self.tabs.map.get_mut(&id).unwrap();
-
-        (tab as &mut dyn Any).downcast_mut().unwrap()
+        // TODO any way to safely remove the unreachable here?
+        (&mut **tab as &mut dyn Any)
+            .downcast_mut()
+            .unwrap_or_else(|| unreachable!())
     }
 
-    pub fn frame_finished(&mut self, ctx: &egui::Context) {
-        let elapsed = self.instant.elapsed();
-        if self.is_playing {
-            // time * bpm * 60.0 = # of beats
-            self.state.needle_pos += ((self.instant.elapsed() - self.duration_of_last_frame)
-                .as_micros()
-                * Range::UNITS_PER_BEAT as u128
-                * 60) as f32
-                / (self.state.bpm * 1_000_000f32);
-            ctx.request_repaint();
-        }
-        self.duration_of_last_frame = elapsed;
-
-        if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.is_playing = !self.is_playing;
+    pub fn finish(self) -> ContextResult {
+        self.ephemeral_state.selection_rect.finish();
+        ContextResult {
+            dock_events: self.dock_events,
+            state_events: self.tracker.finish(),
         }
     }
 }
@@ -114,35 +112,12 @@ impl Tabs {
 }
 
 #[derive(Debug)]
-pub struct ContextResult {
-    dock_queue: Vec<DockEvent>,
-}
-
-impl ContextResult {
-    pub fn new() -> Self {
-        Self {
-            dock_queue: Vec::new(),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.dock_queue.clear();
-    }
-
-    pub fn apply_dock_changes(&mut self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {
-        while let Some(event) = self.dock_queue.pop() {
-            event.apply(dock_state);
-        }
-    }
-}
-
-#[derive(Debug)]
 pub enum DockEvent {
     Create(Id<Tab>),
 }
 
 impl DockEvent {
-    fn apply(self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {
+    pub fn apply(self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {
         match self {
             Self::Create(tab_id) => {
                 let surface = dock_state.main_surface_mut();
@@ -155,4 +130,30 @@ impl DockEvent {
             }
         }
     }
+}
+
+#[derive(Default)]
+pub struct StateTracker(Vec<Box<dyn UiStateCommand>>);
+
+impl StateTracker {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+    pub fn add(&mut self, command: impl UiStateCommand) {
+        self.0.push(Box::new(command));
+    }
+    pub fn extend(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+    pub fn take(&mut self) -> StateTracker {
+        core::mem::take(self)
+    }
+    pub fn finish(self) -> Vec<Box<dyn UiStateCommand>> {
+        self.0
+    }
+}
+
+pub struct ContextResult {
+    pub dock_events: Vec<DockEvent>,
+    pub state_events: Vec<Box<dyn UiStateCommand>>,
 }

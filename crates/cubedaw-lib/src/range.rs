@@ -13,6 +13,14 @@ impl Range {
     pub fn new(start: i64, end: i64) -> Self {
         Self { start, end }
     }
+    pub fn start_length(start: i64, length: u64) -> Self {
+        Self {
+            start,
+            end: start
+                .checked_add_unsigned(length)
+                .expect("i64 + u64 overflow"),
+        }
+    }
     pub fn from_beats(start: i64, end: i64) -> Self {
         Self {
             start: start * Self::UNITS_PER_BEAT,
@@ -32,7 +40,17 @@ impl Range {
         }
     }
     pub fn surrounding_pos(pos: i64) -> Self {
-        let start = pos.div_floor(Self::UNITS_PER_BEAT * 4) * (Self::UNITS_PER_BEAT * 4);
+        // TODO replace with i64::div_floor when it's stabilized
+        pub const fn div_floor(lhs: i64, rhs: i64) -> i64 {
+            let d = lhs / rhs;
+            let r = lhs % rhs;
+            if (r > 0 && rhs < 0) || (r < 0 && rhs > 0) {
+                d - 1
+            } else {
+                d
+            }
+        }
+        let start = div_floor(pos, Self::UNITS_PER_BEAT * 4) * (Self::UNITS_PER_BEAT * 4);
         Self {
             start,
             end: start + Self::UNITS_PER_BEAT * 4,

@@ -1,45 +1,112 @@
-use cubedaw_lib::{Id, State};
+use std::time;
+
+// use cubedaw_command::StateCommand as _;
+use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
-use smallvec::SmallVec;
 
 use crate::{
+    command::UiStateCommand,
     tab::{pianoroll::PianoRollTab, track::TrackTab},
     Context, Screen,
 };
 
 pub struct CubedawApp {
-    ctx: Context,
+    // see crate::Context for descriptions
+    state: cubedaw_lib::State,
+    ui_state: crate::UiState,
+
+    ephemeral_state: crate::EphemeralState,
+    tabs: crate::context::Tabs,
+
+    last_frame_instant: time::Instant,
+
     dock_state: egui_dock::DockState<Id<Tab>>,
+
+    undo_stack: Vec<Box<[Box<dyn UiStateCommand>]>>,
 }
 
 impl CubedawApp {
     pub fn new(_: &eframe::CreationContext) -> Self {
-        let mut ctx = Context::new(State::tracking(), Default::default(), Default::default());
+        let mut app = Self {
+            state: cubedaw_lib::State::new(),
+            ui_state: Default::default(),
+            ephemeral_state: crate::EphemeralState::new(),
+            tabs: Default::default(),
+            dock_state: DockState::new(Vec::new()),
 
-        let track_id = ctx.state.tracks.create(cubedaw_lib::Track::new());
-        ctx.ui_state.track(&ctx.state);
-        ctx.state.clear_events();
+            last_frame_instant: time::Instant::now(),
 
-        ctx.ui_state.tracks.set_mut(track_id, {
-            let mut ui_state = crate::state::TrackUiState::default();
-            ui_state.name = "Default Track".into();
-            ui_state.selected = true;
-            ui_state
-        });
+            undo_stack: Vec::new(),
+        };
 
-        ctx.create_tab::<TrackTab>();
+        let mut ctx = Context::new(
+            &app.state,
+            &app.ui_state,
+            &mut app.ephemeral_state,
+            &mut app.tabs,
+            time::Duration::ZERO,
+        );
+
+        let track_id = Id::arbitrary();
+        ctx.tracker
+            .add(crate::command::track::UiTrackAddOrRemove::addition(
+                track_id,
+                cubedaw_lib::Track::new(),
+                Some(crate::ui_state::TrackUiState {
+                    name: "Default Track".into(),
+                    selected: true,
+                }),
+                ctx.ui_state.track_list.len() as u32,
+            ));
+
+        let result = ctx.finish();
+        app.ctx_finished(result);
+
+        let mut ctx = Context::new(
+            &app.state,
+            &app.ui_state,
+            &mut app.ephemeral_state,
+            &mut app.tabs,
+            time::Duration::ZERO,
+        );
+
         ctx.create_tab::<PianoRollTab>();
+        ctx.create_tab::<TrackTab>();
 
-        let mut dock_state = DockState::new(Vec::new());
-        ctx.result().apply_dock_changes(&mut dock_state);
+        let result = ctx.finish();
+        app.ctx_finished(result);
 
-        Self { ctx, dock_state }
+        app
+    }
+
+    fn ctx_finished(&mut self, mut result: crate::context::ContextResult) {
+        for event in &mut result.state_events {
+            event.ui_execute(&mut self.ui_state);
+            if let Some(inner) = event.inner() {
+                inner.execute(&mut self.state);
+            }
+        }
+        for event in result.dock_events {
+            event.apply(&mut self.dock_state);
+        }
+        self.undo_stack.push(result.state_events.into_boxed_slice());
     }
 }
 
 impl eframe::App for CubedawApp {
     fn update(&mut self, egui_ctx: &egui::Context, _egui_frame: &mut eframe::Frame) {
-        let ctx = &mut self.ctx;
+        let now = time::Instant::now();
+        let frame_duration = now.duration_since(self.last_frame_instant);
+        self.last_frame_instant = now;
+
+        let mut ctx = Context::new(
+            &self.state,
+            &self.ui_state,
+            &mut self.ephemeral_state,
+            &mut self.tabs,
+            frame_duration,
+        );
+
         egui::TopBottomPanel::top("top_panel").show(egui_ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -66,39 +133,44 @@ impl eframe::App for CubedawApp {
                 });
             });
         });
-        let deleted_tabs = egui::CentralPanel::default()
+        let dock_state_borrow = &mut self.dock_state;
+
+        // egui takes an owned `impl FnOnce() -> R`, so we're forced to either do these
+        // goofy moving-in-and-out shenanigans or have a compiler error because rust
+        // thinks that the provided FnOnce can outlive this function... aaaaaaahhhhhhhhhhhh
+        let ctx = egui::CentralPanel::default()
             // .frame(egui::Frame::central_panel(&style).fill(style.visuals.extreme_bg_color))
-            .show(egui_ctx, |ui| {
-                let mut tab_viewer = CubedawTabViewer {
-                    ctx,
-                    deleted_tabs: SmallVec::new(),
-                };
-                DockArea::new(&mut self.dock_state)
+            .show(egui_ctx, move |ui| {
+                let mut tab_viewer = CubedawTabViewer { ctx };
+                DockArea::new(dock_state_borrow)
                     .style(egui_dock::Style::from_egui(ui.style().as_ref()))
                     .show_inside(ui, &mut tab_viewer);
-                tab_viewer.deleted_tabs
+                tab_viewer.ctx
             })
             .inner;
-        ctx.frame_finished(egui_ctx);
 
-        for tab in deleted_tabs {
-            println!("deleting {tab:?}");
-            ctx.tabs.map.remove(&tab);
+        let result = ctx.finish();
+        self.ctx_finished(result);
+
+        if self.ephemeral_state.is_playing {
+            // time * bpm * 60.0 = # of beats
+            self.ui_state.playhead_pos += (frame_duration.as_micros()
+                * cubedaw_lib::Range::UNITS_PER_BEAT as u128
+                * 60) as f32
+                / (self.state.bpm * 1_000_000f32);
+            egui_ctx.request_repaint();
         }
 
-        ctx.result().apply_dock_changes(&mut self.dock_state);
-
-        ctx.ui_state.track(&ctx.state);
-        ctx.state.clear_events();
-        ctx.selection_rect.finish();
+        if !egui_ctx.wants_keyboard_input() && egui_ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
+        }
     }
 }
 
 pub type Tab = Box<dyn Screen>;
 
 pub struct CubedawTabViewer<'a> {
-    ctx: &'a mut Context,
-    deleted_tabs: SmallVec<[Id<Tab>; 2]>,
+    ctx: Context<'a>,
 }
 
 impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
@@ -106,7 +178,7 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
 
     fn title(&mut self, id: &mut Self::Tab) -> egui::WidgetText {
         let tab = self.ctx.tabs.map.get(id).unwrap();
-        tab.title().into()
+        tab.title()
     }
 
     fn id(&mut self, id: &mut Self::Tab) -> egui::Id {
@@ -117,12 +189,13 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
     fn ui(&mut self, ui: &mut egui::Ui, &mut id: &mut Self::Tab) {
         let mut tab = self.ctx.tabs.map.remove(&id).unwrap();
         tab.update(&mut self.ctx, ui);
-        self.ctx.selection_rect.draw(ui, id);
+        self.ctx.ephemeral_state.selection_rect.draw(ui, id);
         self.ctx.tabs.map.insert(tab.id(), tab);
     }
 
     fn on_close(&mut self, id: &mut Self::Tab) -> bool {
-        self.deleted_tabs.push(*id);
+        println!("deleting {id:?}");
+        self.ctx.tabs.map.remove(id);
         true
     }
 }

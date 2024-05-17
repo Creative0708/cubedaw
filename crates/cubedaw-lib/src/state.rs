@@ -9,29 +9,23 @@ pub struct State {
     pub sections: IdMap<Section>,
     pub notes: IdMap<Note>,
     pub song_boundary: Range,
-
-    // TODO is needle the right term for this? it's like the "play cursor" that plays the notes and such
-    // also is this precise enough?
-    pub needle_pos: f32,
 }
 
 impl State {
-    pub fn tracking() -> Self {
+    pub fn new() -> Self {
         Self {
             bpm: 120.0,
 
-            sections: IdMap::tracking(),
-            tracks: IdMap::tracking(),
-            notes: IdMap::tracking(),
+            tracks: IdMap::new(),
+            sections: IdMap::new(),
+            notes: IdMap::new(),
             song_boundary: Range::new(0, 16 * Range::UNITS_PER_BEAT * 4),
-
-            needle_pos: 0.0,
         }
     }
 
-    pub fn clear_events(&mut self) {
-        self.tracks.clear_events();
-        self.sections.clear_events();
-        self.notes.clear_events();
-    }
+    // pub fn clear_events(&mut self) {
+    //     self.tracks.clear_events();
+    //     self.sections.clear_events();
+    //     self.notes.clear_events();
+    // }
 }

@@ -874,12 +874,22 @@ name = "cubedaw"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "bytemuck",
+ "cubedaw-command",
  "cubedaw-lib",
+ "cubedaw-worker",
  "eframe",
  "egui",
  "egui_dock",
  "env_logger",
  "smallvec",
+]
+
+[[package]]
+name = "cubedaw-command"
+version = "0.1.0"
+dependencies = [
+ "cubedaw-lib",
 ]
 
 [[package]]
@@ -897,6 +907,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "cubedaw-lib",
+ "egui",
  "smallvec",
 ]
 

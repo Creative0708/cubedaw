@@ -1,0 +1,9 @@
+[package]
+authors = ["Colin Cai <therealcreative0708@gmail.com>"]
+edition.workspace = true
+name = "cubedaw-command"
+rust-version.workspace = true
+version = "0.1.0"
+
+[dependencies]
+cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
