@@ -31,8 +31,11 @@ impl TrackTab {
             if edited_track_id == track_id {
                 let resp = ui.add(egui::TextEdit::singleline(string));
                 if resp.lost_focus() {
-                    ctx.tracker
-                        .add(UiTrackRename::new(track_id, core::mem::take(string)));
+                    let new_track_name = core::mem::take(string);
+                    if !new_track_name.is_empty() {
+                        ctx.tracker
+                            .add(UiTrackRename::new(track_id, new_track_name));
+                    }
                     self.track_whose_name_is_being_edited = None;
                 } else {
                     resp.request_focus();

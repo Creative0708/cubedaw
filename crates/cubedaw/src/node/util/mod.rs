@@ -39,18 +39,18 @@ mod tests {
         assert!(i32s[9] == 42);
         assert!(i32s[0] == 43);
         assert!(i32s.len() == 10);
-        core::mem::drop(i32s);
+        core::hint::black_box(i32s);
 
         let nothing: Box<[u64]> = boxed_slice(0);
         assert!(nothing.len() == 0);
-        core::mem::drop(nothing);
+        core::hint::black_box(nothing);
 
         let mut zsts: Box<[()]> = boxed_slice(usize::MAX);
         assert!(zsts.len() == usize::MAX);
         zsts[1000];
         zsts[1000000];
         zsts[1] = ();
-        core::mem::drop(zsts);
+        core::hint::black_box(zsts);
     }
 
     #[test]
@@ -58,6 +58,7 @@ mod tests {
     fn test_boxed_slice_memory_limit() {
         let mut x: Box<[u32]> = boxed_slice(1_000_000_000_000_000_000);
         x[0] = 1;
+        core::hint::black_box(x);
     }
 }
 

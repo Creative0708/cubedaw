@@ -25,7 +25,7 @@ mod impls {
 
     use crate::{
         command::{note::UiNoteSelect, section::UiSectionSelect, track::UiTrackSelect},
-        ui_state::{NoteUiState, SectionUiState, TrackUiState},
+        state::ui::{NoteUiState, SectionUiState, TrackUiState},
     };
 
     use super::{SelectableUiData, SelectableUiEvent};
@@ -190,7 +190,7 @@ impl<'a, 'b, T, U: SelectableUiData<T>, F: Fn(Vec2) -> Vec2> Prepared<'a, 'b, T,
         if resp.dragged() {
             self.new_drag_movement = Some(resp.drag_delta());
         }
-        if resp.drag_released() {
+        if resp.drag_stopped() {
             if self.drag_handler.is_dragging {
                 self.finished_movement = Some(self.drag_handler.raw_movement);
             } else {

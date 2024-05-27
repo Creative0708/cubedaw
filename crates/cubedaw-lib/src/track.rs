@@ -1,16 +1,18 @@
 use std::collections::BTreeMap;
 
-use crate::{Id, IdMap, Range, Section};
+use crate::{Id, IdMap, Patch, Range, Section};
 
 #[derive(Debug)]
 pub struct Track {
+    pub patch: Patch,
     sections: BTreeMap<Range, Id<Section>>,
 }
 
 impl Track {
-    pub fn new() -> Self {
+    pub fn new_empty(patch: Patch) -> Self {
         Self {
-            sections: BTreeMap::new(),
+            patch,
+            sections: Default::default(),
         }
     }
 
@@ -60,7 +62,7 @@ impl Track {
         let section_range = Range::start_length(start_pos, section.length);
         self.check_overlap_with(section_range);
 
-        let section = sections.set_and_get_mut(section_id, section);
+        let section = sections.insert_and_get_mut(section_id, section);
         self.sections.insert(section_range, section_id);
         section
     }
@@ -71,9 +73,7 @@ impl Track {
         section_id: Id<Section>,
         start_pos: i64,
     ) -> Section {
-        let section = sections
-            .remove(section_id)
-            .expect("tried to delete nonexistent section");
+        let section = sections.take(section_id);
         assert!(
             self.sections
                 .remove(&Range::start_length(start_pos, section.length))

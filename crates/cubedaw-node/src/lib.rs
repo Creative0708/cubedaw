@@ -1,6 +1,4 @@
-use std::any::Any;
-
-use cubedaw_lib::Id;
+use cubedaw_lib::{Id, NodeState, NodeStateWrapper};
 
 pub type DynNode = Box<dyn NodeWrapper>;
 
@@ -38,16 +36,11 @@ pub trait NodeContext<'a> {
     fn output(&self, index: u32) -> DataDrain<'a>;
 }
 
-#[cfg(feature = "egui")]
-pub trait PatchContext<'a> {
-    fn input_ui(&mut self, ui: &mut egui::Ui, name: &str);
-    fn output_ui(&mut self, ui: &mut egui::Ui, name: &str);
-}
-
-pub trait Node: Send {
+pub trait Node: 'static + Send {
     // the reason for the whole Self::Ui thing is to have a way to have the ui thread render without waiting for thread synchronization
     // (which could cause very bad ui delays.)
-    type Ui: NodeUi;
+    // also we need to serialize the ui to disk and this provides a convenient struct to do so
+    type State: NodeState;
 
     fn id(&self) -> Id<DynNode>;
     // -> (# of inputs, # of outputs)
@@ -55,29 +48,23 @@ pub trait Node: Send {
 
     fn process(&mut self, ctx: &mut dyn NodeContext<'_>);
 
-    /// Creates a `Self::Ui` representing the current state
-    fn create_ui(&self) -> Self::Ui;
-    fn update_from_ui(&mut self, data: Self::Ui);
+    /// Creates a `Self::State` representing the current state
+    fn create_state(&self) -> Self::State;
+    /// Updates the current state from a `Self::State`
+    fn update_from_state(&mut self, data: Self::State);
 }
 
-pub trait NodeUi: 'static + Sized + Send + Clone {
-    #[cfg(feature = "egui")]
-    fn ui(&mut self, ui: &mut egui::Ui, patch_ctx: &mut dyn PatchContext<'_>);
-}
-
-// unsafe because the returned Box<dyn Any> from default_data has to be the associated NodeUi
-pub unsafe trait NodeWrapper: Send {
+pub trait NodeWrapper: Send {
     fn id(&self) -> Id<DynNode>;
     fn spec(&self) -> (u32, u32);
     fn process(&mut self, ctx: &mut dyn NodeContext<'_>);
 
-    fn create_ui(&self) -> *mut ();
+    fn create_state(&self) -> Box<dyn NodeStateWrapper>;
 
-    // SAFETY: data has to be the same type as the return of create_ui
-    unsafe fn update_from_ui(&mut self, data: *mut ());
+    fn update_from_state(&mut self, data: Box<dyn NodeStateWrapper>);
 }
 
-unsafe impl<T: Node> NodeWrapper for T {
+impl<T: Node> NodeWrapper for T {
     fn id(&self) -> Id<DynNode> {
         self.id()
     }
@@ -90,11 +77,17 @@ unsafe impl<T: Node> NodeWrapper for T {
         self.process(ctx)
     }
 
-    fn create_ui(&self) -> *mut () {
-        Box::leak(Box::new(self.create_ui())) as *mut T::Ui as *mut ()
+    fn create_state(&self) -> Box<dyn NodeStateWrapper> {
+        Box::new(Node::create_state(self))
     }
 
-    unsafe fn update_from_ui(&mut self, data: *mut ()) {
-        self.update_from_ui(unsafe { *Box::from_raw(data as *mut T::Ui) })
+    fn update_from_state(&mut self, data: Box<dyn NodeStateWrapper>) {
+        Node::update_from_state(
+            self,
+            *data
+                .into_any()
+                .downcast()
+                .expect("update_from_state called with state of different type"),
+        )
     }
 }

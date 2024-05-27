@@ -3,6 +3,7 @@
 use cubedaw_lib::State;
 
 pub mod misc;
+pub mod node;
 pub mod note;
 pub mod section;
 pub mod track;

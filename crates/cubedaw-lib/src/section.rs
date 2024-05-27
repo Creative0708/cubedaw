@@ -28,7 +28,7 @@ impl Section {
         note_id: Id<Note>,
         note: Note,
     ) {
-        notes.set(note_id, note);
+        notes.insert(note_id, note);
         self.notes.insert((start_pos, note_id));
     }
 
@@ -38,11 +38,12 @@ impl Section {
         start_pos: i64,
         note_id: Id<Note>,
     ) -> Note {
-        let note = notes
-            .remove(note_id)
-            .expect("tried to remove nonexistent note");
+        let note = notes.take(note_id);
         if !self.notes.remove(&(start_pos, note_id)) {
-            panic!("note in state.notes but not in internal note map");
+            panic!(
+                "note {start_pos}, {note_id:?} in state.notes but not in internal note map {:?}",
+                self.notes
+            );
         }
         note
     }

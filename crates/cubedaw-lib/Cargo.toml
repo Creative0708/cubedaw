@@ -6,9 +6,9 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
-ahash = "0.8.11"
-smallvec = "1.13.2"
-egui = { version = "0.26.2", optional = true }
+ahash = { workspace = true }
+smallvec = { workspace = true }
+egui = { workspace = true, optional = true }
 
 [features]
 egui = ["dep:egui"]

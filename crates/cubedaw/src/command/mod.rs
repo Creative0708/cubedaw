@@ -15,6 +15,11 @@ pub trait UiStateCommand: 'static + Send {
     fn ui_execute(&mut self, ui_state: &mut UiState);
     fn ui_rollback(&mut self, ui_state: &mut UiState);
 
+    // fn priority(&self) -> CommandPriority;
+
+    // TODO should there be a default impl? kinda seems like a footgun if you forget to implement it
+    // another TODO currently inner() is used to determine whether a UiStateCommand is "weak"; i.e. whether
+    // it can get grouped with other commands in the undo stack. something something look its hard to explain ok
     fn inner(&mut self) -> Option<&mut dyn StateCommand> {
         None
     }

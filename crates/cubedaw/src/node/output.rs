@@ -1,5 +1,5 @@
-use cubedaw_lib::Id;
-use cubedaw_worker::patch::{DynNode, NodeUi};
+use cubedaw_lib::{Id, NodeState, NodeUiContext};
+use cubedaw_node::{DynNode, Node, NodeContext};
 
 use super::util::Buffer;
 
@@ -8,8 +8,8 @@ pub struct OutputNode {
     buffer: Buffer,
 }
 
-impl cubedaw_worker::patch::Node for OutputNode {
-    type Ui = OutputNodeUi;
+impl Node for OutputNode {
+    type State = OutputNodeUi;
 
     fn id(&self) -> cubedaw_lib::Id<DynNode> {
         self.id
@@ -17,7 +17,7 @@ impl cubedaw_worker::patch::Node for OutputNode {
     fn spec(&self) -> (u32, u32) {
         (1, 0)
     }
-    fn process(&mut self, ctx: &mut dyn cubedaw_worker::patch::NodeContext<'_>) {
+    fn process(&mut self, ctx: &mut dyn NodeContext<'_>) {
         let buffer_size = ctx.buffer_size();
 
         let buf = self.buffer.resize_and_get_mut(buffer_size);
@@ -26,10 +26,10 @@ impl cubedaw_worker::patch::Node for OutputNode {
         }
     }
 
-    fn create_ui(&self) -> Self::Ui {
+    fn create_state(&self) -> Self::State {
         OutputNodeUi
     }
-    fn update_from_ui(&mut self, _: Self::Ui) {}
+    fn update_from_state(&mut self, _: Self::State) {}
 }
 
 impl OutputNode {
@@ -41,15 +41,11 @@ impl OutputNode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OutputNodeUi;
 
-impl NodeUi for OutputNodeUi {
-    fn ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        patch_ctx: &mut dyn cubedaw_worker::patch::PatchContext<'_>,
-    ) {
-        patch_ctx.input_ui(ui, "Output");
+impl NodeState for OutputNodeUi {
+    fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
+        ctx.input_ui(ui, "Output");
     }
 }

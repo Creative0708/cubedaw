@@ -114,7 +114,7 @@ impl NoteAddOrRemove {
             .expect("tried to remove note from nonexistent section")
             .remove_note(&mut state.notes, self.start_pos, self.id);
 
-        if self.data.replace(note_data).is_none() {
+        if self.data.replace(note_data).is_some() {
             panic!("called execute_remove on nonempty NoteAddOrRemove");
         }
     }

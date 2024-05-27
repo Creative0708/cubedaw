@@ -5,6 +5,20 @@ package.rust-version = "1.76.0"
 members = [
     "crates/cubedaw",
     "crates/cubedaw-lib",
+    "crates/cubedaw-node",
     "crates/cubedaw-worker",
     "crates/cubedaw-command",
 ]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "forbid"
+
+[workspace.lints.clippy]
+# TODO uncomment this when i have time for this
+# pedantic = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+egui = { version = "0.27.2", features = [] }
+ahash = "0.8.11"
+smallvec = "1.13.2"
+bytemuck = "1.15.0"

@@ -1,17 +1,20 @@
+use crate::Id;
+
 pub struct ResourceKey {
     str: String,
     divider: usize,
 }
 
-// yes this is taken from minecraft. i like how the keys look ok
+// yes this is stolen from minecraft. i like how the keys look ok
 impl ResourceKey {
-    pub fn new(namespace: &str, key: &str) -> Self {
+    // TODO make this return Option<Self> or Result<Self, _>
+    pub fn new_split(namespace: &str, key: &str) -> Self {
         assert!(
-            namespace.len() > 0 && namespace.is_ascii(),
+            !namespace.is_empty() && namespace.is_ascii(),
             "ResourceKey namespace has to be a non-empty ascii string"
         );
         assert!(
-            key.len() > 0 && key.is_ascii(),
+            !key.is_empty() && key.is_ascii(),
             "ResourceKey key has to be a non-empty ascii string"
         );
 
@@ -24,6 +27,27 @@ impl ResourceKey {
             divider: namespace.len(),
         }
     }
+    // TODO make this return Option<Self> or Result<Self, _>
+    pub fn new(str: String) -> Self {
+        assert!(!str.is_empty() && !str.is_ascii());
+
+        let mut divider = None;
+        for (i, b) in str.bytes().enumerate() {
+            if b == b':' {
+                if divider.is_some() {
+                    panic!("duplicate : in ResourceKey");
+                }
+                divider = Some(i);
+            }
+            assert!(matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.'))
+        }
+
+        let Some(divider) = divider else {
+            panic!("no : in ResourceKey");
+        };
+
+        Self { divider, str }
+    }
 
     pub fn as_str(&self) -> &str {
         &self.str
@@ -33,6 +57,10 @@ impl ResourceKey {
     }
     pub fn key(&self) -> &str {
         &self.str[self.divider + 1..]
+    }
+
+    pub fn id(&self) -> Id<Self> {
+        Id::new(self)
     }
 }
 

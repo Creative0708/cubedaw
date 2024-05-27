@@ -1,12 +1,14 @@
-use std::time;
+use std::sync::Arc;
 
 // use cubedaw_command::StateCommand as _;
-use cubedaw_lib::Id;
+use cubedaw_lib::{Id, NodeData, ResourceKey};
 use egui_dock::{DockArea, DockState};
 
 use crate::{
     command::UiStateCommand,
-    tab::{pianoroll::PianoRollTab, track::TrackTab},
+    context::DockEvent,
+    node,
+    tab::{patch::PatchTab, pianoroll::PianoRollTab, track::TrackTab},
     Context, Screen,
 };
 
@@ -18,25 +20,38 @@ pub struct CubedawApp {
     ephemeral_state: crate::EphemeralState,
     tabs: crate::context::Tabs,
 
-    last_frame_instant: time::Instant,
+    node_registry: Arc<node::NodeRegistry>,
+
+    last_frame_time: f64,
 
     dock_state: egui_dock::DockState<Id<Tab>>,
 
-    undo_stack: Vec<Box<[Box<dyn UiStateCommand>]>>,
+    // Vec<T>s are used instead of Box<[T]>s bc they can be "joined" with weak statecommands
+    // Vec<(is collapsible, events)>
+    undo_stack: Vec<(bool, Vec<Box<dyn UiStateCommand>>)>,
+    // The index of where the next action will be placed.
+    // i.e. if the stack is
+    // [1, 2, 3]
+    // and the user just undid action 3, then undo_index == 2.
+    undo_index: usize,
 }
 
 impl CubedawApp {
     pub fn new(_: &eframe::CreationContext) -> Self {
         let mut app = Self {
-            state: cubedaw_lib::State::new(),
+            state: cubedaw_lib::State::default(),
             ui_state: Default::default(),
-            ephemeral_state: crate::EphemeralState::new(),
+            ephemeral_state: crate::EphemeralState::default(),
             tabs: Default::default(),
+
+            node_registry: Arc::new(node::NodeRegistry::default()),
+
             dock_state: DockState::new(Vec::new()),
 
-            last_frame_instant: time::Instant::now(),
+            last_frame_time: f64::NEG_INFINITY,
 
             undo_stack: Vec::new(),
+            undo_index: 0,
         };
 
         let mut ctx = Context::new(
@@ -44,15 +59,19 @@ impl CubedawApp {
             &app.ui_state,
             &mut app.ephemeral_state,
             &mut app.tabs,
-            time::Duration::ZERO,
+            0.0,
         );
 
         let track_id = Id::arbitrary();
         ctx.tracker
             .add(crate::command::track::UiTrackAddOrRemove::addition(
                 track_id,
-                cubedaw_lib::Track::new(),
-                Some(crate::ui_state::TrackUiState {
+                cubedaw_lib::Track::new_empty({
+                    let mut patch = cubedaw_lib::Patch::default();
+                    patch.insert_node(
+                    patch
+                }),
+                Some(crate::state::ui::TrackUiState {
                     name: "Default Track".into(),
                     selected: true,
                 }),
@@ -67,11 +86,12 @@ impl CubedawApp {
             &app.ui_state,
             &mut app.ephemeral_state,
             &mut app.tabs,
-            time::Duration::ZERO,
+            0.0,
         );
 
         ctx.create_tab::<PianoRollTab>();
-        ctx.create_tab::<TrackTab>();
+        // ctx.create_tab::<TrackTab>();
+        ctx.create_tab::<PatchTab>();
 
         let result = ctx.finish();
         app.ctx_finished(result);
@@ -80,24 +100,56 @@ impl CubedawApp {
     }
 
     fn ctx_finished(&mut self, mut result: crate::context::ContextResult) {
+        for event in result.dock_events {
+            match event {
+                DockEvent::AddTabToDockState(tab_id) => {
+                    let surface = self.dock_state.main_surface_mut();
+                    if let Some(root_node) = surface.root_node_mut() {
+                        if root_node.is_leaf() && root_node.tabs_count() == 0 {
+                            root_node.insert_tab(egui_dock::TabIndex(0), tab_id);
+                        } else {
+                            surface.split_left(egui_dock::NodeIndex::root(), 0.4, vec![tab_id]);
+                        }
+                    } else {
+                        surface.push_to_first_leaf(tab_id);
+                    }
+                }
+                DockEvent::RemoveTabFromMap(tab_id) => {
+                    self.tabs.map.remove(&tab_id);
+                }
+            }
+        }
+
+        let mut is_collapsible = true;
         for event in &mut result.state_events {
             event.ui_execute(&mut self.ui_state);
             if let Some(inner) = event.inner() {
                 inner.execute(&mut self.state);
+                // events that modify state aren't collapsible
+                is_collapsible = false;
             }
         }
-        for event in result.dock_events {
-            event.apply(&mut self.dock_state);
+        if !result.state_events.is_empty() {
+            if self.undo_index < self.undo_stack.len() {
+                self.undo_stack
+                    .resize_with(self.undo_index, || unreachable!());
+            }
+            result.state_events.shrink_to_fit();
+            if is_collapsible && let Some((true, last)) = self.undo_stack.last_mut() {
+                last.extend(result.state_events)
+            } else {
+                self.undo_stack.push((is_collapsible, result.state_events));
+                self.undo_index += 1;
+            }
         }
-        self.undo_stack.push(result.state_events.into_boxed_slice());
     }
 }
 
 impl eframe::App for CubedawApp {
     fn update(&mut self, egui_ctx: &egui::Context, _egui_frame: &mut eframe::Frame) {
-        let now = time::Instant::now();
-        let frame_duration = now.duration_since(self.last_frame_instant);
-        self.last_frame_instant = now;
+        let time = egui_ctx.input(|i| i.time);
+        let frame_duration = ((time - self.last_frame_time) as f32).min(0.1);
+        self.last_frame_time = time;
 
         let mut ctx = Context::new(
             &self.state,
@@ -122,9 +174,11 @@ impl eframe::App for CubedawApp {
                 ui.menu_button("Window", |ui| {
                     if ui.button("Tracks").clicked() {
                         ctx.create_tab::<TrackTab>();
+                        ui.close_menu();
                     }
                     if ui.button("Piano Roll").clicked() {
                         ctx.create_tab::<PianoRollTab>();
+                        ui.close_menu();
                     }
                 });
                 #[cfg(debug_assertions)]
@@ -150,19 +204,53 @@ impl eframe::App for CubedawApp {
             .inner;
 
         let result = ctx.finish();
+        if !result.state_events.is_empty() {
+            egui_ctx.request_repaint();
+        }
         self.ctx_finished(result);
 
         if self.ephemeral_state.is_playing {
             // time * bpm * 60.0 = # of beats
-            self.ui_state.playhead_pos += (frame_duration.as_micros()
-                * cubedaw_lib::Range::UNITS_PER_BEAT as u128
-                * 60) as f32
+            self.ui_state.playhead_pos += (frame_duration
+                * (cubedaw_lib::Range::UNITS_PER_BEAT * 60) as f32)
                 / (self.state.bpm * 1_000_000f32);
             egui_ctx.request_repaint();
         }
 
-        if !egui_ctx.wants_keyboard_input() && egui_ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
+        // global key commands
+        if !egui_ctx.wants_keyboard_input() {
+            // TODO implement configurable keymaps
+            if egui_ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+                self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
+            }
+            if let Some(is_redo) = egui_ctx.input(|i| {
+                (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
+            }) {
+                if is_redo {
+                    if let Some((_, actions_being_redone)) =
+                        self.undo_stack.get_mut(self.undo_index)
+                    {
+                        for action in actions_being_redone.iter_mut() {
+                            action.ui_execute(&mut self.ui_state);
+                            if let Some(state_action) = action.inner() {
+                                state_action.execute(&mut self.state);
+                            }
+                        }
+                        self.undo_index += 1;
+                    }
+                } else if let Some((_, actions_being_undone)) =
+                    self.undo_stack.get_mut(self.undo_index.wrapping_sub(1))
+                {
+                    // do undo actions in the opposite order
+                    for action in actions_being_undone.iter_mut().rev() {
+                        action.ui_rollback(&mut self.ui_state);
+                        if let Some(state_action) = action.inner() {
+                            state_action.rollback(&mut self.state);
+                        }
+                    }
+                    self.undo_index -= 1;
+                }
+            }
         }
     }
 }
@@ -195,7 +283,7 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
 
     fn on_close(&mut self, id: &mut Self::Tab) -> bool {
         println!("deleting {id:?}");
-        self.ctx.tabs.map.remove(id);
+        self.ctx.queue_tab_removal_from_map(*id);
         true
     }
 }

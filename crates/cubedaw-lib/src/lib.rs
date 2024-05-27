@@ -12,3 +12,7 @@ mod track;
 pub use track::Track;
 mod resource_key;
 pub use resource_key::ResourceKey;
+mod patch;
+pub use patch::{NodeData, NodeInput, NodeOutput, Patch};
+mod node;
+pub use node::{NodeState, NodeStateWrapper, NodeUiContext};

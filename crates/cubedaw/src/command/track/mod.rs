@@ -1,9 +1,9 @@
-use cubedaw_command::track::TrackAddOrRemove;
+use cubedaw_command::{track::TrackAddOrRemove, StateCommand};
 use cubedaw_lib::{Id, Track};
 
-use crate::ui_state::TrackUiState;
+use crate::state::ui::TrackUiState;
 
-use super::{StateCommand, UiStateCommand};
+use super::UiStateCommand;
 pub struct UiTrackAddOrRemove {
     inner: TrackAddOrRemove,
     ui_data: Option<TrackUiState>,
@@ -35,7 +35,7 @@ impl UiTrackAddOrRemove {
     fn execute_add(&mut self, ui_state: &mut crate::UiState) {
         ui_state
             .tracks
-            .set(self.inner.id(), self.ui_data.take().unwrap_or_default());
+            .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
         ui_state.track_list.insert(
             (self.insertion_pos as usize).min(ui_state.track_list.len()),
             self.inner.id(),
@@ -43,6 +43,7 @@ impl UiTrackAddOrRemove {
     }
     fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
         self.ui_data = ui_state.tracks.remove(self.inner.id());
+        ui_state.track_list.retain(|&id| id != self.inner.id());
     }
 }
 

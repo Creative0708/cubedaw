@@ -170,38 +170,44 @@ impl<T, V> IdMap<T, V> {
             .and_modify(|_| panic!("hash collision in IdMap"))
             .or_default()
     }
-    pub fn set(&mut self, id: Id<T>, val: V) -> Option<V> {
+    pub fn insert(&mut self, id: Id<T>, val: V) {
         // if let Some(ref mut events) = self.events {
         //     events.push(TrackingMapEvent::Create(id));
         // }
-        self.map.insert(id, val)
+        if self.map.insert(id, val).is_some() {
+            panic!("tried to insert already existing id into IdMap");
+        }
     }
-    pub fn set_and_get_mut(&mut self, id: Id<T>, val: V) -> &mut V {
+    pub fn insert_and_get_mut(&mut self, id: Id<T>, val: V) -> &mut V {
         // TODO currently there's no way to not have two hashmap accesses, change this when entry_insert is stabilized
-        self.set(id, val);
+        self.insert(id, val);
         self.get_mut(id).unwrap_or_else(|| unreachable!())
     }
-    pub fn create(&mut self, val: V) -> Id<T> {
-        let id = Id::arbitrary();
-        self.set(id, val);
-        id
-    }
-    pub fn create_and_get_mut(&mut self, val: V) -> (Id<T>, &mut V) {
-        let id = Id::arbitrary();
-        (
-            id,
-            self.map
-                .entry(id)
-                .and_modify(|_| panic!("hash collision in IdMap"))
-                .or_insert(val),
-        )
-    }
+    // pub fn create(&mut self, val: V) -> Id<T> {
+    //     let id = Id::arbitrary();
+    //     self.set(id, val);
+    //     id
+    // }
+    // pub fn create_and_get_mut(&mut self, val: V) -> (Id<T>, &mut V) {
+    //     let id = Id::arbitrary();
+    //     (
+    //         id,
+    //         self.map
+    //             .entry(id)
+    //             .and_modify(|_| panic!("hash collision in IdMap"))
+    //             .or_insert(val),
+    //     )
+    // }
 
     pub fn remove(&mut self, id: Id<T>) -> Option<V> {
         // if let Some(ref mut events) = self.events {
         //     events.push(TrackingMapEvent::Delete(id));
         // }
         self.map.remove(&id)
+    }
+    pub fn take(&mut self, id: Id<T>) -> V {
+        self.remove(id)
+            .unwrap_or_else(|| panic!("nonexistent id: {id:?}"))
     }
 
     pub fn keys(&self) -> hash_map::Keys<'_, Id<T>, V> {
@@ -237,6 +243,12 @@ impl<T, V> IdMap<T, V> {
     //     };
     //     events.clear();
     // }
+}
+
+impl<T, V> Default for IdMap<T, V> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T, V> IntoIterator for IdMap<T, V> {

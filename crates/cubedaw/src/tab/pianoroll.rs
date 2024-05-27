@@ -41,26 +41,7 @@ impl crate::Screen for PianoRollTab {
         Self {
             id: Id::arbitrary(),
 
-            track: {
-                let mut single_selected_track = None;
-                for &track_id in &ctx.ui_state.track_list {
-                    let track = ctx
-                        .ui_state
-                        .tracks
-                        .get(track_id)
-                        .expect("ui_state.track_list not synchronized with ui_state.tracks");
-                    if track.selected {
-                        if single_selected_track.is_some() {
-                            // more than one selected track, give up
-                            single_selected_track = None;
-                            break;
-                        } else {
-                            single_selected_track = Some(track_id);
-                        }
-                    }
-                }
-                single_selected_track
-            },
+            track: ctx.get_single_selected_track(),
 
             units_per_pitch: 16.0,
             units_per_tick: 0.5,
@@ -82,7 +63,7 @@ impl crate::Screen for PianoRollTab {
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::both().show_viewport(ui, |ui, viewport| {
-                if self.track.is_some() {
+                if let Some(track_id) = self.track && ctx.state.tracks.has(track_id){
                     self.pianoroll(ctx, ui, viewport);
                 } else {
                     self.pianoroll_empty(ui);
@@ -99,21 +80,11 @@ impl PianoRollTab {
         };
 
         let Some(track) = ctx.state.tracks.get(track_id) else {
-            // track got deleted :(
-            self.track = None;
-            return;
+            unreachable!()
         };
 
         // None if nothing is clicked, Some(None) if the background is clicked (clicked but not on a selectable thing), Some(Id) if selectable thing clicked
         let mut single_thing_clicked: Option<Option<Id>> = None;
-
-        let (_, interaction) = ui.allocate_exact_size(
-            vec2(
-                (ctx.state.song_boundary.length() + SONG_PADDING * 2) as f32 * self.units_per_tick,
-                (MAX_NOTE_SHOWN - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
-            ),
-            egui::Sense::click_and_drag(),
-        );
 
         let max_rect = ui.max_rect();
         let top_left = max_rect.left_top().to_vec2();
@@ -121,7 +92,7 @@ impl PianoRollTab {
 
         let screen_rect = viewport.translate(top_left);
 
-        painter.rect_filled(max_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
+        painter.rect_filled(screen_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
 
         let screen_x_to_note_x = |pos: f32| -> i64 {
             ((pos - top_left.x) / self.units_per_tick) as i64 + ctx.state.song_boundary.start
@@ -138,11 +109,10 @@ impl PianoRollTab {
                 + top_left.x
         };
         let note_pos_to_screen_pos = |(pos, pitch): (i64, i32)| -> Pos2 {
-            let ui_pos = pos2(
+            pos2(
                 note_x_to_screen_x(pos as _),
-                (pitch - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
-            );
-            ui_pos + top_left
+                (pitch - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch + top_left.y,
+            )
         };
         let pos_range_to_screen_range = |range: Range| -> Rangef {
             Rangef::new(
@@ -163,6 +133,19 @@ impl PianoRollTab {
             (viewport.bottom() / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
         );
 
+        let (_, interaction) = ui.allocate_exact_size(
+            vec2(
+                (ctx.state.song_boundary.length() + SONG_PADDING * 2) as f32 * self.units_per_tick,
+                (MAX_NOTE_SHOWN - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
+            ),
+            egui::Sense::click_and_drag(),
+        );
+        let snapped_hover_pos = interaction.hover_pos().map(|pos2| {
+            let (pos, pitch) = screen_pos_to_note_pos(pos2);
+            (snap_pos(pos, self.units_per_tick), pitch)
+        });
+
+
         // The horizontal "note lines"
         for row in min_pitch..=max_pitch {
             if row % 2 == 0 {
@@ -173,7 +156,7 @@ impl PianoRollTab {
                         Rangef::new(row_pos, row_pos + self.units_per_pitch),
                     ),
                     Rounding::ZERO,
-                    ui.visuals().faint_bg_color.gamma_multiply(2.0),
+                    ui.visuals().faint_bg_color,
                 );
             }
         }
@@ -238,6 +221,8 @@ impl PianoRollTab {
                 }
             }};
         }
+
+        // Handle drawn note
 
         let finished_drag_offset = ctx.ephemeral_state.note_drag.handle_snapped(&ctx.ui_state.notes, |prepared| {
             let mut handle_note = |relative_start_pos: i64, note: &Note, note_id: Option<Id<Note>>| {
@@ -341,6 +326,64 @@ impl PianoRollTab {
         }, |egui::Vec2 { x, y }| {
             vec2(snap_pos(x.round() as _, self.units_per_tick) as _, y.round())
         }).apply(&mut ctx.tracker).movement();
+
+        if interaction.hovered() && ui.input(|i| i.modifiers.ctrl) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+            if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) && let Some((pos, pitch)) = snapped_hover_pos{
+                self.currently_drawn_note = Some((pos, Note::new(0, pitch)));
+            }
+            if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
+                if let Some((start_pos, note)) = self.currently_drawn_note.take() {
+                    let (section_range, section_id) = match track.get_section_at(start_pos) {
+                        Some(data) => data,
+                        None => {
+                            let section_id = Id::arbitrary();
+                            let section_range = Range::surrounding_pos(start_pos);
+                            let section = Section::empty(
+                                "New Section".into(),
+                                section_range.length() as _,
+                            );
+                            track.check_overlap_with(section_range);
+                            ctx.tracker.add(UiSectionAddOrRemove::addition(
+                                section_id,
+                                section_range.start,
+                                section,
+                                track_id,
+                            ));
+                            (section_range, section_id)
+                        }
+                    };
+                    ctx.tracker.add(UiNoteAddOrRemove::addition(
+                        Id::arbitrary(),
+                        start_pos - section_range.start,
+                        note,
+                        section_id,
+                    ));
+                }
+            }else if let Some((starting_pos, ref mut note)) = self.currently_drawn_note && let Some((pos, _)) = snapped_hover_pos {
+                note.length = (pos - starting_pos).max(0) as _;
+            }
+
+            if let Some((pos, mut pitch)) = snapped_hover_pos {
+                if let Some((_, ref note)) = self.currently_drawn_note {
+                    pitch = note.pitch;
+                }
+
+                let screen_pos = note_pos_to_screen_pos((pos, pitch));
+                painter.vline(
+                    screen_pos.x,
+                    Rangef::new(screen_pos.y, screen_pos.y + self.units_per_pitch),
+                    if self.currently_drawn_note.is_some() {
+                        ui.visuals().widgets.active
+                    } else {
+                        ui.visuals().widgets.hovered
+                    }
+                    .fg_stroke,
+                );
+            }
+        }else {
+            self.currently_drawn_note = None;
+        }
 
         if let Some(finished_drag_offset) = finished_drag_offset {
             let pos_offset = finished_drag_offset.x.round() as i64;
@@ -494,65 +537,6 @@ impl PianoRollTab {
             track.check_overlap();
         }
 
-        if let Some(mouse_pos) = interaction.hover_pos() {
-            let (pos, pitch) = screen_pos_to_note_pos(mouse_pos);
-            let pos = snap_pos(pos, self.units_per_tick);
-            self.last_mouse_position = (pos, pitch);
-
-            if ui.input(|i| i.modifiers.ctrl) {
-                let mouse_down = ui.input(|i| i.pointer.primary_down());
-
-                ui.ctx().set_cursor_icon(egui::CursorIcon::None);
-                if mouse_down {
-                    if let Some((starting_pos, ref mut note)) = self.currently_drawn_note {
-                        note.length = (pos - starting_pos).max(0) as _;
-                    } else {
-                        self.currently_drawn_note = Some((pos, Note::new(0, pitch)));
-                    }
-                } else {
-                    if let Some((start_pos, note)) = self.currently_drawn_note.take() {
-                        let (section_range, section_id) = match track.get_section_at(start_pos) {
-                            Some(data) => data,
-                            None => {
-                                let section_id = Id::arbitrary();
-                                let section_range = Range::surrounding_pos(start_pos);
-                                let section = Section::empty(
-                                    "New Section".into(),
-                                    section_range.length() as _,
-                                );
-                                track.check_overlap_with(section_range);
-                                ctx.tracker.add(UiSectionAddOrRemove::addition(
-                                    section_id,
-                                    section_range.start,
-                                    section,
-                                    track_id,
-                                ));
-                                (section_range, section_id)
-                            }
-                        };
-                        ctx.tracker.add(UiNoteAddOrRemove::addition(
-                            Id::arbitrary(),
-                            start_pos - section_range.start,
-                            note,
-                            section_id,
-                        ));
-                    }
-
-                    let screen_pos = note_pos_to_screen_pos((pos, pitch));
-                    painter.vline(
-                        screen_pos.x,
-                        Rangef::new(screen_pos.y, screen_pos.y + self.units_per_pitch),
-                        if mouse_down {
-                            ui.visuals().widgets.active
-                        } else {
-                            ui.visuals().widgets.hovered
-                        }
-                        .fg_stroke,
-                    );
-                }
-            }
-        }
-
         interaction.context_menu(|ui| {
             if ui.button("Add section").clicked() {
                 let section_range = Range::surrounding_pos(self.last_mouse_position.0);
@@ -569,7 +553,7 @@ impl PianoRollTab {
         if interaction.clicked() && single_thing_clicked.is_none() {
             single_thing_clicked = Some(None);
         }
-        if self.currently_drawn_note.is_none() || interaction.drag_released() {
+        if self.currently_drawn_note.is_none() || interaction.drag_stopped() {
             ctx.ephemeral_state.selection_rect.process_interaction(interaction, self.id);
         }
 
@@ -614,6 +598,11 @@ impl PianoRollTab {
         }
         if let Some(pointer_pos) = top_bar_interaction.interact_pointer_pos() {
             ctx.tracker.add(UiSetPlayhead::new(snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _));
+        }
+        
+
+        if let Some(hover_pos) = snapped_hover_pos {
+            self.last_mouse_position = hover_pos;
         }
     }
 

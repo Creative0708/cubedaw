@@ -6,4 +6,8 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
-cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
+cubedaw-lib = { path = "../cubedaw-lib" }
+cubedaw-node = { path = "../cubedaw-node" }
+
+[features]
+"egui" = ["cubedaw-lib/egui", "cubedaw-node/egui"]

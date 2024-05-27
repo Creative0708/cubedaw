@@ -7,16 +7,16 @@ version = "0.1.0"
 
 [dependencies]
 cubedaw-command = { path = "../cubedaw-command" }
-egui = { version = "0.26.2", features = [] }
-eframe = "0.26.2"
-egui_dock = "0.11.4"
+egui = { workspace = true }
+eframe = "0.27.2"
+egui_dock = "0.12.0"
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
+cubedaw-node = { path = "../cubedaw-node", features = ["egui"] }
 cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }
-ahash = "0.8.11"
-smallvec = "1.13.2"
-bytemuck = "1.15.0"
+ahash = { workspace = true }
+smallvec = { workspace = true }
+bytemuck = { workspace = true }
 
-# Clippy lints
-[lints.clippy]
-new_without_default = "allow" # useless, cubedaw isn't a library so default impls aren't necessary
+[lints]
+workspace = true

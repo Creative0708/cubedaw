@@ -1,4 +1,4 @@
-use std::{any::Any, time::Duration};
+use std::any::Any;
 
 use cubedaw_lib::{Id, State};
 
@@ -26,7 +26,7 @@ pub struct Context<'a> {
 
     dock_events: Vec<DockEvent>,
 
-    duration_since_last_frame: Duration,
+    time_since_last_frame: f32,
 }
 
 impl<'a> Context<'a> {
@@ -35,7 +35,7 @@ impl<'a> Context<'a> {
         ui_state: &'a UiState,
         ephemeral_state: &'a mut EphemeralState,
         tabs: &'a mut Tabs,
-        duration_since_last_frame: Duration,
+        time_since_last_frame: f32,
     ) -> Self {
         Self {
             state,
@@ -47,12 +47,12 @@ impl<'a> Context<'a> {
             tracker: StateTracker::new(),
             dock_events: Vec::new(),
 
-            duration_since_last_frame,
+            time_since_last_frame,
         }
     }
 
-    pub fn duration_since_last_frame(&self) -> Duration {
-        self.duration_since_last_frame
+    pub fn duration_since_last_frame(&self) -> f32 {
+        self.time_since_last_frame
     }
 
     pub fn get_or_create_tab<T: Screen>(&mut self) -> &mut T {
@@ -66,7 +66,7 @@ impl<'a> Context<'a> {
         let tab = T::create(self);
         let id = tab.id();
 
-        self.dock_events.push(DockEvent::Create(id));
+        self.dock_events.push(DockEvent::AddTabToDockState(id));
 
         let tab = self.tabs.map.entry(id).or_insert(Box::new(tab));
 
@@ -74,6 +74,31 @@ impl<'a> Context<'a> {
         (&mut **tab as &mut dyn Any)
             .downcast_mut()
             .unwrap_or_else(|| unreachable!())
+    }
+
+    pub fn queue_tab_removal_from_map(&mut self, id: Id<Box<dyn Screen>>) {
+        self.dock_events.push(DockEvent::RemoveTabFromMap(id))
+    }
+
+    pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
+        let mut single_selected_track = None;
+        for &track_id in &self.ui_state.track_list {
+            let track = self
+                .ui_state
+                .tracks
+                .get(track_id)
+                .expect("ui_state.track_list not synchronized with ui_state.tracks");
+            if track.selected {
+                if single_selected_track.is_some() {
+                    // more than one selected track, give up
+                    single_selected_track = None;
+                    break;
+                } else {
+                    single_selected_track = Some(track_id);
+                }
+            }
+        }
+        single_selected_track
     }
 
     pub fn finish(self) -> ContextResult {
@@ -113,23 +138,8 @@ impl Tabs {
 
 #[derive(Debug)]
 pub enum DockEvent {
-    Create(Id<Tab>),
-}
-
-impl DockEvent {
-    pub fn apply(self, dock_state: &mut egui_dock::DockState<Id<Tab>>) {
-        match self {
-            Self::Create(tab_id) => {
-                let surface = dock_state.main_surface_mut();
-                let root_node = surface.root_node_mut().expect("no root node found?");
-                if root_node.is_leaf() && root_node.tabs_count() == 0 {
-                    root_node.insert_tab(egui_dock::TabIndex(0), tab_id);
-                } else {
-                    surface.split_left(egui_dock::NodeIndex::root(), 0.4, vec![tab_id]);
-                }
-            }
-        }
-    }
+    AddTabToDockState(Id<Tab>),
+    RemoveTabFromMap(Id<Tab>),
 }
 
 #[derive(Default)]

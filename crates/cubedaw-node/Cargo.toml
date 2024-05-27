@@ -1,15 +1,13 @@
 [package]
 authors = ["Colin Cai <therealcreative0708@gmail.com>"]
 edition.workspace = true
-name = "cubedaw-worker"
+name = "cubedaw-node"
 rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
-ahash = { workspace = true }
-smallvec = { workspace = true }
-cubedaw-lib = { path = "../cubedaw-lib" }
 egui = { workspace = true, optional = true }
+cubedaw-lib = { path = "../cubedaw-lib" }
 
 [features]
-egui = ["dep:egui"]
+egui = ["dep:egui", "cubedaw-lib/egui"]

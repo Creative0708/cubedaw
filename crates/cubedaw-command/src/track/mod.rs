@@ -32,7 +32,7 @@ impl TrackAddOrRemove {
     }
 
     fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
-        state.tracks.set(
+        state.tracks.insert(
             self.id,
             self.data
                 .take()

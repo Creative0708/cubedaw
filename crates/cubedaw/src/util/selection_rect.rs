@@ -30,7 +30,7 @@ impl SelectionRect {
             self.drag_start_pos = interaction.ctx.input(|i| i.pointer.interact_pos());
             self.tab_id = Some(tab_id);
         }
-        if interaction.drag_released() {
+        if interaction.drag_stopped() {
             self.released = true;
         }
     }

@@ -1,7 +1,7 @@
 use cubedaw_command::note::NoteAddOrRemove;
 use cubedaw_lib::{Id, Note, Section};
 
-use crate::ui_state::NoteUiState;
+use crate::state::ui::NoteUiState;
 
 use super::UiStateCommand;
 
@@ -27,7 +27,7 @@ impl UiNoteAddOrRemove {
     fn execute_add(&mut self, ui_state: &mut crate::UiState) {
         ui_state
             .notes
-            .set(self.inner.id(), self.ui_data.take().unwrap_or_default());
+            .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
     }
     fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
         self.ui_data = ui_state.notes.remove(self.inner.id());

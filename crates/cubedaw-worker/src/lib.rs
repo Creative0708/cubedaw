@@ -3,4 +3,8 @@
 // TODO
 
 pub mod ctx;
-pub mod patch;
+
+mod sealed {
+    pub trait Sealed {}
+}
+pub(crate) use sealed::Sealed;

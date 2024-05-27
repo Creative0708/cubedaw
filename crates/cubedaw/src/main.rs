@@ -1,20 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![feature(trait_upcasting)]
 #![feature(int_roundings)]
-#![feature(option_get_or_insert_default)]
 #![feature(let_chains)]
+#![forbid(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::new_without_default)] // useless, cubedaw isn't a library so default impls aren't necessary
 
 pub mod app;
 mod screen;
 pub use screen::Screen;
 mod context;
 pub use context::Context;
-mod ephemeral_state;
+mod state;
 pub mod tab;
-mod ui_state;
 pub mod util;
-pub use ephemeral_state::EphemeralState;
-pub use ui_state::UiState;
+pub use state::{ephemeral::EphemeralState, ui::UiState};
 mod command;
 mod node;
 

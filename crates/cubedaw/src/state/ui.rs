@@ -1,10 +1,12 @@
-use cubedaw_lib::{Id, IdMap, Note, Section, Track};
+use cubedaw_lib::{Id, IdMap, NodeData, Note, Section, Track};
+use egui::Vec2;
 
 #[derive(Debug)]
 pub struct UiState {
     pub sections: IdMap<Section, SectionUiState>,
     pub notes: IdMap<Note, NoteUiState>,
     pub tracks: IdMap<Track, TrackUiState>,
+    pub nodes: IdMap<NodeData, NodeUiState>,
 
     // An ordered track list. This is the order with which the tracks are displayed in the track tab.
     pub track_list: Vec<Id<Track>>,
@@ -21,6 +23,7 @@ impl Default for UiState {
             sections: IdMap::new(),
             tracks: IdMap::new(),
             notes: IdMap::new(),
+            nodes: IdMap::new(),
 
             track_list: Vec::new(),
 
@@ -52,4 +55,11 @@ impl Default for TrackUiState {
 #[derive(Debug, Default)]
 pub struct NoteUiState {
     pub selected: bool,
+}
+
+#[derive(Debug)]
+pub struct NodeUiState {
+    pub selected: bool,
+    pub pos: Vec2,
+    pub width: f32,
 }

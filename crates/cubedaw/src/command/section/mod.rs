@@ -1,7 +1,7 @@
 use cubedaw_command::section::SectionAddOrRemove;
 use cubedaw_lib::{Id, Section, Track};
 
-use crate::ui_state::SectionUiState;
+use crate::state::ui::SectionUiState;
 
 use super::UiStateCommand;
 
@@ -27,7 +27,7 @@ impl UiSectionAddOrRemove {
     fn execute_add(&mut self, ui_state: &mut crate::UiState) {
         ui_state
             .sections
-            .set(self.inner.id(), self.ui_data.take().unwrap_or_default());
+            .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
     }
     fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
         self.ui_data = ui_state.sections.remove(self.inner.id());
