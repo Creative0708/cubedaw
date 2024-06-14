@@ -9,10 +9,12 @@ pub use id::{Id, IdMap, IdSet};
 mod state;
 pub use state::State;
 mod track;
-pub use track::Track;
+pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
 mod resource_key;
 pub use resource_key::ResourceKey;
 mod patch;
-pub use patch::{NodeData, NodeInput, NodeOutput, Patch};
+pub use patch::{NodeData, NodeInput, NodeOutput, NodeTag, Patch};
 mod node;
-pub use node::{NodeState, NodeStateWrapper, NodeUiContext};
+pub use node::{DynNodeState, NodeState};
+#[cfg(feature = "egui")]
+pub use node::{NodeInputUiOptions, NodeStateWrapper, NodeUiContext};

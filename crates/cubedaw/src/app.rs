@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-// use cubedaw_command::StateCommand as _;
-use cubedaw_lib::{Id, NodeData, ResourceKey};
+use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
 
 use crate::{
@@ -20,66 +19,90 @@ pub struct CubedawApp {
     ephemeral_state: crate::EphemeralState,
     tabs: crate::context::Tabs,
 
-    node_registry: Arc<node::NodeRegistry>,
+    node_registry: Arc<cubedaw_workerlib::NodeRegistry>,
 
     last_frame_time: f64,
 
     dock_state: egui_dock::DockState<Id<Tab>>,
 
-    // Vec<T>s are used instead of Box<[T]>s bc they can be "joined" with weak statecommands
     // Vec<(is collapsible, events)>
     undo_stack: Vec<(bool, Vec<Box<dyn UiStateCommand>>)>,
-    // The index of where the next action will be placed.
+
+    // The index where the next action will be placed.
     // i.e. if the stack is
     // [1, 2, 3]
     // and the user just undid action 3, then undo_index == 2.
     undo_index: usize,
+
+    worker_host: crate::workerhost::WorkerHostHandle,
 }
 
 impl CubedawApp {
     pub fn new(_: &eframe::CreationContext) -> Self {
-        let mut app = Self {
-            state: cubedaw_lib::State::default(),
-            ui_state: Default::default(),
-            ephemeral_state: crate::EphemeralState::default(),
-            tabs: Default::default(),
+        let mut app = {
+            let mut state = cubedaw_lib::State::default();
+            let mut ui_state = crate::UiState::default();
 
-            node_registry: Arc::new(node::NodeRegistry::default()),
+            fn execute(
+                mut command: impl UiStateCommand,
+                state: &mut cubedaw_lib::State,
+                ui_state: &mut crate::UiState,
+            ) {
+                if let Some(inner) = command.inner() {
+                    inner.execute(state);
+                }
+                command.ui_execute(ui_state);
+            };
 
-            dock_state: DockState::new(Vec::new()),
+            execute(
+                crate::command::track::UiTrackAddOrRemove::addition(
+                    Id::arbitrary(),
+                    cubedaw_lib::Track::new_empty(cubedaw_lib::Patch::default()),
+                    Some(crate::state::ui::TrackUiState {
+                        selected: true,
+                        ..Default::default()
+                    }),
+                    0,
+                ),
+                &mut state,
+                &mut ui_state,
+            );
 
-            last_frame_time: f64::NEG_INFINITY,
+            let node_registry = Arc::new({
+                let mut registry = cubedaw_workerlib::NodeRegistry::default();
+                node::register_cubedaw_nodes(&mut registry);
+                registry
+            });
 
-            undo_stack: Vec::new(),
-            undo_index: 0,
+            Self {
+                worker_host: {
+                    let mut worker_host = crate::workerhost::WorkerHostHandle::new(
+                        state.clone(),
+                        cubedaw_workerlib::WorkerOptions {
+                            node_registry: node_registry.clone(),
+
+                            sample_rate: 44100,
+                            buffer_size: 256,
+                        },
+                    );
+                    worker_host
+                },
+
+                state,
+                ui_state,
+                ephemeral_state: crate::EphemeralState::default(),
+                tabs: Default::default(),
+
+                node_registry,
+
+                dock_state: DockState::new(Vec::new()),
+
+                last_frame_time: f64::NEG_INFINITY,
+
+                undo_stack: Vec::new(),
+                undo_index: 0,
+            }
         };
-
-        let mut ctx = Context::new(
-            &app.state,
-            &app.ui_state,
-            &mut app.ephemeral_state,
-            &mut app.tabs,
-            0.0,
-        );
-
-        let track_id = Id::arbitrary();
-        ctx.tracker
-            .add(crate::command::track::UiTrackAddOrRemove::addition(
-                track_id,
-                cubedaw_lib::Track::new_empty({
-                    let mut patch = cubedaw_lib::Patch::default();
-                    patch.insert_node(
-                    patch
-                }),
-                Some(crate::state::ui::TrackUiState {
-                    name: "Default Track".into(),
-                    selected: true,
-                }),
-                ctx.ui_state.track_list.len() as u32,
-            ));
-
-        let result = ctx.finish();
-        app.ctx_finished(result);
 
         let mut ctx = Context::new(
             &app.state,
@@ -136,7 +159,7 @@ impl CubedawApp {
             }
             result.state_events.shrink_to_fit();
             if is_collapsible && let Some((true, last)) = self.undo_stack.last_mut() {
-                last.extend(result.state_events)
+                last.extend(result.state_events);
             } else {
                 self.undo_stack.push((is_collapsible, result.state_events));
                 self.undo_index += 1;
@@ -218,38 +241,35 @@ impl eframe::App for CubedawApp {
         }
 
         // global key commands
-        if !egui_ctx.wants_keyboard_input() {
-            // TODO implement configurable keymaps
-            if egui_ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-                self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
-            }
-            if let Some(is_redo) = egui_ctx.input(|i| {
-                (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
-            }) {
-                if is_redo {
-                    if let Some((_, actions_being_redone)) =
-                        self.undo_stack.get_mut(self.undo_index)
-                    {
-                        for action in actions_being_redone.iter_mut() {
-                            action.ui_execute(&mut self.ui_state);
-                            if let Some(state_action) = action.inner() {
-                                state_action.execute(&mut self.state);
-                            }
-                        }
-                        self.undo_index += 1;
-                    }
-                } else if let Some((_, actions_being_undone)) =
-                    self.undo_stack.get_mut(self.undo_index.wrapping_sub(1))
-                {
-                    // do undo actions in the opposite order
-                    for action in actions_being_undone.iter_mut().rev() {
-                        action.ui_rollback(&mut self.ui_state);
+
+        // TODO implement configurable keymaps
+        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
+            self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
+        }
+        if let Some(is_redo) = egui_ctx.input(|i| {
+            (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
+        }) {
+            if is_redo {
+                if let Some((_, actions_being_redone)) = self.undo_stack.get_mut(self.undo_index) {
+                    for action in actions_being_redone.iter_mut() {
+                        action.ui_execute(&mut self.ui_state);
                         if let Some(state_action) = action.inner() {
-                            state_action.rollback(&mut self.state);
+                            state_action.execute(&mut self.state);
                         }
                     }
-                    self.undo_index -= 1;
+                    self.undo_index += 1;
                 }
+            } else if let Some((_, actions_being_undone)) =
+                self.undo_stack.get_mut(self.undo_index.wrapping_sub(1))
+            {
+                // do undo actions in the opposite order
+                for action in actions_being_undone.iter_mut().rev() {
+                    action.ui_rollback(&mut self.ui_state);
+                    if let Some(state_action) = action.inner() {
+                        state_action.rollback(&mut self.state);
+                    }
+                }
+                self.undo_index -= 1;
             }
         }
     }

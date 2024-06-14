@@ -9,6 +9,10 @@ pub struct Range {
 impl Range {
     pub const UNITS_PER_BEAT: i64 = 256;
     pub const EMPTY: Self = Range { start: 0, end: 0 };
+    pub const EVERYTHING: Self = Range {
+        start: i64::MIN,
+        end: i64::MAX,
+    };
 
     pub fn new(start: i64, end: i64) -> Self {
         Self { start, end }
@@ -117,5 +121,16 @@ impl ops::Sub<i64> for Range {
 impl ops::SubAssign<i64> for Range {
     fn sub_assign(&mut self, rhs: i64) {
         *self = *self - rhs;
+    }
+}
+
+impl From<Range> for meminterval::Interval<i64> {
+    fn from(value: Range) -> Self {
+        Self::new(value.start, value.end)
+    }
+}
+impl From<meminterval::Interval<i64>> for Range {
+    fn from(value: meminterval::Interval<i64>) -> Self {
+        Self::new(value.start, value.end)
     }
 }

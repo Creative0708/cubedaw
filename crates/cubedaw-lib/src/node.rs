@@ -1,30 +1,88 @@
-pub trait NodeState: 'static + Sized + Send + Clone + PartialEq + Eq {
+/// Miscellaneous node state used
+pub trait NodeState: 'static + Sized + Send + Sync + Clone + PartialEq + Eq {
     #[cfg(feature = "egui")]
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext);
 }
 
+pub type DynNodeState = Box<dyn NodeStateWrapper>;
+
 #[cfg(feature = "egui")]
 mod ui {
-    use std::any::Any;
+    use std::any::TypeId;
+
+    use egui::Rangef;
 
     use crate::NodeState;
 
     pub trait NodeUiContext {
-        fn input_ui(&mut self, ui: &mut egui::Ui, name: &str);
+        fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions);
         fn output_ui(&mut self, ui: &mut egui::Ui, name: &str);
     }
 
+    // TODO decide if this is necessary
+    // #[derive(Clone, Debug)]
+    // pub struct NodeVisuals {
+    //     dragvalue_color
+    // }
+    // impl NodeVisuals {
+    //     pub fn from_memory(ctx: &egui::Context) -> Self {
+    //         ctx.data_mut(|d| d.get_persisted(id))
+    //     }
+    // }
+    // impl Default for NodeVisuals {
+    //     fn default() -> Self {
+    //         Self {
+
+    //         }
+    //     }
+    // }
+
+    #[derive(Clone, Copy)]
+    pub struct NodeInputUiOptions {
+        pub display_fn: fn(f32) -> String,
+
+        // The range values the dragvalue will show. if range.min == range.max, this won't be interactable and the base value will be range.min.
+        // TODO decide on whether a range where range.min > range.max is a violated invariant or just a logic error
+        pub range: Rangef,
+
+        // Whether the range is interactable. If false, the number won't render
+        pub interactable: bool,
+    }
+
+    impl Default for NodeInputUiOptions {
+        fn default() -> Self {
+            Self {
+                display_fn: |x| format!("{x:.2}"),
+                range: Rangef::new(0.0, 1.0),
+                interactable: true,
+            }
+        }
+    }
+
+    impl NodeInputUiOptions {
+        pub fn uninteractable() -> Self {
+            Self {
+                interactable: false,
+                ..Default::default()
+            }
+        }
+    }
+
+    // to prevent soundness holes from manually implementing type_id on a struct
+    mod sealed {
+        pub trait Sealed {}
+    }
+
     // TODO change this to unsafe possibly? actually just determine if the Any overhead is negligible
-    pub trait NodeStateWrapper: Send + Any {
+    pub trait NodeStateWrapper: 'static + sealed::Sealed + Send + Sync {
         fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext);
         fn clone(&self) -> Box<dyn NodeStateWrapper>;
         fn eq(&self, rhs: &dyn NodeStateWrapper) -> bool;
 
-        // TODO change this into a single vtable entry for type_id() and implement like trait AnyExt {} for that
-        fn as_any(&self) -> &dyn Any;
-        fn into_any(self: Box<Self>) -> Box<dyn Any>;
+        fn type_id(&self) -> TypeId;
     }
 
+    impl<T: NodeState> sealed::Sealed for T {}
     impl<T: NodeState> NodeStateWrapper for T {
         fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
             NodeState::ui(self, ui, ctx)
@@ -33,17 +91,40 @@ mod ui {
             Box::new(Clone::clone(self))
         }
         fn eq(&self, rhs: &dyn NodeStateWrapper) -> bool {
-            let rhs = rhs.as_any();
             let Some(rhs) = rhs.downcast_ref() else {
                 panic!("eq called on rhs of different type");
             };
             PartialEq::eq(self, rhs)
         }
-        fn as_any(&self) -> &dyn Any {
-            self
+
+        fn type_id(&self) -> TypeId {
+            TypeId::of::<T>()
         }
-        fn into_any(self: Box<Self>) -> Box<dyn Any> {
-            self
+    }
+
+    // Copy of `std::any::Any`. Replace this when trait upcasting is stabilized
+    // https://doc.rust-lang.org/beta/unstable-book/language-features/trait-upcasting.html
+    impl dyn NodeStateWrapper {
+        pub fn downcast_ref<T: NodeStateWrapper + Sized>(&self) -> Option<&T> {
+            if NodeStateWrapper::type_id(self) == TypeId::of::<T>() {
+                Some(unsafe { &*(self as *const dyn NodeStateWrapper as *const T) })
+            } else {
+                None
+            }
+        }
+        pub fn downcast_mut<T: NodeStateWrapper + Sized>(&mut self) -> Option<&T> {
+            if NodeStateWrapper::type_id(self) == TypeId::of::<T>() {
+                Some(unsafe { &*(self as *mut dyn NodeStateWrapper as *mut T) })
+            } else {
+                None
+            }
+        }
+        pub fn downcast<T: NodeStateWrapper + Sized>(self: Box<Self>) -> Option<Box<T>> {
+            if NodeStateWrapper::type_id(self.as_ref()) == TypeId::of::<T>() {
+                Some(unsafe { Box::from_raw(Box::into_raw(self) as *mut T) })
+            } else {
+                None
+            }
         }
     }
 
@@ -52,9 +133,19 @@ mod ui {
             f.write_str("<dyn NodeUiWrapper>")
         }
     }
+
+    impl Clone for Box<dyn NodeStateWrapper> {
+        fn clone(&self) -> Self {
+            NodeStateWrapper::clone(self.as_ref())
+        }
+    }
+    impl PartialEq for dyn NodeStateWrapper {
+        fn eq(&self, other: &Self) -> bool {
+            NodeStateWrapper::eq(self, other)
+        }
+    }
+    impl Eq for dyn NodeStateWrapper {}
 }
 
-use std::any::Any;
-
 #[cfg(feature = "egui")]
-pub use ui::{NodeStateWrapper, NodeUiContext};
+pub use ui::{NodeInputUiOptions, NodeStateWrapper, NodeUiContext};

@@ -1,4 +1,14 @@
 {
+  "inlayHints": {
+    "maxLength": null,
+    "lifetimeElisionHints": {
+      "useParameterNames": true,
+      "enable": "skip_trivial"
+    },
+    "closureReturnTypeHints": {
+      "enable": "always"
+    }
+  },
   "lsp": {
     "rust-analyzer": {
       "initialization_options": {

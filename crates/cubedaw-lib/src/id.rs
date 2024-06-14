@@ -4,6 +4,7 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
+    num::NonZeroU64,
 };
 
 use ahash::{AHasher, HashMap, HashSet, RandomState};
@@ -21,7 +22,7 @@ fn new_hasher() -> AHasher {
 
 // Due to this being a u64, birthday attacks are _technically_ possible but fairly unlikely.
 // If this becomes an issue at any point in the future, switch this to a u128.
-type IdInner = u64;
+type IdInner = NonZeroU64;
 
 // The <T> is used to prevent accidental misuse of an Id<whatever> as an Id<something else>.
 // This is definitely _not_ what generics are meant to be used for, but it's convenient soooo......
@@ -32,36 +33,32 @@ pub struct Id<T = ()>(IdInner, PhantomData<T>);
 fn new_impl(source: impl Hash) -> IdInner {
     let mut hasher = new_hasher();
     source.hash(&mut hasher);
-    hasher.finish()
+    IdInner::new(hasher.finish()).expect("hash collision to 0")
 }
 
 fn with_impl(source: IdInner, child: impl Hash) -> IdInner {
     let mut hasher = new_hasher();
     source.hash(&mut hasher);
     child.hash(&mut hasher);
-    hasher.finish()
+    IdInner::new(hasher.finish()).expect("hash collision to 0")
 }
 
 fn arbitrary_impl() -> IdInner {
     std::thread_local! {
-        static COUNTER: RefCell<IdInner> = const { RefCell::new(0) };
+        static COUNTER: RefCell<IdInner> = RefCell::new(NonZeroU64::new(1).unwrap());
     }
 
     COUNTER.with(|x| {
         let mut x = x.borrow_mut();
-        *x += 1;
+        *x = x.checked_add(1).expect("u64 overflow");
         *x
     })
 }
 
 impl<T> Id<T> {
-    pub const fn zero() -> Self {
-        Self::from_raw(0)
-    }
-
-    pub const fn invalid() -> Self {
+    pub fn invalid() -> Self {
         // Random number. Most likely won't be equal to anything, ever.
-        Self::from_raw(0x4fccc597ae63b037)
+        Self::from_raw(NonZeroU64::new(0x4fccc597ae63b037).unwrap())
     }
 
     pub const fn from_raw(raw: IdInner) -> Self {
@@ -137,6 +134,7 @@ impl<T> Ord for Id<T> {
 }
 
 // TODO if these are a performance bottleneck copy egui's id hasher implementation
+#[derive(Clone)]
 pub struct IdMap<T, V = T> {
     map: HashMap<Id<T>, V>,
     // TODO revise the entire "tracking" thing
@@ -169,6 +167,18 @@ impl<T, V> IdMap<T, V> {
             .entry(id)
             .and_modify(|_| panic!("hash collision in IdMap"))
             .or_default()
+    }
+    pub fn force_get(&self, id: Id<T>) -> &V {
+        match self.get(id) {
+            Some(v) => v,
+            None => panic!("Nonexistent id: {id:?}"),
+        }
+    }
+    pub fn force_get_mut(&mut self, id: Id<T>) -> &mut V {
+        match self.get_mut(id) {
+            Some(v) => v,
+            None => panic!("Nonexistent id: {id:?}"),
+        }
     }
     pub fn insert(&mut self, id: Id<T>, val: V) {
         // if let Some(ref mut events) = self.events {
@@ -210,6 +220,7 @@ impl<T, V> IdMap<T, V> {
             .unwrap_or_else(|| panic!("nonexistent id: {id:?}"))
     }
 
+    // TODO make these functions give Id<T> instead of &Id<T>
     pub fn keys(&self) -> hash_map::Keys<'_, Id<T>, V> {
         self.map.keys()
     }
@@ -252,11 +263,27 @@ impl<T, V> Default for IdMap<T, V> {
 }
 
 impl<T, V> IntoIterator for IdMap<T, V> {
-    type IntoIter = std::collections::hash_map::IntoIter<Id<T>, V>;
+    type IntoIter = hash_map::IntoIter<Id<T>, V>;
     type Item = (Id<T>, V);
 
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
+    }
+}
+impl<'a, T, V> IntoIterator for &'a IdMap<T, V> {
+    type IntoIter = hash_map::Iter<'a, Id<T>, V>;
+    type Item = (&'a Id<T>, &'a V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+impl<'a, T, V> IntoIterator for &'a mut IdMap<T, V> {
+    type IntoIter = hash_map::IterMut<'a, Id<T>, V>;
+    type Item = (&'a Id<T>, &'a mut V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 impl<T, V: Debug> Debug for IdMap<T, V> {

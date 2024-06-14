@@ -1,84 +1,71 @@
 use std::fmt::Debug;
 
+use ahash::{HashMap, HashMapExt};
 use cubedaw_lib::{Id, IdMap};
 use egui::Vec2;
 
-use crate::context::StateTracker;
-
 mod selection_rect;
 pub use selection_rect::SelectionRect;
+mod node_search;
+pub use node_search::NodeSearch;
 
-pub trait SelectableUiData<T> {
-    type SelectEvent: SelectableUiEvent<T>;
-
-    fn set_selected(&mut self, selected: bool);
-    fn selected(&self) -> bool;
+trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
+    type Ui: SelectableUi;
+    type Command: Sized + 'static;
+    fn create_command(&self, selected: bool) -> Self::Command;
 }
-pub trait SelectableUiEvent<T>: crate::command::UiStateCommand {
-    fn new(id: Id<T>, selected: bool) -> Self
-    where
-        Self: Sized;
+trait SelectableUi: Sized + 'static {
+    fn selected(&self) -> bool;
 }
 
 mod impls {
-    use cubedaw_lib::{Id, Note, Section, Track};
+    use cubedaw_lib::Id;
 
-    use crate::{
-        command::{note::UiNoteSelect, section::UiSectionSelect, track::UiTrackSelect},
-        state::ui::{NoteUiState, SectionUiState, TrackUiState},
-    };
+    use super::{SelectablePath, SelectableUi};
 
-    use super::{SelectableUiData, SelectableUiEvent};
+    impl SelectablePath for Id<cubedaw_lib::Track> {
+        type Ui = crate::state::ui::TrackUiState;
+        type Command = crate::command::track::UiTrackSelect;
 
-    impl SelectableUiEvent<Section> for UiSectionSelect {
-        fn new(id: Id<Section>, selected: bool) -> Self
-        where
-            Self: Sized,
-        {
-            UiSectionSelect::new(id, selected)
+        fn create_command(&self, selected: bool) -> Self::Command {
+            Self::Command::new(*self, selected)
         }
     }
-    impl SelectableUiData<Section> for SectionUiState {
-        type SelectEvent = UiSectionSelect;
+    impl SelectableUi for crate::state::ui::TrackUiState {
         fn selected(&self) -> bool {
             self.selected
         }
-        fn set_selected(&mut self, selected: bool) {
-            self.selected = selected;
+    }
+    impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::Section>) {
+        type Ui = crate::state::ui::SectionUiState;
+        type Command = crate::command::section::UiSectionSelect;
+
+        fn create_command(&self, selected: bool) -> Self::Command {
+            Self::Command::new(self.0, self.1, selected)
         }
     }
-    impl SelectableUiEvent<Track> for UiTrackSelect {
-        fn new(id: Id<Track>, selected: bool) -> Self
-        where
-            Self: Sized,
-        {
-            UiTrackSelect::new(id, selected)
-        }
-    }
-    impl SelectableUiData<Track> for TrackUiState {
-        type SelectEvent = UiTrackSelect;
+    impl SelectableUi for crate::state::ui::SectionUiState {
         fn selected(&self) -> bool {
             self.selected
         }
-        fn set_selected(&mut self, selected: bool) {
-            self.selected = selected;
+    }
+    impl SelectablePath
+        for (
+            Id<cubedaw_lib::Track>,
+            Id<cubedaw_lib::Section>,
+            Id<cubedaw_lib::Note>,
+        )
+    {
+        type Ui = crate::state::ui::NoteUiState;
+        type Command = crate::command::note::UiNoteSelect;
+
+        fn create_command(&self, selected: bool) -> Self::Command {
+            Self::Command::new(self.0, self.1, self.2, selected)
         }
     }
-    impl SelectableUiEvent<Note> for UiNoteSelect {
-        fn new(id: Id<Note>, selected: bool) -> Self
-        where
-            Self: Sized,
-        {
-            UiNoteSelect::new(id, selected)
-        }
-    }
-    impl SelectableUiData<Note> for NoteUiState {
-        type SelectEvent = UiNoteSelect;
+    impl SelectableUi for crate::state::ui::NoteUiState {
         fn selected(&self) -> bool {
             self.selected
-        }
-        fn set_selected(&mut self, selected: bool) {
-            self.selected = selected;
         }
     }
 }
@@ -117,17 +104,15 @@ impl DragHandler {
         self.is_dragging.then_some(self.raw_movement.y)
     }
 
-    pub fn handle_snapped<T, U: SelectableUiData<T>, R, F: Fn(Vec2) -> Vec2>(
+    pub fn handle_snapped<T: SelectablePath, R, F: Fn(Vec2) -> Vec2>(
         &mut self,
-        ui_data: &IdMap<T, U>,
-        f: impl FnOnce(&mut Prepared<T, U, F>) -> R,
+        f: impl FnOnce(&mut Prepared<T, F>) -> R,
         snap_fn: F,
-    ) -> DragHandlerResult<R> {
+    ) -> DragHandlerResult<T, R> {
         let mut prepared = Prepared {
             drag_handler: self,
-            ui_data,
-            tracker: StateTracker::new(),
-            single_thing_clicked: None,
+            selection_changes: HashMap::new(),
+            should_deselect_everything: false,
             finished_movement: None,
             new_drag_movement: None,
             canceled: false,
@@ -140,21 +125,18 @@ impl DragHandler {
     }
 }
 
-pub struct Prepared<'a, 'b, T, U: SelectableUiData<T>, F: Fn(Vec2) -> Vec2> {
+pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> {
     drag_handler: &'a mut DragHandler,
-    ui_data: &'b IdMap<T, U>,
-    tracker: StateTracker,
-    single_thing_clicked: Option<Id<T>>,
+    // Vec<(changed id, whether it is selected)>
+    selection_changes: HashMap<T, bool>,
+    should_deselect_everything: bool,
     finished_movement: Option<Vec2>,
     new_drag_movement: Option<Vec2>,
     canceled: bool,
     snap_fn: F,
 }
 
-impl<'a, 'b, T, U: SelectableUiData<T>, F: Fn(Vec2) -> Vec2> Prepared<'a, 'b, T, U, F> {
-    pub fn data(&self) -> &'_ IdMap<T, U> {
-        self.ui_data
-    }
+impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
     pub fn set_scale(&mut self, scale: impl Into<Vec2>) {
         self.drag_handler.set_scale(scale)
     }
@@ -172,19 +154,23 @@ impl<'a, 'b, T, U: SelectableUiData<T>, F: Fn(Vec2) -> Vec2> Prepared<'a, 'b, T,
             .map(|y| (self.snap_fn)(Vec2::new(0.0, y)).y)
     }
 
-    pub fn process_interaction(&mut self, resp: egui::Response, id: Id<T>) {
-        let Some(ui_data) = self.ui_data.get(id) else {
-            // TODO handle this better
-            eprintln!("DragHandler::process_interaction called with nonexistent id: {id:?}");
-            return;
-        };
+    pub fn process_interaction(
+        &mut self,
+        resp: egui::Response,
+        path: T,
+        is_currently_selected: bool,
+    ) {
         if resp.drag_started() {
             self.new_drag_movement = Some(Vec2::ZERO);
         }
-        if resp.clicked() || (resp.drag_started() && !ui_data.selected()) {
-            self.tracker.add(U::SelectEvent::new(id, true));
-            if !resp.ctx.input(|i| i.modifiers.shift) {
-                self.single_thing_clicked = Some(id);
+        if resp.clicked() || (resp.drag_started() && !is_currently_selected) {
+            if resp.ctx.input(|i| i.modifiers.shift) {
+                // if user shift-clicks, toggle the selectedness without affecting anything else
+                self.selection_changes.insert(path, !is_currently_selected);
+            } else {
+                // if user clicks without pressing shift,
+                self.should_deselect_everything = true;
+                self.selection_changes.insert(path, true);
             }
         }
         if resp.dragged() {
@@ -201,19 +187,12 @@ impl<'a, 'b, T, U: SelectableUiData<T>, F: Fn(Vec2) -> Vec2> Prepared<'a, 'b, T,
         }
     }
 
-    fn end(mut self) -> DragHandlerResult<()> {
+    fn end(self) -> DragHandlerResult<T, ()> {
         if let Some(new_drag_movement) = self.new_drag_movement {
             self.drag_handler.is_dragging = true;
             self.drag_handler.raw_movement += new_drag_movement * self.drag_handler.scale;
         }
 
-        if let Some(single_thing_clicked) = self.single_thing_clicked {
-            for &id in self.ui_data.keys() {
-                if id != single_thing_clicked {
-                    self.tracker.add(U::SelectEvent::new(id, false));
-                }
-            }
-        }
         let movement = if let Some(finished_movement) = self.finished_movement {
             self.drag_handler.reset();
             Some((self.snap_fn)(finished_movement))
@@ -226,22 +205,26 @@ impl<'a, 'b, T, U: SelectableUiData<T>, F: Fn(Vec2) -> Vec2> Prepared<'a, 'b, T,
 
         DragHandlerResult {
             movement,
-            tracker: self.tracker,
+            should_deselect_everything: self.should_deselect_everything,
+            selection_changes: self.selection_changes,
             inner: (),
         }
     }
 }
 
-pub struct DragHandlerResult<R> {
+pub struct DragHandlerResult<T: SelectablePath, R> {
     movement: Option<Vec2>,
-    tracker: StateTracker,
+    should_deselect_everything: bool,
+    selection_changes: HashMap<T, bool>,
     inner: R,
 }
 
-impl<R> DragHandlerResult<R> {
-    pub fn apply(mut self, tracker: &mut StateTracker) -> Self {
-        tracker.extend(self.tracker.take());
-        self
+impl<T: SelectablePath, R> DragHandlerResult<T, R> {
+    pub fn selection_changes(&self) -> &HashMap<T, bool> {
+        &self.selection_changes
+    }
+    pub fn should_deselect_everything(&self) -> bool {
+        self.should_deselect_everything
     }
     pub fn movement(&self) -> Option<Vec2> {
         self.movement
@@ -250,16 +233,18 @@ impl<R> DragHandlerResult<R> {
         self.inner
     }
 
-    fn with_inner<S>(self, inner: S) -> DragHandlerResult<S> {
+    fn with_inner<S>(self, inner: S) -> DragHandlerResult<T, S> {
         let Self {
             movement,
-            tracker,
+            should_deselect_everything,
+            selection_changes,
             inner: _,
         } = self;
 
         DragHandlerResult {
             movement,
-            tracker,
+            should_deselect_everything,
+            selection_changes,
             inner,
         }
     }

@@ -1,24 +1,32 @@
-use std::any::Any;
-
 use cubedaw_lib::{Id, NodeData, NodeStateWrapper, Track};
 
 use crate::StateCommand;
 
+#[derive(Clone)]
 pub struct NodeUiUpdate {
+    track_id: Id<Track>,
     id: Id<NodeData>,
     data: Box<dyn NodeStateWrapper>,
 }
 
 impl NodeUiUpdate {
-    pub fn new(id: Id<NodeData>, data: Box<dyn NodeStateWrapper>) -> Self {
-        Self { id, data }
+    pub fn new(track_id: Id<Track>, id: Id<NodeData>, data: Box<dyn NodeStateWrapper>) -> Self {
+        Self { track_id, id, data }
     }
 }
 
 impl NodeUiUpdate {
     fn swap_data(&mut self, state: &mut cubedaw_lib::State) {
-        let node = state.node_datas.get_mut(self.id).expect("nonexistent node");
-        if (*self.data).type_id() != node.inner.type_id() {
+        let node = state
+            .tracks
+            .get_mut(self.track_id)
+            .expect("nonexistent track")
+            .patch
+            .node_mut(self.id)
+            .expect("nonexistent node");
+        if NodeStateWrapper::type_id(self.data.as_ref())
+            != NodeStateWrapper::type_id(node.inner.as_ref())
+        {
             panic!("tried to replace NodeData with NodeData of different type")
         }
         core::mem::swap(&mut self.data, &mut node.inner);
@@ -34,6 +42,7 @@ impl StateCommand for NodeUiUpdate {
     }
 }
 
+#[derive(Clone)]
 pub struct NodeAddOrRemove {
     id: Id<NodeData>,
     track_id: Id<Track>,
@@ -77,7 +86,7 @@ impl NodeAddOrRemove {
             .get_mut(self.track_id)
             .expect("tried to add node to nonexistent section")
             .patch
-            .insert_node(&mut state.node_datas, self.id, node_data);
+            .insert_node(self.id, node_data);
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
         let node_data = state
@@ -85,7 +94,7 @@ impl NodeAddOrRemove {
             .get_mut(self.track_id)
             .expect("tried to remove node from nonexistent section")
             .patch
-            .remove_node(&mut state.node_datas, self.id);
+            .take_node(self.id);
 
         if self.data.replace(node_data).is_some() {
             panic!("called execute_remove on nonempty NodeAddOrRemove");

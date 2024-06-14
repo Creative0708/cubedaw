@@ -3,6 +3,7 @@ use cubedaw_lib::{Id, Track};
 use crate::StateCommand;
 
 // TODO revise this name; maybe it's fine but it feels awkward
+#[derive(Clone)]
 pub struct TrackAddOrRemove {
     id: Id<Track>,
     data: Option<Track>,

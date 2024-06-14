@@ -22,7 +22,7 @@ pub struct Context<'a> {
     pub tabs: &'a mut Tabs,
 
     // State tracker to track events that mutate state or ui_state.
-    pub tracker: StateTracker,
+    pub tracker: UiStateTracker,
 
     dock_events: Vec<DockEvent>,
 
@@ -44,7 +44,7 @@ impl<'a> Context<'a> {
             ephemeral_state,
             tabs,
 
-            tracker: StateTracker::new(),
+            tracker: UiStateTracker::new(),
             dock_events: Vec::new(),
 
             time_since_last_frame,
@@ -142,10 +142,15 @@ pub enum DockEvent {
     RemoveTabFromMap(Id<Tab>),
 }
 
-#[derive(Default)]
-pub struct StateTracker(Vec<Box<dyn UiStateCommand>>);
+pub struct ContextResult {
+    pub dock_events: Vec<DockEvent>,
+    pub state_events: Vec<Box<dyn UiStateCommand>>,
+}
 
-impl StateTracker {
+#[derive(Default)]
+pub struct UiStateTracker(Vec<Box<dyn UiStateCommand>>);
+
+impl UiStateTracker {
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -155,15 +160,10 @@ impl StateTracker {
     pub fn extend(&mut self, other: Self) {
         self.0.extend(other.0);
     }
-    pub fn take(&mut self) -> StateTracker {
+    pub fn take(&mut self) -> UiStateTracker {
         core::mem::take(self)
     }
     pub fn finish(self) -> Vec<Box<dyn UiStateCommand>> {
         self.0
     }
-}
-
-pub struct ContextResult {
-    pub dock_events: Vec<DockEvent>,
-    pub state_events: Vec<Box<dyn UiStateCommand>>,
 }

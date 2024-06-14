@@ -1,4 +1,4 @@
-use crate::util::{DragHandler, SelectionRect};
+use crate::util::{DragHandler, NodeSearch, SelectionRect};
 
 pub struct EphemeralState {
     pub section_drag: DragHandler,
@@ -8,6 +8,8 @@ pub struct EphemeralState {
     pub selection_rect: SelectionRect,
 
     pub is_playing: bool,
+
+    pub node_search: NodeSearch,
 }
 
 impl Default for EphemeralState {
@@ -20,6 +22,8 @@ impl Default for EphemeralState {
             selection_rect: SelectionRect::new(),
 
             is_playing: false,
+
+            node_search: NodeSearch::default(),
         }
     }
 }

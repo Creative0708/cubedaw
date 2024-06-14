@@ -2,6 +2,7 @@ use cubedaw_lib::{Id, Range, Section, Track};
 
 use crate::StateCommand;
 
+#[derive(Clone)]
 pub struct SectionMove {
     track_id: Id<Track>,
     starting_range: Range,
@@ -23,7 +24,10 @@ impl StateCommand for SectionMove {
         let track = state
             .tracks
             .get_mut(self.track_id)
-            .expect("nonexistent track id in SectionMove");
+            .expect("nonexistent track id in SectionMove")
+            .inner
+            .section_mut()
+            .expect("track doesn't have sections");
 
         track.move_section(self.starting_range, self.new_start_pos);
     }
@@ -31,7 +35,10 @@ impl StateCommand for SectionMove {
         let track = state
             .tracks
             .get_mut(self.track_id)
-            .expect("nonexistent track id in SectionMove");
+            .expect("nonexistent track id in SectionMove")
+            .inner
+            .section_mut()
+            .expect("track isn't a synth track");
 
         track.move_section(
             self.starting_range + (self.new_start_pos - self.starting_range.start),
@@ -41,11 +48,12 @@ impl StateCommand for SectionMove {
 }
 
 // TODO see TrackAddOrRemove
+#[derive(Clone)]
 pub struct SectionAddOrRemove {
+    track_id: Id<Track>,
     id: Id<Section>,
     start_pos: i64,
     data: Option<Section>,
-    track_id: Id<Track>,
     is_removal: bool,
 }
 
@@ -69,6 +77,9 @@ impl SectionAddOrRemove {
         }
     }
 
+    pub fn track_id(&self) -> Id<Track> {
+        self.track_id
+    }
     pub fn id(&self) -> Id<Section> {
         self.id
     }
@@ -81,8 +92,10 @@ impl SectionAddOrRemove {
             .tracks
             .get_mut(self.track_id)
             .expect("tried to add section to nonexistent track")
+            .inner
+            .section_mut()
+            .expect("track isn't a section track")
             .add_section(
-                &mut state.sections,
                 self.id,
                 self.start_pos,
                 self.data
@@ -96,7 +109,10 @@ impl SectionAddOrRemove {
                 .tracks
                 .get_mut(self.track_id)
                 .expect("tried to add section to nonexistent track")
-                .remove_section(&mut state.sections, self.id, self.start_pos),
+                .inner
+                .section_mut()
+                .expect("track isn't a section track")
+                .remove_section(self.id, self.start_pos),
         );
     }
 }

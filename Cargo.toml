@@ -5,6 +5,7 @@ package.rust-version = "1.76.0"
 members = [
     "crates/cubedaw",
     "crates/cubedaw-lib",
+    "crates/cubedaw-workerlib",
     "crates/cubedaw-node",
     "crates/cubedaw-worker",
     "crates/cubedaw-command",
@@ -22,3 +23,8 @@ egui = { version = "0.27.2", features = [] }
 ahash = "0.8.11"
 smallvec = "1.13.2"
 bytemuck = "1.15.0"
+crossbeam = "0.8.4"
+# TODO meminterval works but it's missing some features (like iterating over an entire IntervalTree).
+# however there doesn't seem to be a viable alternative for a low-dependency mutable interval tree already on crates.io
+# possibly contribute back to meminterval if they're fine with it or fork it?
+meminterval = "0.4.1"

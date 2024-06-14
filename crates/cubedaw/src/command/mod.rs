@@ -1,6 +1,6 @@
 // Like cubedaw-command, but allowing
 
-use cubedaw_command::StateCommand;
+use cubedaw_command::{StateCommand, StateCommandWrapper};
 
 use crate::UiState;
 
@@ -20,7 +20,7 @@ pub trait UiStateCommand: 'static + Send {
     // TODO should there be a default impl? kinda seems like a footgun if you forget to implement it
     // another TODO currently inner() is used to determine whether a UiStateCommand is "weak"; i.e. whether
     // it can get grouped with other commands in the undo stack. something something look its hard to explain ok
-    fn inner(&mut self) -> Option<&mut dyn StateCommand> {
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
         None
     }
 }
@@ -29,7 +29,7 @@ impl<T: StateCommand> UiStateCommand for T {
     fn ui_execute(&mut self, _ui_state: &mut UiState) {}
     fn ui_rollback(&mut self, _ui_state: &mut UiState) {}
 
-    fn inner(&mut self) -> Option<&mut dyn StateCommand> {
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
         Some(self)
     }
 }

@@ -1,21 +1,65 @@
 use std::collections::BTreeMap;
 
-use crate::{Id, IdMap, Patch, Range, Section};
+use crate::{Id, IdMap, IdSet, Patch, Range, Section};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Track {
     pub patch: Patch,
-    sections: BTreeMap<Range, Id<Section>>,
+    pub inner: TrackInner,
 }
 
 impl Track {
     pub fn new_empty(patch: Patch) -> Self {
         Self {
             patch,
-            sections: Default::default(),
+            inner: TrackInner::Section(SectionTrack {
+                section_map: IdMap::new(),
+                sections: Default::default(),
+            }),
         }
     }
+}
 
+#[derive(Debug, Clone)]
+pub enum TrackInner {
+    Section(SectionTrack),
+    Group(GroupTrack),
+}
+
+impl TrackInner {
+    pub fn section(&self) -> Option<&SectionTrack> {
+        match self {
+            Self::Section(synth_track) => Some(synth_track),
+            _ => None,
+        }
+    }
+    pub fn section_mut(&mut self) -> Option<&mut SectionTrack> {
+        match self {
+            Self::Section(synth_track) => Some(synth_track),
+            _ => None,
+        }
+    }
+    pub fn group(&self) -> Option<&GroupTrack> {
+        match self {
+            Self::Group(group_track) => Some(group_track),
+            _ => None,
+        }
+    }
+    pub fn group_mut(&mut self) -> Option<&mut GroupTrack> {
+        match self {
+            Self::Group(group_track) => Some(group_track),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SectionTrack {
+    section_map: IdMap<Section>,
+    sections: BTreeMap<Range, Id<Section>>,
+}
+
+impl SectionTrack {
     pub fn check_overlap(&self) {
         // TODO change to map_windows when it's stabilized
 
@@ -52,28 +96,22 @@ impl Track {
         }
     }
 
-    pub fn add_section<'a>(
+    pub fn add_section(
         &mut self,
-        sections: &'a mut IdMap<Section>,
         section_id: Id<Section>,
         start_pos: i64,
         section: Section,
-    ) -> &'a mut Section {
+    ) -> &mut Section {
         let section_range = Range::start_length(start_pos, section.length);
         self.check_overlap_with(section_range);
 
-        let section = sections.insert_and_get_mut(section_id, section);
+        let section = self.section_map.insert_and_get_mut(section_id, section);
         self.sections.insert(section_range, section_id);
         section
     }
 
-    pub fn remove_section(
-        &mut self,
-        sections: &mut IdMap<Section>,
-        section_id: Id<Section>,
-        start_pos: i64,
-    ) -> Section {
-        let section = sections.take(section_id);
+    pub fn remove_section(&mut self, section_id: Id<Section>, start_pos: i64) -> Section {
+        let section = self.section_map.take(section_id);
         assert!(
             self.sections
                 .remove(&Range::start_length(start_pos, section.length))
@@ -94,14 +132,38 @@ impl Track {
         self.sections.insert(new_range, section_id);
     }
 
-    pub fn get_section_at(&self, pos: i64) -> Option<(Range, Id<Section>)> {
+    pub fn section_at(&self, pos: i64) -> Option<(Range, Id<Section>)> {
         self.sections
             .range(..Range::unbounded_end(pos))
             .next_back()
             .and_then(|(&range, &id)| range.contains(pos).then_some((range, id)))
     }
 
-    pub fn sections(&self) -> impl Iterator<Item = (Range, Id<Section>)> + '_ {
-        self.sections.iter().map(|x| (*x.0, *x.1))
+    pub fn section(&self, id: Id<Section>) -> Option<&Section> {
+        self.section_map.get(id)
+    }
+    pub fn section_mut(&mut self, id: Id<Section>) -> Option<&mut Section> {
+        self.section_map.get_mut(id)
+    }
+
+    pub fn sections(&self) -> impl Iterator<Item = (Range, Id<Section>, &Section)> {
+        self.sections.iter().map(|(&range, &id)| {
+            (
+                range,
+                id,
+                self.section_map.get(id).unwrap_or_else(|| unreachable!()),
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GroupTrack {
+    pub children: IdSet<Track>,
+}
+
+impl GroupTrack {
+    pub fn new() -> Self {
+        Default::default()
     }
 }

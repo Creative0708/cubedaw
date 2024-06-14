@@ -1,4 +1,4 @@
-use cubedaw_command::{track::TrackAddOrRemove, StateCommand};
+use cubedaw_command::track::TrackAddOrRemove;
 use cubedaw_lib::{Id, Track};
 
 use crate::state::ui::TrackUiState;
@@ -63,7 +63,7 @@ impl UiStateCommand for UiTrackAddOrRemove {
         }
     }
 
-    fn inner(&mut self) -> Option<&mut dyn StateCommand> {
+    fn inner(&mut self) -> Option<&mut dyn cubedaw_command::StateCommandWrapper> {
         Some(&mut self.inner)
     }
 }

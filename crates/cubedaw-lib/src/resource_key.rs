@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use crate::Id;
 
+#[derive(Clone)]
 pub struct ResourceKey {
-    str: String,
+    str: Arc<str>,
     divider: usize,
 }
 
@@ -23,13 +26,13 @@ impl ResourceKey {
         }
 
         Self {
-            str: format!("{namespace}:{key}"),
+            str: Arc::from(format!("{namespace}:{key}")),
             divider: namespace.len(),
         }
     }
     // TODO make this return Option<Self> or Result<Self, _>
-    pub fn new(str: String) -> Self {
-        assert!(!str.is_empty() && !str.is_ascii());
+    pub fn new(str: &str) -> Self {
+        assert!(!str.is_empty() && str.is_ascii());
 
         let mut divider = None;
         for (i, b) in str.bytes().enumerate() {
@@ -38,15 +41,19 @@ impl ResourceKey {
                     panic!("duplicate : in ResourceKey");
                 }
                 divider = Some(i);
+            } else {
+                assert!(matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.'))
             }
-            assert!(matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.'))
         }
 
         let Some(divider) = divider else {
             panic!("no : in ResourceKey");
         };
 
-        Self { divider, str }
+        Self {
+            divider,
+            str: Arc::from(str),
+        }
     }
 
     pub fn as_str(&self) -> &str {

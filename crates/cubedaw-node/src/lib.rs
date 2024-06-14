@@ -1,4 +1,4 @@
-use cubedaw_lib::{Id, NodeState, NodeStateWrapper};
+use cubedaw_lib::{NodeState, NodeStateWrapper};
 
 pub type DynNode = Box<dyn NodeWrapper>;
 
@@ -36,58 +36,47 @@ pub trait NodeContext<'a> {
     fn output(&self, index: u32) -> DataDrain<'a>;
 }
 
-pub trait Node: 'static + Send {
+pub trait Node: 'static + Sized + Send + Clone {
     // the reason for the whole Self::Ui thing is to have a way to have the ui thread render without waiting for thread synchronization
     // (which could cause very bad ui delays.)
-    // also we need to serialize the ui to disk and this provides a convenient struct to do so
+    // also we need to be able to serialize the ui to disk and this provides a convenient struct to do so
     type State: NodeState;
 
-    fn id(&self) -> Id<DynNode>;
-    // -> (# of inputs, # of outputs)
-    fn spec(&self) -> (u32, u32);
+    fn new() -> Self;
+    fn new_state(creation_ctx: NodeCreationContext<'_>) -> Self::State;
 
-    fn process(&mut self, ctx: &mut dyn NodeContext<'_>);
-
-    /// Creates a `Self::State` representing the current state
-    fn create_state(&self) -> Self::State;
-    /// Updates the current state from a `Self::State`
-    fn update_from_state(&mut self, data: Self::State);
+    fn process(&mut self, state: &Self::State, ctx: &mut dyn NodeContext<'_>);
 }
 
-pub trait NodeWrapper: Send {
-    fn id(&self) -> Id<DynNode>;
-    fn spec(&self) -> (u32, u32);
-    fn process(&mut self, ctx: &mut dyn NodeContext<'_>);
+mod sealed {
+    pub trait Sealed {}
+}
+/// Object-safe wrapper for `Node`. See [`Node`] for the actual functionality.
+pub trait NodeWrapper: Send + sealed::Sealed {
+    fn process(&mut self, state: &dyn NodeStateWrapper, ctx: &mut dyn NodeContext<'_>);
 
-    fn create_state(&self) -> Box<dyn NodeStateWrapper>;
-
-    fn update_from_state(&mut self, data: Box<dyn NodeStateWrapper>);
+    fn clone(&self) -> Box<dyn NodeWrapper>;
 }
 
+impl<T: Node> sealed::Sealed for T {}
 impl<T: Node> NodeWrapper for T {
-    fn id(&self) -> Id<DynNode> {
-        self.id()
+    fn process(&mut self, state: &dyn NodeStateWrapper, ctx: &mut dyn NodeContext<'_>) {
+        self.process(state.downcast_ref().expect("mismatched state type"), ctx)
     }
 
-    fn spec(&self) -> (u32, u32) {
-        self.spec()
+    fn clone(&self) -> Box<dyn NodeWrapper> {
+        Box::new(self.clone())
     }
+}
+impl Clone for Box<dyn NodeWrapper> {
+    fn clone(&self) -> Self {
+        NodeWrapper::clone(self.as_ref())
+    }
+}
 
-    fn process(&mut self, ctx: &mut dyn NodeContext<'_>) {
-        self.process(ctx)
-    }
-
-    fn create_state(&self) -> Box<dyn NodeStateWrapper> {
-        Box::new(Node::create_state(self))
-    }
-
-    fn update_from_state(&mut self, data: Box<dyn NodeStateWrapper>) {
-        Node::update_from_state(
-            self,
-            *data
-                .into_any()
-                .downcast()
-                .expect("update_from_state called with state of different type"),
-        )
-    }
+// TODO should this _really_ be in cubedaw-node? seems like it would fit better in cubedaw
+// but i don't know how that would work
+#[derive(Default)]
+pub struct NodeCreationContext<'a> {
+    pub alias: Option<std::borrow::Cow<'a, str>>,
 }

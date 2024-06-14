@@ -1,6 +1,6 @@
-use std::collections::BTreeSet;
+use meminterval::IntervalTree;
 
-use crate::{Id, IdMap, Note};
+use crate::{Id, IdMap, Note, Range};
 
 #[derive(Clone, Debug)]
 /// A section on a track, independent of a start position
@@ -8,8 +8,11 @@ pub struct Section {
     pub name: String,
     pub length: u64,
 
-    // notes can share the same position, so this allows that by ordering by Ids if the Ranges match
-    notes: BTreeSet<(i64, Id<Note>)>,
+    // an invariant is that there is an entry for a note in note_map iff there is one in notes.
+    // TODO possibly convert to unsafe for optimizations???
+    note_map: IdMap<Note>,
+
+    notes: IntervalTree<i64, Id<Note>>,
 }
 
 impl Section {
@@ -17,56 +20,60 @@ impl Section {
         Self {
             name,
             length,
-            notes: BTreeSet::new(),
+
+            note_map: IdMap::new(),
+
+            notes: IntervalTree::new(),
         }
     }
 
-    pub fn insert_note(
-        &mut self,
-        notes: &mut IdMap<Note>,
-        start_pos: i64,
-        note_id: Id<Note>,
-        note: Note,
-    ) {
-        notes.insert(note_id, note);
-        self.notes.insert((start_pos, note_id));
+    pub fn insert_note(&mut self, start_pos: i64, note_id: Id<Note>, note: Note) {
+        self.notes.insert(note.range_with(start_pos), note_id);
+        self.note_map.insert(note_id, note);
     }
 
-    pub fn remove_note(
-        &mut self,
-        notes: &mut IdMap<Note>,
-        start_pos: i64,
-        note_id: Id<Note>,
-    ) -> Note {
-        let note = notes.take(note_id);
-        if !self.notes.remove(&(start_pos, note_id)) {
-            panic!(
-                "note {start_pos}, {note_id:?} in state.notes but not in internal note map {:?}",
-                self.notes
-            );
-        }
+    pub fn remove_note(&mut self, start_pos: i64, note_id: Id<Note>) -> Note {
+        let note = self.note_map.take(note_id);
+        self.notes.delete(note.range_with(start_pos));
         note
     }
 
     pub fn move_note(
         &mut self,
-        notes: &mut IdMap<Note>,
         note_start: i64,
         note_id: Id<Note>,
         new_start: i64,
         pitch_offset: i32,
     ) {
-        if !self.notes.remove(&(note_start, note_id)) {
-            panic!("Tried to remove nonexistent note at {note_start:?}: {note_id:?}");
-        }
-        let note = notes
+        let note = self
+            .note_map
             .get_mut(note_id)
             .expect("note in self.notes but not in state.notes????");
+        self.notes.delete(note.range_with(note_start));
         note.pitch += pitch_offset;
-        self.notes.insert((new_start, note_id));
+        self.notes.insert(note.range_with(new_start), note_id);
     }
 
-    pub fn notes(&self) -> impl Iterator<Item = (i64, Id<Note>)> + '_ {
-        self.notes.iter().copied()
+    pub fn note(&self, id: Id<Note>) -> Option<&Note> {
+        self.note_map.get(id)
+    }
+    pub fn note_mut(&mut self, id: Id<Note>) -> Option<&mut Note> {
+        self.note_map.get_mut(id)
+    }
+
+    pub fn notes_intersecting(&self, range: Range) -> impl Iterator<Item = (i64, Id<Note>, &Note)> {
+        self.notes.query(range).map(|entry| {
+            (
+                entry.interval.start,
+                *entry.value,
+                self.note_map
+                    .get(*entry.value)
+                    .expect("id in self.notes but not in self.note_map???"),
+            )
+        })
+    }
+    pub fn notes(&self) -> impl Iterator<Item = (i64, Id<Note>, &Note)> {
+        // TODO is there _really_ not a better way?
+        self.notes_intersecting(Range::EVERYTHING)
     }
 }

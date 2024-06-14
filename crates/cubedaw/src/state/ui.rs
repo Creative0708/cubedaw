@@ -3,10 +3,7 @@ use egui::Vec2;
 
 #[derive(Debug)]
 pub struct UiState {
-    pub sections: IdMap<Section, SectionUiState>,
-    pub notes: IdMap<Note, NoteUiState>,
     pub tracks: IdMap<Track, TrackUiState>,
-    pub nodes: IdMap<NodeData, NodeUiState>,
 
     // An ordered track list. This is the order with which the tracks are displayed in the track tab.
     pub track_list: Vec<Id<Track>>,
@@ -20,10 +17,7 @@ impl UiState {}
 impl Default for UiState {
     fn default() -> Self {
         Self {
-            sections: IdMap::new(),
             tracks: IdMap::new(),
-            notes: IdMap::new(),
-            nodes: IdMap::new(),
 
             track_list: Vec::new(),
 
@@ -32,15 +26,12 @@ impl Default for UiState {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct SectionUiState {
-    pub selected: bool,
-}
-
 #[derive(Debug)]
 pub struct TrackUiState {
     pub name: String,
     pub selected: bool,
+    pub patch: PatchUiState,
+    pub sections: IdMap<Section, SectionUiState>,
 }
 
 impl Default for TrackUiState {
@@ -48,6 +39,30 @@ impl Default for TrackUiState {
         Self {
             name: "Unnamed Track".into(),
             selected: false,
+            patch: PatchUiState::default(),
+            sections: IdMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PatchUiState {
+    pub nodes: IdMap<NodeData, NodeUiState>,
+}
+
+#[derive(Debug)]
+pub struct SectionUiState {
+    pub name: String,
+    pub selected: bool,
+    pub notes: IdMap<Note, NoteUiState>,
+}
+
+impl Default for SectionUiState {
+    fn default() -> Self {
+        Self {
+            name: "Unnamed Section".into(),
+            selected: false,
+            notes: IdMap::new(),
         }
     }
 }

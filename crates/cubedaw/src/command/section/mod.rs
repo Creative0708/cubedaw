@@ -1,5 +1,5 @@
 use cubedaw_command::section::SectionAddOrRemove;
-use cubedaw_lib::{Id, Section, Track};
+use cubedaw_lib::{Id, IdMap, Section, Track};
 
 use crate::state::ui::SectionUiState;
 
@@ -24,13 +24,23 @@ impl UiSectionAddOrRemove {
         }
     }
 
-    fn execute_add(&mut self, ui_state: &mut crate::UiState) {
-        ui_state
+    fn sections<'a>(
+        &self,
+        ui_state: &'a mut crate::UiState,
+    ) -> &'a mut IdMap<Section, SectionUiState> {
+        &mut ui_state
+            .tracks
+            .get_mut(self.inner.track_id())
+            .expect("nonexistent track")
             .sections
+    }
+
+    fn execute_add(&mut self, ui_state: &mut crate::UiState) {
+        self.sections(ui_state)
             .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
     }
     fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
-        self.ui_data = ui_state.sections.remove(self.inner.id());
+        self.ui_data = self.sections(ui_state).remove(self.inner.id());
     }
 }
 
@@ -49,30 +59,44 @@ impl UiStateCommand for UiSectionAddOrRemove {
             self.execute_remove(ui_state);
         }
     }
-    fn inner(&mut self) -> Option<&mut dyn cubedaw_command::StateCommand> {
+    fn inner(&mut self) -> Option<&mut dyn cubedaw_command::StateCommandWrapper> {
         Some(&mut self.inner)
     }
 }
 
 pub struct UiSectionSelect {
+    track_id: Id<Track>,
     id: Id<Section>,
     selected: bool,
 }
 
 impl UiSectionSelect {
-    pub fn new(id: Id<Section>, selected: bool) -> Self {
-        Self { id, selected }
+    pub fn new(track_id: Id<Track>, id: Id<Section>, selected: bool) -> Self {
+        Self {
+            track_id,
+            id,
+            selected,
+        }
+    }
+
+    fn section<'a>(&self, ui_state: &'a mut crate::UiState) -> Option<&'a mut SectionUiState> {
+        ui_state
+            .tracks
+            .get_mut(self.track_id)
+            .expect("tried selecting section on nonexistent track")
+            .sections
+            .get_mut(self.id)
     }
 }
 
 impl UiStateCommand for UiSectionSelect {
     fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
-        if let Some(ui_data) = ui_state.sections.get_mut(self.id) {
+        if let Some(ui_data) = self.section(ui_state) {
             ui_data.selected = self.selected;
         }
     }
     fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
-        if let Some(ui_data) = ui_state.sections.get_mut(self.id) {
+        if let Some(ui_data) = self.section(ui_state) {
             ui_data.selected = !self.selected;
         }
     }
