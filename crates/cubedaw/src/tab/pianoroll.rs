@@ -41,7 +41,7 @@ impl crate::Screen for PianoRollTab {
         Self {
             id: Id::arbitrary(),
 
-            track: ctx.get_single_selected_track(),
+            track: ctx.ui_state.get_single_selected_track(),
 
             units_per_pitch: 16.0,
             units_per_tick: 0.5,
@@ -226,7 +226,9 @@ impl PianoRollTab {
 
         // Handle drawn note
 
-        let result = ctx.ephemeral_state.note_drag.handle_snapped( |prepared| {
+        let result = ctx.ephemeral_state.note_drag.handle_snapped( |egui::Vec2 { x, y }| {
+            vec2(snap_pos(x.round() as _, self.units_per_tick) as _, y.round())
+        },|prepared| {
             let mut handle_note = |relative_start_pos: i64, note: &Note, section_and_note_id: Option<(Id<Section>, Id<Note>)>, is_selected: bool| {
                 let movement = prepared.movement().unwrap_or_default();
 
@@ -265,7 +267,7 @@ impl PianoRollTab {
                         prepared.set_scale((1.0 / self.units_per_tick, 1.0 / self.units_per_pitch));
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
-                    prepared.process_interaction(note_interaction, (track_id, section_id, note_id), true);
+                    prepared.process_interaction(note_interaction, (track_id, section_id, note_id), is_selected);
                 }
             };
 
@@ -321,8 +323,6 @@ impl PianoRollTab {
             if let Some((start_pos, ref note)) = self.currently_drawn_note {
                 handle_note(start_pos, note, None, true);
             }
-        }, |egui::Vec2 { x, y }| {
-            vec2(snap_pos(x.round() as _, self.units_per_tick) as _, y.round())
         });//.apply(&mut ctx.tracker).movement();
         {
             let should_deselect_everything = result.should_deselect_everything();
@@ -336,6 +336,13 @@ impl PianoRollTab {
                                 ctx.tracker.add(UiNoteSelect::new(track_id2, section_id2, note_id2, false));
                             }
                         }
+                    }
+                }
+                for (&(track_id, section_id, note_id), &selected) in selection_changes {
+                    // only add a command when a note should be selected and isn't currently selected.
+                    // the deselection is handled in the for loop before this one
+                    if selected && !ctx.ui_state.tracks.get(track_id).and_then(|t| t.sections.get(section_id)).and_then(|s| s.notes.get(note_id)).is_some_and(|n| n.selected) {
+                        ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, true));
                     }
                 }
             } else {
@@ -468,6 +475,7 @@ impl PianoRollTab {
         // Section headers
 
         let result = ctx.ephemeral_state.section_drag.handle_snapped(
+            |unsnapped| vec2(snap_pos(unsnapped.x as _, self.units_per_tick) as _, 0.0),
             |prepared| {
                 for packed_section in track.sections() {
                     let Some((section_id, section_ui, section_range, section)) =
@@ -522,7 +530,6 @@ impl PianoRollTab {
                     prepared.process_interaction(header_resp, (track_id, section_id), section_ui.selected);
                 }
             },
-            |unsnapped| vec2(snap_pos(unsnapped.x as _, self.units_per_tick) as _, 0.0),
         );
         {
             let should_deselect_everything = result.should_deselect_everything();
@@ -531,9 +538,9 @@ impl PianoRollTab {
                 // TODO rename these
                 for (&track_id2, track_ui) in &ctx.ui_state.tracks {
                     for (&section_id2, section_ui) in &track_ui.sections {
-                            if section_ui.selected && selection_changes.get(&(track_id2, section_id2)).copied() != Some(true) {
-                                ctx.tracker.add(UiSectionSelect::new(track_id2, section_id2, false));
-                            }
+                        if section_ui.selected && selection_changes.get(&(track_id2, section_id2)).copied() != Some(true) {
+                            ctx.tracker.add(UiSectionSelect::new(track_id2, section_id2, false));
+                        }
                     }
                 }
             } else {

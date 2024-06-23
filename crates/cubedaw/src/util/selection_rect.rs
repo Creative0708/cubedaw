@@ -68,6 +68,7 @@ impl SelectionRect {
 
     pub fn finish(&mut self) {
         // TODO why are released and should_reset separate???? i vaguely remember having a reason for this but now i have no idea
+        // update: this introduces a frame delay which somehow makes the selection rect work
         if self.should_reset {
             self.should_reset = false;
             self.released = false;

@@ -4,13 +4,12 @@ use ahash::{HashMap, HashMapExt};
 use cubedaw_lib::{DynNodeState, Id, IdMap, ResourceKey};
 use cubedaw_node::{DynNode, Node, NodeCreationContext};
 
-use crate::builtin_nodes;
+use crate::nodes;
 
 pub type DynNodeFactory = Box<dyn Send + Sync + Fn() -> DynNode>;
 
 pub type NodeStateFactory = Box<dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState>;
 
-#[derive(Default)]
 pub struct NodeRegistry {
     type_id_to_resource_key: HashMap<TypeId, Id<ResourceKey>>,
     entries: IdMap<ResourceKey, NodeRegistryEntry>,
@@ -24,11 +23,11 @@ impl NodeRegistry {
             entries: IdMap::new(),
             name_entries: Vec::new(),
         };
-        this.register_node::<builtin_nodes::TrackOutputNode>(
+        this.register_node::<nodes::TrackOutputNode>(
             ResourceKey::new("builtin:track_output"),
             "Track Output".into(),
         );
-        this.register_node::<builtin_nodes::NoteOutputNode>(
+        this.register_node::<nodes::NoteOutputNode>(
             ResourceKey::new("builtin:note_output"),
             "Note Output".into(),
         );
@@ -60,6 +59,12 @@ impl NodeRegistry {
             node_key,
             entry_type: NameEntryType::Alias,
         });
+    }
+    pub fn get_resource_key_of(&self, node: &dyn cubedaw_lib::NodeStateWrapper) -> Id<ResourceKey> {
+        *self
+            .type_id_to_resource_key
+            .get(&node.type_id())
+            .expect("node of unregistered type passed to get_resource_key_of")
     }
 
     pub fn create_node(&self, key_id: Id<ResourceKey>) -> DynNode {
@@ -97,6 +102,12 @@ impl NodeRegistry {
 
     pub fn get(&self, key_id: Id<ResourceKey>) -> Option<&NodeRegistryEntry> {
         self.entries.get(key_id)
+    }
+}
+
+impl Default for NodeRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

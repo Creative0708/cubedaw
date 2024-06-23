@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use cubedaw_lib::{Id, State};
+use cubedaw_workerlib::NodeRegistry;
 
 use crate::{app::Tab, command::UiStateCommand, EphemeralState, Screen, UiState};
 
@@ -10,7 +11,7 @@ pub struct Context<'a> {
     pub state: &'a State,
 
     // Ui State: global data saved and persisted across launches, but not required to render the music; track names, track ordering, etc.
-    // This also can't be mutated directly and is tracked.
+    // This also can't be mutated directly and is only modifiable through commands.
     pub ui_state: &'a UiState,
 
     // Ephemeral State: global data not persisted across launches and is not required to render the music; Drag state
@@ -20,6 +21,9 @@ pub struct Context<'a> {
     // Tabs: per-tab state persisted across launches; scroll position, zoom, etc.
     // Also mutable directly and not tracked.
     pub tabs: &'a mut Tabs,
+
+    // App-associated node registry. See [`cubedaw_workerlib::NodeRegistry`] for more information.
+    pub node_registry: &'a NodeRegistry,
 
     // State tracker to track events that mutate state or ui_state.
     pub tracker: UiStateTracker,
@@ -35,6 +39,7 @@ impl<'a> Context<'a> {
         ui_state: &'a UiState,
         ephemeral_state: &'a mut EphemeralState,
         tabs: &'a mut Tabs,
+        node_registry: &'a NodeRegistry,
         time_since_last_frame: f32,
     ) -> Self {
         Self {
@@ -43,6 +48,7 @@ impl<'a> Context<'a> {
 
             ephemeral_state,
             tabs,
+            node_registry,
 
             tracker: UiStateTracker::new(),
             dock_events: Vec::new(),
@@ -78,27 +84,6 @@ impl<'a> Context<'a> {
 
     pub fn queue_tab_removal_from_map(&mut self, id: Id<Box<dyn Screen>>) {
         self.dock_events.push(DockEvent::RemoveTabFromMap(id))
-    }
-
-    pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
-        let mut single_selected_track = None;
-        for &track_id in &self.ui_state.track_list {
-            let track = self
-                .ui_state
-                .tracks
-                .get(track_id)
-                .expect("ui_state.track_list not synchronized with ui_state.tracks");
-            if track.selected {
-                if single_selected_track.is_some() {
-                    // more than one selected track, give up
-                    single_selected_track = None;
-                    break;
-                } else {
-                    single_selected_track = Some(track_id);
-                }
-            }
-        }
-        single_selected_track
     }
 
     pub fn finish(self) -> ContextResult {
@@ -154,7 +139,15 @@ impl UiStateTracker {
     pub fn new() -> Self {
         Self(Vec::new())
     }
-    pub fn add(&mut self, command: impl UiStateCommand) {
+    pub fn add(&mut self, mut command: impl UiStateCommand) {
+        if let Some((inner, last_inner)) = command
+            .inner()
+            .zip(self.0.last_mut().and_then(|x| x.inner()))
+        {
+            if last_inner.try_merge(inner) {
+                return;
+            }
+        }
         self.0.push(Box::new(command));
     }
     pub fn extend(&mut self, other: Self) {

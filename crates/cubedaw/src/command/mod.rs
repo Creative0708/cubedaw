@@ -5,6 +5,7 @@ use cubedaw_command::{StateCommand, StateCommandWrapper};
 use crate::UiState;
 
 pub mod misc;
+pub mod node;
 pub mod note;
 pub mod section;
 pub mod track;

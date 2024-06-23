@@ -52,7 +52,7 @@ mod sealed {
     pub trait Sealed {}
 }
 /// Object-safe wrapper for `Node`. See [`Node`] for the actual functionality.
-pub trait NodeWrapper: Send + sealed::Sealed {
+pub trait NodeWrapper: 'static + Send + sealed::Sealed {
     fn process(&mut self, state: &dyn NodeStateWrapper, ctx: &mut dyn NodeContext<'_>);
 
     fn clone(&self) -> Box<dyn NodeWrapper>;

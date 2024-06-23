@@ -1,5 +1,5 @@
 use cubedaw_lib::{Id, IdMap, NodeData, Note, Section, Track};
-use egui::Vec2;
+use egui::Pos2;
 
 #[derive(Debug)]
 pub struct UiState {
@@ -12,7 +12,27 @@ pub struct UiState {
     pub playhead_pos: f32,
 }
 
-impl UiState {}
+impl UiState {
+    pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
+        let mut single_selected_track = None;
+        for &track_id in &self.track_list {
+            let track = self
+                .tracks
+                .get(track_id)
+                .expect("ui_state.track_list not synchronized with ui_state.tracks");
+            if track.selected {
+                if single_selected_track.is_some() {
+                    // more than one selected track, give up
+                    single_selected_track = None;
+                    break;
+                } else {
+                    single_selected_track = Some(track_id);
+                }
+            }
+        }
+        single_selected_track
+    }
+}
 
 impl Default for UiState {
     fn default() -> Self {
@@ -75,6 +95,6 @@ pub struct NoteUiState {
 #[derive(Debug)]
 pub struct NodeUiState {
     pub selected: bool,
-    pub pos: Vec2,
+    pub pos: Pos2,
     pub width: f32,
 }

@@ -13,3 +13,6 @@ meminterval = { workspace = true }
 
 [features]
 egui = ["dep:egui"]
+
+[lints]
+workspace = true

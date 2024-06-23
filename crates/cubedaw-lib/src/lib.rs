@@ -13,7 +13,7 @@ pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
 mod resource_key;
 pub use resource_key::ResourceKey;
 mod patch;
-pub use patch::{NodeData, NodeInput, NodeOutput, NodeTag, Patch};
+pub use patch::{Cable, NodeData, NodeInput, NodeOutput, NodeTag, Patch};
 mod node;
 pub use node::{DynNodeState, NodeState};
 #[cfg(feature = "egui")]

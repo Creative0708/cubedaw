@@ -41,9 +41,12 @@ mod ui {
     pub struct NodeInputUiOptions {
         pub display_fn: fn(f32) -> String,
 
-        // The range values the dragvalue will show. if range.min == range.max, this won't be interactable and the base value will be range.min.
+        // The range values the dragvalue will show. if range.min == range.max, the dragvalue won't actually and the base value will be range.min.
         // TODO decide on whether a range where range.min > range.max is a violated invariant or just a logic error
         pub range: Rangef,
+
+        // Self-explanatory.
+        pub default_value: f32,
 
         // Whether the range is interactable. If false, the number won't render
         pub interactable: bool,
@@ -54,6 +57,7 @@ mod ui {
             Self {
                 display_fn: |x| format!("{x:.2}"),
                 range: Rangef::new(0.0, 1.0),
+                default_value: 0.0,
                 interactable: true,
             }
         }

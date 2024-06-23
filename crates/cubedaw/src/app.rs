@@ -52,11 +52,19 @@ impl CubedawApp {
                     inner.execute(state);
                 }
                 command.ui_execute(ui_state);
-            };
+            }
+
+            let node_registry = Arc::new({
+                let mut registry = cubedaw_workerlib::NodeRegistry::default();
+                node::register_cubedaw_nodes(&mut registry);
+                registry
+            });
+
+            let track_id = Id::arbitrary();
 
             execute(
                 crate::command::track::UiTrackAddOrRemove::addition(
-                    Id::arbitrary(),
+                    track_id,
                     cubedaw_lib::Track::new_empty(cubedaw_lib::Patch::default()),
                     Some(crate::state::ui::TrackUiState {
                         selected: true,
@@ -67,12 +75,6 @@ impl CubedawApp {
                 &mut state,
                 &mut ui_state,
             );
-
-            let node_registry = Arc::new({
-                let mut registry = cubedaw_workerlib::NodeRegistry::default();
-                node::register_cubedaw_nodes(&mut registry);
-                registry
-            });
 
             Self {
                 worker_host: {
@@ -109,6 +111,7 @@ impl CubedawApp {
             &app.ui_state,
             &mut app.ephemeral_state,
             &mut app.tabs,
+            &app.node_registry,
             0.0,
         );
 
@@ -179,6 +182,7 @@ impl eframe::App for CubedawApp {
             &self.ui_state,
             &mut self.ephemeral_state,
             &mut self.tabs,
+            &self.node_registry,
             frame_duration,
         );
 

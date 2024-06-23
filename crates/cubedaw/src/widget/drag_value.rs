@@ -1,6 +1,6 @@
 //! like `egui::DragValue`, but imitating the blender version.
 
-use egui::*;
+use egui::{emath::inverse_lerp, *};
 
 pub struct DragValue<'a> {
     reference: &'a mut f32,
@@ -47,6 +47,8 @@ impl<'a> Widget for DragValue<'a> {
             name,
         } = self;
 
+        let padding = ui.spacing().button_padding;
+
         let shift = ui.input(|i| i.modifiers.shift_only());
 
         let id = ui.next_auto_id();
@@ -81,7 +83,7 @@ impl<'a> Widget for DragValue<'a> {
         });
 
         if change != 0.0 {
-            value = (self.snap_fn)(value + change);
+            value = snap_fn(value + change);
         }
 
         let text_style = ui.style().drag_value_text_style.clone();
@@ -89,13 +91,13 @@ impl<'a> Widget for DragValue<'a> {
         let mut response = if is_kb_editing {
             let mut value_text = ui
                 .data_mut(|data| data.remove_temp::<String>(id))
-                .unwrap_or_else(|| self.display.to_input(value));
+                .unwrap_or_else(|| display.to_input(value));
             let response = ui.add(
                 TextEdit::singleline(&mut value_text)
                     .clip_text(false)
                     .horizontal_align(ui.layout().horizontal_align())
                     .vertical_align(ui.layout().vertical_align())
-                    .margin(ui.spacing().button_padding)
+                    .margin(padding)
                     .min_size(ui.spacing().interact_size)
                     .id(id)
                     .desired_width(f32::INFINITY)
@@ -103,7 +105,7 @@ impl<'a> Widget for DragValue<'a> {
             );
 
             if response.lost_focus() {
-                if let Some(parsed_value) = self.display.from_input(value_text) {
+                if let Some(parsed_value) = display.parse_input(value_text) {
                     *reference = parsed_value;
                 }
             } else {
@@ -112,7 +114,7 @@ impl<'a> Widget for DragValue<'a> {
 
             response
         } else {
-            let value_text = self.display.to_display(value);
+            let value_text = display.to_display(value);
             let num_chars = value_text.chars().count();
 
             let galley = WidgetText::from(value_text).into_galley(
@@ -122,7 +124,7 @@ impl<'a> Widget for DragValue<'a> {
                 TextStyle::Button,
             );
 
-            let desired_height = galley.size().y;
+            let desired_height = galley.size().y + padding.y * 2.0;
 
             let (rect, response) = ui.allocate_at_least(
                 vec2(ui.max_rect().width(), desired_height),
@@ -156,16 +158,33 @@ impl<'a> Widget for DragValue<'a> {
             } else if response.dragged() {
                 ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
 
+                if response.drag_started()
+                    && let Some(drag_pos) = response.interact_pointer_pos()
+                {
+                    if let Some(initial_value) = inverse_lerp(rect.x_range().into(), drag_pos.x) {
+                        value = snap_fn(lerp(range, initial_value));
+                        *reference = value;
+                    }
+                }
+
                 let mdelta = response.drag_delta();
                 let delta_points = mdelta.x - mdelta.y;
 
-                let speed = self.range.span() / rect.width();
-                let speed = if shift { speed / 10.0 } else { speed };
+                let mut speed = range.span() / rect.width();
+                let layer_id = ui.layer_id();
+                if let Some(scale) = ui.ctx().memory(|m| {
+                    m.layer_transforms
+                        .get(&layer_id)
+                        .map(|transform| transform.scaling)
+                }) {
+                    speed *= scale;
+                }
+                let speed = if shift { speed * 0.1 } else { speed };
 
                 let delta_value = delta_points * speed;
 
                 if delta_value != 0.0 {
-                    let precise_value = ui.data_mut(|data| data.get_temp::<f32>(id));
+                    let precise_value = ui.data(|data| data.get_temp::<f32>(id));
                     let precise_value = precise_value.unwrap_or(value);
                     let precise_value = precise_value + delta_value;
 
@@ -174,17 +193,45 @@ impl<'a> Widget for DragValue<'a> {
                         (precise_value - aim_delta) as f64,
                         (precise_value + aim_delta) as f64,
                     ) as f32;
-                    let rounded_value = (self.snap_fn)(value);
-                    let clamped_value = self.range.clamp(rounded_value);
 
-                    *reference = clamped_value;
+                    *reference = snap_fn(range.clamp(value));
 
                     ui.data_mut(|data| data.insert_temp::<f32>(id, precise_value));
                 }
             }
 
+            let visuals = ui.style().interact(&response);
+
+            {
+                let text_pos = ui
+                    .layout()
+                    .align_size_within_rect(galley.size(), rect.shrink2(padding))
+                    .min;
+
+                let painter = ui.painter();
+
+                painter.rect(rect, visuals.rounding, visuals.bg_fill, visuals.bg_stroke);
+
+                let portion_filled = inverse_lerp(range.into(), *reference).unwrap_or(range.min);
+                painter.rect_filled(
+                    rect.shrink(visuals.bg_stroke.width * 0.5)
+                        .intersect(Rect::everything_left_of(lerp(
+                            rect.x_range(),
+                            portion_filled,
+                        ))),
+                    visuals.rounding,
+                    ui.visuals().selection.bg_fill,
+                );
+
+                painter.galley(text_pos, galley, visuals.text_color());
+            }
+
             response
         };
+
+        if ui.button("button that crashes the app").clicked() {
+            panic!("AHHHHHHHHH");
+        }
 
         response
     }
@@ -196,7 +243,7 @@ pub trait DragValueDisplay {
         self.to_display(val)
     }
     // TODO implement expression evaluator based off of https://crates.io/crates/meval or the like
-    fn from_input(&self, str: String) -> Option<f32>;
+    fn parse_input(&self, str: String) -> Option<f32>;
 }
 
 pub struct DefaultDragValueDisplay;
@@ -204,7 +251,7 @@ impl DragValueDisplay for DefaultDragValueDisplay {
     fn to_display(&self, val: f32) -> String {
         format!("{val:.2}")
     }
-    fn from_input(&self, str: String) -> Option<f32> {
+    fn parse_input(&self, str: String) -> Option<f32> {
         str.parse().ok()
     }
 }

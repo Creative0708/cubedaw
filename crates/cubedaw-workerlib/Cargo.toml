@@ -16,3 +16,6 @@ egui = { workspace = true, optional = true }
 
 [features]
 egui = ["dep:egui", "cubedaw-lib/egui"]
+
+[lints]
+workspace = true

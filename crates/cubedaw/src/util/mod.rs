@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
 use ahash::{HashMap, HashMapExt};
-use cubedaw_lib::{Id, IdMap};
 use egui::Vec2;
 
 mod selection_rect;
@@ -9,46 +8,13 @@ pub use selection_rect::SelectionRect;
 mod node_search;
 pub use node_search::NodeSearch;
 
-trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
-    type Ui: SelectableUi;
-    type Command: Sized + 'static;
-    fn create_command(&self, selected: bool) -> Self::Command;
-}
-trait SelectableUi: Sized + 'static {
-    fn selected(&self) -> bool;
-}
-
-mod impls {
+mod private {
     use cubedaw_lib::Id;
 
-    use super::{SelectablePath, SelectableUi};
-
-    impl SelectablePath for Id<cubedaw_lib::Track> {
-        type Ui = crate::state::ui::TrackUiState;
-        type Command = crate::command::track::UiTrackSelect;
-
-        fn create_command(&self, selected: bool) -> Self::Command {
-            Self::Command::new(*self, selected)
-        }
-    }
-    impl SelectableUi for crate::state::ui::TrackUiState {
-        fn selected(&self) -> bool {
-            self.selected
-        }
-    }
-    impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::Section>) {
-        type Ui = crate::state::ui::SectionUiState;
-        type Command = crate::command::section::UiSectionSelect;
-
-        fn create_command(&self, selected: bool) -> Self::Command {
-            Self::Command::new(self.0, self.1, selected)
-        }
-    }
-    impl SelectableUi for crate::state::ui::SectionUiState {
-        fn selected(&self) -> bool {
-            self.selected
-        }
-    }
+    // TODO why do these trait impls exist
+    pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {}
+    impl SelectablePath for Id<cubedaw_lib::Track> {}
+    impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::Section>) {}
     impl SelectablePath
         for (
             Id<cubedaw_lib::Track>,
@@ -56,18 +22,63 @@ mod impls {
             Id<cubedaw_lib::Note>,
         )
     {
-        type Ui = crate::state::ui::NoteUiState;
-        type Command = crate::command::note::UiNoteSelect;
+    }
+    impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::NodeData>) {}
 
-        fn create_command(&self, selected: bool) -> Self::Command {
-            Self::Command::new(self.0, self.1, self.2, selected)
-        }
-    }
-    impl SelectableUi for crate::state::ui::NoteUiState {
-        fn selected(&self) -> bool {
-            self.selected
-        }
-    }
+    // pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
+    //     type Ui: SelectableUi;
+    //     type Command: Sized + 'static;
+    //     fn create_command(&self, selected: bool) -> Self::Command;
+    // }
+    // pub trait SelectableUi: Sized + 'static {
+    //     fn selected(&self) -> bool;
+    // }
+
+    // impl SelectablePath for Id<cubedaw_lib::Track> {
+    //     type Ui = crate::state::ui::TrackUiState;
+    //     type Command = crate::command::track::UiTrackSelect;
+
+    //     fn create_command(&self, selected: bool) -> Self::Command {
+    //         Self::Command::new(*self, selected)
+    //     }
+    // }
+    // impl SelectableUi for crate::state::ui::TrackUiState {
+    //     fn selected(&self) -> bool {
+    //         self.selected
+    //     }
+    // }
+    // impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::Section>) {
+    //     type Ui = crate::state::ui::SectionUiState;
+    //     type Command = crate::command::section::UiSectionSelect;
+
+    //     fn create_command(&self, selected: bool) -> Self::Command {
+    //         Self::Command::new(self.0, self.1, selected)
+    //     }
+    // }
+    // impl SelectableUi for crate::state::ui::SectionUiState {
+    //     fn selected(&self) -> bool {
+    //         self.selected
+    //     }
+    // }
+    // impl SelectablePath
+    //     for (
+    //         Id<cubedaw_lib::Track>,
+    //         Id<cubedaw_lib::Section>,
+    //         Id<cubedaw_lib::Note>,
+    //     )
+    // {
+    //     type Ui = crate::state::ui::NoteUiState;
+    //     type Command = crate::command::note::UiNoteSelect;
+
+    //     fn create_command(&self, selected: bool) -> Self::Command {
+    //         Self::Command::new(self.0, self.1, self.2, selected)
+    //     }
+    // }
+    // impl SelectableUi for crate::state::ui::NoteUiState {
+    //     fn selected(&self) -> bool {
+    //         self.selected
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -104,10 +115,10 @@ impl DragHandler {
         self.is_dragging.then_some(self.raw_movement.y)
     }
 
-    pub fn handle_snapped<T: SelectablePath, R, F: Fn(Vec2) -> Vec2>(
+    pub fn handle_snapped<T: private::SelectablePath, R, F: Fn(Vec2) -> Vec2>(
         &mut self,
-        f: impl FnOnce(&mut Prepared<T, F>) -> R,
         snap_fn: F,
+        f: impl FnOnce(&mut Prepared<T, F>) -> R,
     ) -> DragHandlerResult<T, R> {
         let mut prepared = Prepared {
             drag_handler: self,
@@ -125,7 +136,7 @@ impl DragHandler {
     }
 }
 
-pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> {
+pub struct Prepared<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> {
     drag_handler: &'a mut DragHandler,
     // Vec<(changed id, whether it is selected)>
     selection_changes: HashMap<T, bool>,
@@ -136,7 +147,7 @@ pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> {
     snap_fn: F,
 }
 
-impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
+impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
     pub fn set_scale(&mut self, scale: impl Into<Vec2>) {
         self.drag_handler.set_scale(scale)
     }
@@ -164,6 +175,7 @@ impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
             self.new_drag_movement = Some(Vec2::ZERO);
         }
         if resp.clicked() || (resp.drag_started() && !is_currently_selected) {
+            dbg!(resp.drag_started() && !is_currently_selected);
             if resp.ctx.input(|i| i.modifiers.shift) {
                 // if user shift-clicks, toggle the selectedness without affecting anything else
                 self.selection_changes.insert(path, !is_currently_selected);
@@ -212,14 +224,14 @@ impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
     }
 }
 
-pub struct DragHandlerResult<T: SelectablePath, R> {
+pub struct DragHandlerResult<T: private::SelectablePath, R> {
     movement: Option<Vec2>,
     should_deselect_everything: bool,
     selection_changes: HashMap<T, bool>,
     inner: R,
 }
 
-impl<T: SelectablePath, R> DragHandlerResult<T, R> {
+impl<T: private::SelectablePath, R> DragHandlerResult<T, R> {
     pub fn selection_changes(&self) -> &HashMap<T, bool> {
         &self.selection_changes
     }

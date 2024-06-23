@@ -8,8 +8,10 @@ use cubedaw_workerlib::{NodeRegistry, WorkerState};
 pub mod misc;
 pub mod node;
 pub mod note;
+pub mod patch;
 pub mod section;
 pub mod track;
+
 mod tracker;
 pub use tracker::StateTracker;
 
@@ -17,7 +19,7 @@ pub trait StateCommand: 'static + Send + Clone {
     fn execute(&mut self, state: &mut State);
     fn rollback(&mut self, state: &mut State);
 
-    fn try_merge(&self, _other: &Self) -> bool {
+    fn try_merge(&mut self, _other: &Self) -> bool {
         false
     }
 
@@ -50,10 +52,11 @@ impl<T: StateCommand> StateCommandWrapper for T {
     }
 
     fn try_merge(&mut self, other: &dyn StateCommandWrapper) -> bool {
-        let Some(other): Option<&Self> = other.downcast_ref() else {
-            return false;
-        };
-        StateCommand::try_merge(self, other)
+        if let Some(other) = other.downcast_ref() {
+            StateCommand::try_merge(self, other)
+        } else {
+            false
+        }
     }
 
     fn worker_execute(&mut self, worker_state: &mut WorkerState, node_registry: &NodeRegistry) {

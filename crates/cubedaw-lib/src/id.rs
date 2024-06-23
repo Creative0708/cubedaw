@@ -48,11 +48,13 @@ fn arbitrary_impl() -> IdInner {
         static COUNTER: RefCell<IdInner> = RefCell::new(NonZeroU64::new(1).unwrap());
     }
 
-    COUNTER.with(|x| {
+    let x = COUNTER.with(|x| {
         let mut x = x.borrow_mut();
         *x = x.checked_add(1).expect("u64 overflow");
         *x
-    })
+    });
+
+    new_impl(x)
 }
 
 impl<T> Id<T> {
@@ -77,7 +79,7 @@ impl<T> Id<T> {
     }
 
     pub fn arbitrary() -> Self {
-        Self::new(arbitrary_impl())
+        Self::from_raw(arbitrary_impl())
     }
 
     pub const fn transmute<U>(self) -> Id<U> {
@@ -137,15 +139,12 @@ impl<T> Ord for Id<T> {
 #[derive(Clone)]
 pub struct IdMap<T, V = T> {
     map: HashMap<Id<T>, V>,
-    // TODO revise the entire "tracking" thing
-    // events: Option<Vec<TrackingMapEvent<T>>>,
 }
 
 impl<T, V> IdMap<T, V> {
     pub fn new() -> Self {
         Self {
             map: Default::default(),
-            // events: Some(Default::default()),
         }
     }
 

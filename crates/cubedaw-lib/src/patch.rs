@@ -10,20 +10,37 @@ impl Patch {
     pub fn insert_node(&mut self, node_id: Id<NodeData>, node: NodeData) {
         self.nodes.insert(node_id, node);
     }
-
     pub fn take_node(&mut self, node_id: Id<NodeData>) -> NodeData {
         self.nodes.take(node_id)
     }
-
     pub fn nodes(&self) -> impl Iterator<Item = (Id<NodeData>, &NodeData)> {
         self.nodes.iter().map(|(&id, data)| (id, data))
     }
-
     pub fn node(&self, id: Id<NodeData>) -> Option<&NodeData> {
         self.nodes.get(id)
     }
     pub fn node_mut(&mut self, id: Id<NodeData>) -> Option<&mut NodeData> {
         self.nodes.get_mut(id)
+    }
+
+    pub fn insert_cable(&mut self, cable_id: Id<Cable>, cable: Cable) {
+        self.cables.insert(cable_id, cable);
+    }
+    pub fn take_cable(&mut self, cable_id: Id<Cable>) -> Cable {
+        let cable = self.cables.take(cable_id);
+
+        self.nodes
+            .get_mut(cable.input_node)
+            .expect("cable connected to nonexistent node?!?")
+            .outputs
+            .remove(cable.input_output_index);
+        self.nodes
+            .get_mut(cable.output_node)
+            .expect("cable connected to nonexistent node?!?")
+            .inputs
+            .remove(cable.input_output_index);
+
+        cable
     }
 
     pub fn debug_assert_valid(&self) {
@@ -41,7 +58,7 @@ impl Patch {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NodeInput {
     pub value: f32,
     // the connections are additive to the value
@@ -113,7 +130,7 @@ impl NodeData {
             );
             for &cable_id in &input.connections {
                 assert!(
-                    patch.cables.get(cable_id).is_some(),
+                    patch.cables.has(cable_id),
                     "node connected with nonexistent cable"
                 );
             }
@@ -121,7 +138,7 @@ impl NodeData {
         for output in &self.outputs {
             for &cable_id in &output.connections {
                 assert!(
-                    patch.cables.get(cable_id).is_some(),
+                    patch.cables.has(cable_id),
                     "node connected with nonexistent cable"
                 );
             }

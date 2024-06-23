@@ -8,7 +8,7 @@ mod state;
 pub use state::{WorkerJob, WorkerSectionTrackState, WorkerState};
 mod buffer;
 pub use buffer::Buffer;
-pub mod builtin_nodes;
+pub mod nodes;
 
 #[derive(Clone)]
 pub struct WorkerOptions {

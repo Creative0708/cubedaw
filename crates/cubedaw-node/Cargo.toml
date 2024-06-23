@@ -11,3 +11,6 @@ cubedaw-lib = { path = "../cubedaw-lib" }
 
 [features]
 egui = ["dep:egui", "cubedaw-lib/egui"]
+
+[lints]
+workspace = true
