@@ -129,6 +129,8 @@ impl PatchTab {
         let Some(Track { patch, .. }) = ctx.state.tracks.get(track_id) else {
             unreachable!();
         };
+        let track_ui = ctx.ui_state.tracks.force_get(track_id);
+
         let patch_ui = &ctx
             .ui_state
             .tracks
@@ -192,132 +194,148 @@ impl PatchTab {
             }
         }
 
-        let result = self
-            .drag_handler
-            .handle_snapped(std::convert::identity, |prepared| {
-                let handle_node = |ui: &mut egui::Ui,
-                                   node_data: &NodeData,
-                                   node_id: Option<Id<NodeData>>,
-                                   node_ui: &NodeUiState,
-                                   tracker: &mut UiStateTracker| {
-                    const NODE_MARGIN: f32 = 8.0;
+        let result = self.drag_handler.handle(|prepared| {
+            // what the heck is rustfmt doing
+            let handle_node = |prepared: &mut crate::util::Prepared<
+                (Id<Track>, Id<NodeData>),
+                fn(Vec2) -> Vec2,
+            >,
+                               ui: &mut egui::Ui,
+                               node_data: &NodeData,
+                               node_id: Option<Id<NodeData>>,
+                               node_ui: &NodeUiState,
+                               tracker: &mut UiStateTracker| {
+                const NODE_MARGIN: f32 = 8.0;
 
-                    let pos = node_ui.pos;
+                let pos = node_ui.pos;
 
-                    let mut child_ui = ui.child_ui_with_id_source(
-                        Rect::from_x_y_ranges(pos.x..=pos.x + node_ui.width, pos.y..=f32::INFINITY),
-                        egui::Layout::top_down(egui::Align::Min),
-                        node_id.unwrap_or(Id::new("currently_held_node")),
-                    );
+                let mut child_ui = ui.child_ui_with_id_source(
+                    Rect::from_x_y_ranges(pos.x..=pos.x + node_ui.width, pos.y..=f32::INFINITY),
+                    egui::Layout::top_down(egui::Align::Min),
+                    node_id.unwrap_or(Id::new("currently_held_node")),
+                );
 
-                    let mut frame = egui::Frame::window(child_ui.style());
-                    if node_ui.selected {
-                        // TODO "stealing" another stroke's color is kinda goofy.
-                        // decide if this is okay or find a workaround
-                        frame.stroke.color = ui.visuals().widgets.active.fg_stroke.color;
-                    }
-
-                    let mut prepared = frame.begin(&mut child_ui);
-                    {
-                        let mut ui_ctx = CubedawNodeUiContext::new(node_id, track_id, node_data);
-
-                        let node_state = node_data.inner.as_ref();
-                        let mut inner_node_ui = node_state.clone();
-                        inner_node_ui.ui(&mut prepared.content_ui, &mut ui_ctx);
-                        if *inner_node_ui != *node_state
-                            && let Some(node_id) = node_id
-                        {
-                            tracker.add(NodeUiUpdate::new(track_id, node_id, inner_node_ui))
-                        }
-
-                        ui_ctx.finish(tracker);
-
-                        if let Some(node_id) = node_id {
-                            // only interact if the node is real.
-                            // this prevents issues where the user clicks on the node instead of the background by accident
-                            let response = prepared.allocate_space(&mut child_ui);
-                        }
-                    }
-                    prepared.paint(&child_ui);
-                };
-                for (node_id, node_data) in patch.nodes() {
-                    let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
-
-                    handle_node(ui, node_data, Some(node_id), node_ui, &mut ctx.tracker);
+                let mut frame = egui::Frame::window(child_ui.style());
+                if node_ui.selected {
+                    let open_visuals = ui.visuals().widgets.open;
+                    // TODO "stealing" another stroke's color is kinda goofy.
+                    // decide if this is okay or find a workaround
+                    frame.stroke.color = open_visuals.bg_stroke.color;
+                    frame.fill = open_visuals.bg_fill;
                 }
 
-                // .take() is used to avoid doing an obvious unwrap when checking if the node should be placed.
-                // if the node isn't placed, the node is put back into currently_held_node at the end.
-                if let Some(node_data) = self.currently_held_node.take() {
-                    if let Some(hover_pos) = {
-                        // TODO hover_pos is broken. https://github.com/emilk/egui/pull/4679
-                        // replace this when the version is updated to include that PR
+                let mut frame_prepared = frame.begin(&mut child_ui);
+                {
+                    let mut ui_ctx = CubedawNodeUiContext::new(node_id, track_id, node_data);
 
-                        // viewport_interaction.hover_pos()
+                    let node_state = node_data.inner.as_ref();
+                    let mut inner_node_ui = node_state.clone();
+                    inner_node_ui.ui(&mut frame_prepared.content_ui, &mut ui_ctx);
+                    if *inner_node_ui != *node_state
+                        && let Some(node_id) = node_id
+                    {
+                        tracker.add(NodeUiUpdate::new(track_id, node_id, inner_node_ui))
+                    }
 
-                        if viewport_interaction.hovered()
-                            && let Some(mut pos) =
-                                viewport_interaction.ctx.input(|i| i.pointer.hover_pos())
-                        {
-                            if let Some(transform) = viewport_interaction.ctx.memory(|m| {
-                                m.layer_transforms
-                                    .get(&viewport_interaction.layer_id)
-                                    .cloned()
-                            }) {
-                                pos = transform.inverse() * pos;
-                            }
-                            Some(pos)
-                        } else {
-                            None
-                        }
-                    } {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
-                        handle_node(
-                            ui,
-                            &node_data,
-                            None,
-                            &NodeUiState {
-                                selected: true,
-                                pos: hover_pos,
-                                width: 128.0,
-                            },
-                            &mut ctx.tracker,
+                    ui_ctx.finish(tracker);
+
+                    if let Some(node_id) = node_id {
+                        // only interact if the node is real.
+                        // this prevents issues where the user clicks on the node instead of the background by accident
+                        let response = frame_prepared.allocate_space(&mut child_ui);
+                        prepared.process_interaction(
+                            response,
+                            (track_id, node_id),
+                            node_ui.selected,
                         );
                     }
-                    if viewport_interaction.clicked()
-                        && let Some(interact_pos) = viewport_interaction.interact_pointer_pos()
-                    {
-                        // place the node
-                        ctx.tracker.add(UiNodeAddOrRemove::addition(
-                            Id::arbitrary(),
-                            NodeData::new_disconnected(node_data.key, node_data.inner),
-                            track_id,
-                            NodeUiState {
-                                selected: true,
-                                pos: interact_pos,
-                                width: 128.0, // TODO impl node widths
-                            },
-                        ))
-                    } else {
-                        // otherwise, put it back
-                        self.currently_held_node = Some(node_data);
-                    }
                 }
-            });
+                frame_prepared.paint(&child_ui);
+            };
+            for (node_id, node_data) in patch.nodes() {
+                let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
+
+                handle_node(
+                    prepared,
+                    ui,
+                    node_data,
+                    Some(node_id),
+                    node_ui,
+                    &mut ctx.tracker,
+                );
+            }
+
+            // .take() is used to avoid doing an obvious unwrap when checking if the node should be placed.
+            // if the node isn't placed, the node is put back into currently_held_node at the end.
+            if let Some(node_data) = self.currently_held_node.take() {
+                if let Some(hover_pos) = {
+                    // TODO hover_pos is broken. https://github.com/emilk/egui/pull/4679
+                    // replace this when the version is updated to include that PR
+
+                    // viewport_interaction.hover_pos()
+
+                    if viewport_interaction.hovered()
+                        && let Some(mut pos) =
+                            viewport_interaction.ctx.input(|i| i.pointer.hover_pos())
+                    {
+                        if let Some(transform) = viewport_interaction.ctx.memory(|m| {
+                            m.layer_transforms
+                                .get(&viewport_interaction.layer_id)
+                                .cloned()
+                        }) {
+                            pos = transform.inverse() * pos;
+                        }
+                        Some(pos)
+                    } else {
+                        None
+                    }
+                } {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
+                    handle_node(
+                        prepared,
+                        ui,
+                        &node_data,
+                        None,
+                        &NodeUiState {
+                            selected: true,
+                            pos: hover_pos,
+                            width: 128.0,
+                        },
+                        &mut ctx.tracker,
+                    );
+                }
+                if viewport_interaction.clicked()
+                    && let Some(interact_pos) = viewport_interaction.interact_pointer_pos()
+                {
+                    // place the node
+                    ctx.tracker.add(UiNodeAddOrRemove::addition(
+                        Id::arbitrary(),
+                        NodeData::new_disconnected(node_data.key, node_data.inner),
+                        track_id,
+                        NodeUiState {
+                            selected: true,
+                            pos: interact_pos,
+                            width: 128.0, // TODO impl node widths
+                        },
+                    ))
+                } else {
+                    // otherwise, put it back
+                    self.currently_held_node = Some(node_data);
+                }
+            }
+        });
 
         {
             let should_deselect_everything = result.should_deselect_everything();
             let selection_changes = result.selection_changes();
             if should_deselect_everything {
                 // TODO rename these
-                for (&track_id2, track_ui) in &ctx.ui_state.tracks {
-                    for (&node_id2, node_ui) in &track_ui.patch.nodes {
-                        if node_ui.selected
-                            && selection_changes.get(&(track_id2, node_id2)).copied() != Some(true)
-                        {
-                            ctx.tracker
-                                .add(UiNodeSelect::new(track_id2, node_id2, false));
-                        }
+                for (&node_id2, node_ui) in &track_ui.patch.nodes {
+                    if node_ui.selected
+                        && !matches!(selection_changes.get(&(track_id, node_id2)), Some(true))
+                    {
+                        ctx.tracker
+                            .add(UiNodeSelect::new(track_id, node_id2, false));
                     }
                 }
             } else {
@@ -370,8 +388,6 @@ impl<'a> CubedawNodeUiContext<'a> {
                             connection,
                             self.track_id,
                         ));
-
-                        ();
                     }
                     tracker.add(cubedaw_command::node::NodeInputAddOrRemove::removal(
                         id,
@@ -408,7 +424,7 @@ impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
         };
         let mut value = previous_value;
 
-        ui.add(DragValue::new(&mut value));
+        ui.add(DragValue::new(&mut value).name(Some(name)));
 
         if previous_value != value
             && let Some(id) = self.id

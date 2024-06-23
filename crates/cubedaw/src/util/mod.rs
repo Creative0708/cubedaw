@@ -115,6 +115,12 @@ impl DragHandler {
         self.is_dragging.then_some(self.raw_movement.y)
     }
 
+    pub fn handle<T: private::SelectablePath, R>(
+        &mut self,
+        f: impl FnOnce(&mut Prepared<T, fn(Vec2) -> Vec2>) -> R,
+    ) -> DragHandlerResult<T, R> {
+        self.handle_snapped(|x| x, f)
+    }
     pub fn handle_snapped<T: private::SelectablePath, R, F: Fn(Vec2) -> Vec2>(
         &mut self,
         snap_fn: F,

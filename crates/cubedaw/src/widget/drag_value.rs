@@ -156,7 +156,7 @@ impl<'a> Widget for DragValue<'a> {
                 )));
                 state.store(ui.ctx(), response.id);
             } else if response.dragged() {
-                ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+                ui.ctx().set_cursor_icon(CursorIcon::None);
 
                 if response.drag_started()
                     && let Some(drag_pos) = response.interact_pointer_pos()
@@ -167,8 +167,7 @@ impl<'a> Widget for DragValue<'a> {
                     }
                 }
 
-                let mdelta = response.drag_delta();
-                let delta_points = mdelta.x - mdelta.y;
+                let delta_points = response.drag_delta().x;
 
                 let mut speed = range.span() / rect.width();
                 let layer_id = ui.layer_id();
