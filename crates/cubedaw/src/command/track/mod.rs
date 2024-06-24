@@ -32,7 +32,11 @@ impl UiTrackAddOrRemove {
         }
     }
 
-    fn execute_add(&mut self, ui_state: &mut crate::UiState) {
+    fn execute_add(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        ephemeral_state: &mut crate::EphemeralState,
+    ) {
         ui_state
             .tracks
             .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
@@ -40,26 +44,44 @@ impl UiTrackAddOrRemove {
             (self.insertion_pos as usize).min(ui_state.track_list.len()),
             self.inner.id(),
         );
+
+        ephemeral_state
+            .tracks
+            .insert(self.inner.id(), Default::default());
     }
-    fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
+    fn execute_remove(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        ephemeral_state: &mut crate::EphemeralState,
+    ) {
         self.ui_data = ui_state.tracks.remove(self.inner.id());
         ui_state.track_list.retain(|&id| id != self.inner.id());
+
+        ephemeral_state.tracks.remove(self.inner.id());
     }
 }
 
 impl UiStateCommand for UiTrackAddOrRemove {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if self.inner.is_removal() {
-            self.execute_remove(ui_state);
+            self.execute_remove(ui_state, ephemeral_state);
         } else {
-            self.execute_add(ui_state);
+            self.execute_add(ui_state, ephemeral_state);
         }
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if self.inner.is_removal() {
-            self.execute_add(ui_state);
+            self.execute_add(ui_state, ephemeral_state);
         } else {
-            self.execute_remove(ui_state);
+            self.execute_remove(ui_state, ephemeral_state);
         }
     }
 
@@ -91,10 +113,18 @@ impl UiTrackRename {
 }
 
 impl UiStateCommand for UiTrackRename {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         self.swap_data(ui_state);
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         self.swap_data(ui_state);
     }
 }
@@ -111,12 +141,20 @@ impl UiTrackSelect {
 }
 
 impl UiStateCommand for UiTrackSelect {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
             ui_data.selected = self.selected;
         }
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
             ui_data.selected = !self.selected;
         }

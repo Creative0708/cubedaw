@@ -282,3 +282,89 @@ impl StateCommand for NodeInputAddOrRemove {
         }
     }
 }
+
+#[derive(Clone)]
+pub struct NodeOutputAddOrRemove {
+    id: Id<NodeData>,
+    track_id: Id<Track>,
+    output_index: usize,
+
+    is_removal: bool,
+}
+
+impl NodeOutputAddOrRemove {
+    pub fn addition(id: Id<NodeData>, track_id: Id<Track>, output_index: usize) -> Self {
+        Self {
+            id,
+            track_id,
+            output_index,
+            is_removal: false,
+        }
+    }
+    pub fn removal(id: Id<NodeData>, track_id: Id<Track>, output_index: usize) -> Self {
+        Self {
+            id,
+            track_id,
+            output_index,
+            is_removal: true,
+        }
+    }
+
+    fn get_node<'a>(
+        &self,
+        state: &'a mut cubedaw_lib::State,
+    ) -> Option<&'a mut cubedaw_lib::NodeData> {
+        Some(
+            state
+                .tracks
+                .get_mut(self.track_id)?
+                .patch
+                .node_mut(self.id)?,
+        )
+    }
+
+    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
+        let Some(node) = self.get_node(state) else {
+            return;
+        };
+
+        assert!(
+            node.outputs.len() == self.output_index,
+            "tried to add output in the middle of the output list"
+        );
+
+        node.outputs.push(cubedaw_lib::NodeOutput::default());
+    }
+    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
+        let Some(node) = self.get_node(state) else {
+            return;
+        };
+
+        assert!(
+            node.outputs.len() == self.output_index + 1,
+            "tried to delete output from the middle of the output list"
+        );
+        let popped = node.outputs.pop();
+        assert!(
+            popped.is_some_and(|popped| popped.connections.is_empty()),
+            "tried to delete output still connected to cable"
+        );
+    }
+}
+
+impl StateCommand for NodeOutputAddOrRemove {
+    fn execute(&mut self, state: &mut cubedaw_lib::State) {
+        if self.is_removal {
+            self.execute_remove(state);
+        } else {
+            self.execute_add(state);
+        }
+    }
+    fn rollback(&mut self, state: &mut cubedaw_lib::State) {
+        if self.is_removal {
+            self.execute_add(state);
+        } else {
+            self.execute_remove(state);
+        }
+    }
+}

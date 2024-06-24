@@ -45,14 +45,22 @@ impl UiSectionAddOrRemove {
 }
 
 impl UiStateCommand for UiSectionAddOrRemove {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if self.inner.is_removal() {
             self.execute_remove(ui_state);
         } else {
             self.execute_add(ui_state);
         }
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if self.inner.is_removal() {
             self.execute_add(ui_state);
         } else {
@@ -90,12 +98,20 @@ impl UiSectionSelect {
 }
 
 impl UiStateCommand for UiSectionSelect {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if let Some(ui_data) = self.section(ui_state) {
             ui_data.selected = self.selected;
         }
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if let Some(ui_data) = self.section(ui_state) {
             ui_data.selected = !self.selected;
         }

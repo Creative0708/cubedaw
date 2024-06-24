@@ -56,14 +56,22 @@ impl UiNoteAddOrRemove {
 }
 
 impl UiStateCommand for UiNoteAddOrRemove {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if self.inner.is_removal() {
             self.execute_remove(ui_state);
         } else {
             self.execute_add(ui_state);
         }
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if self.inner.is_removal() {
             self.execute_add(ui_state);
         } else {
@@ -105,12 +113,20 @@ impl UiNoteSelect {
 }
 
 impl UiStateCommand for UiNoteSelect {
-    fn ui_execute(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_execute(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if let Some(ui_data) = self.notes(ui_state).get_mut(self.id) {
             ui_data.selected = self.selected;
         }
     }
-    fn ui_rollback(&mut self, ui_state: &mut crate::UiState) {
+    fn ui_rollback(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+    ) {
         if let Some(ui_data) = self.notes(ui_state).get_mut(self.id) {
             ui_data.selected = !self.selected;
         }

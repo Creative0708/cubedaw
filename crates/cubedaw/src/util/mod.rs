@@ -142,6 +142,12 @@ impl DragHandler {
     }
 }
 
+impl Default for DragHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct Prepared<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> {
     drag_handler: &'a mut DragHandler,
     // Vec<(changed id, whether it is selected)>
@@ -181,7 +187,6 @@ impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
             self.new_drag_movement = Some(Vec2::ZERO);
         }
         if resp.clicked() || (resp.drag_started() && !is_currently_selected) {
-            dbg!(resp.drag_started() && !is_currently_selected);
             if resp.ctx.input(|i| i.modifiers.shift) {
                 // if user shift-clicks, toggle the selectedness without affecting anything else
                 self.selection_changes.insert(path, !is_currently_selected);

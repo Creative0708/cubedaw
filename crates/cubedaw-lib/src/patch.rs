@@ -65,7 +65,7 @@ pub struct NodeInput {
     pub connections: Vec<Id<Cable>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NodeOutput {
     pub connections: Vec<Id<Cable>>,
 }

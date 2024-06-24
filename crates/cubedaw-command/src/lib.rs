@@ -11,6 +11,8 @@ pub mod note;
 pub mod patch;
 pub mod section;
 pub mod track;
+mod wrapper;
+pub use wrapper::DontMerge;
 
 mod tracker;
 pub use tracker::StateTracker;
@@ -53,6 +55,7 @@ impl<T: StateCommand> StateCommandWrapper for T {
 
     fn try_merge(&mut self, other: &dyn StateCommandWrapper) -> bool {
         if let Some(other) = other.downcast_ref() {
+            dbg!();
             StateCommand::try_merge(self, other)
         } else {
             false

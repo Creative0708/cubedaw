@@ -2,6 +2,7 @@
 
 use egui::{emath::inverse_lerp, *};
 
+/// A Blender-like draggable slider.
 pub struct DragValue<'a> {
     reference: &'a mut f32,
 
@@ -117,19 +118,35 @@ impl<'a> Widget for DragValue<'a> {
             let value_text = display.to_display(value);
             let num_chars = value_text.chars().count();
 
-            let galley = WidgetText::from(value_text).into_galley(
+            let max_width = ui.max_rect().width();
+
+            let number_galley = WidgetText::from(value_text).into_galley(
                 ui,
                 Some(false),
-                f32::INFINITY,
+                max_width,
                 TextStyle::Button,
             );
+            let name_galley = name.map(|name| {
+                WidgetText::from(name).into_galley(
+                    ui,
+                    Some(false),
+                    max_width - number_galley.rect.width(),
+                    TextStyle::Button,
+                )
+            });
 
-            let desired_height = galley.size().y + padding.y * 2.0;
+            let mut text_height = number_galley.size().y;
+            if let Some(ref name_galley) = name_galley {
+                let name_height = name_galley.size().y;
+                if name_height > text_height {
+                    text_height = name_height;
+                }
+            }
 
-            let (rect, response) = ui.allocate_at_least(
-                vec2(ui.max_rect().width(), desired_height),
-                Sense::click_and_drag(),
-            );
+            let desired_height = text_height + padding.y * 2.0;
+
+            let (rect, response) =
+                ui.allocate_at_least(vec2(max_width, desired_height), Sense::click_and_drag());
 
             let mut response = response.on_hover_cursor(CursorIcon::ResizeHorizontal);
 
@@ -201,14 +218,12 @@ impl<'a> Widget for DragValue<'a> {
 
             let visuals = ui.style().interact(&response);
 
+            let painter = ui.painter();
+
+            let rect_without_padding = rect.shrink2(padding);
+
+            // non-text display
             {
-                let text_pos = ui
-                    .layout()
-                    .align_size_within_rect(galley.size(), rect.shrink2(padding))
-                    .min;
-
-                let painter = ui.painter();
-
                 painter.rect(rect, visuals.rounding, visuals.bg_fill, visuals.bg_stroke);
 
                 let portion_filled = inverse_lerp(range.into(), *reference).unwrap_or(range.min);
@@ -221,16 +236,46 @@ impl<'a> Widget for DragValue<'a> {
                     visuals.rounding,
                     ui.visuals().selection.bg_fill,
                 );
+            }
 
-                painter.galley(text_pos, galley, visuals.text_color());
+            // name text
+            if let Some(name_galley) = name_galley {
+                let text_pos = egui::Layout {
+                    main_dir: egui::Direction::LeftToRight,
+                    main_align: Align::Min,
+                    ..Default::default()
+                }
+                .align_size_within_rect(name_galley.size(), rect_without_padding)
+                .min;
+
+                painter.galley(text_pos, name_galley, visuals.text_color());
+            }
+
+            // number text
+            {
+                let text_layout = if name.is_some() {
+                    egui::Layout {
+                        main_dir: egui::Direction::RightToLeft,
+                        main_align: Align::Max,
+                        ..Default::default()
+                    }
+                } else {
+                    egui::Layout {
+                        main_dir: egui::Direction::LeftToRight,
+                        main_align: Align::Min,
+                        ..Default::default()
+                    }
+                };
+
+                let text_pos = text_layout
+                    .align_size_within_rect(number_galley.size(), rect_without_padding)
+                    .min;
+
+                painter.galley(text_pos, number_galley, visuals.text_color());
             }
 
             response
         };
-
-        if ui.button("button that crashes the app").clicked() {
-            panic!("AHHHHHHHHH");
-        }
 
         response
     }

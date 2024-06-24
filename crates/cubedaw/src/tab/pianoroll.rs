@@ -323,9 +323,9 @@ impl PianoRollTab {
             if let Some((start_pos, ref note)) = self.currently_drawn_note {
                 handle_note(start_pos, note, None, true);
             }
-        });//.apply(&mut ctx.tracker).movement();
+        });
         {
-            let should_deselect_everything = result.should_deselect_everything();
+            let should_deselect_everything = result.should_deselect_everything() || interaction.clicked();
             let selection_changes = result.selection_changes();
             if should_deselect_everything {
                 // TODO rename these
@@ -350,9 +350,31 @@ impl PianoRollTab {
                     ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, selected));
                 }
             }
+            if let Some(finished_drag_offset) = result.movement() {
+                let pos_offset = finished_drag_offset.x.round() as i64;
+                let pitch_offset = finished_drag_offset.y.round() as i32;
+    
+                for (_section_range, section_id, section) in track.sections() {
+                    let section_ui = track_ui.sections.force_get(section_id);
+    
+                    for (note_pos, note_id, _note) in section.notes() {
+                        let note_ui_state = section_ui
+                            .notes
+                            .force_get(note_id);
+                        if note_ui_state.selected {
+                            ctx.tracker.add(NoteMove::new(
+                                track_id,
+                                section_id,
+                                note_id,
+                                note_pos,
+                                note_pos + pos_offset,
+                                pitch_offset,
+                            ));
+                        }
+                    }
+                }
+            }
         }
-
-        let finished_drag_offset = result.movement();
 
         if interaction.hovered() && ui.input(|i| i.modifiers.ctrl) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::None);
@@ -411,36 +433,6 @@ impl PianoRollTab {
             }
         }else {
             self.currently_drawn_note = None;
-        }
-
-        if let Some(finished_drag_offset) = finished_drag_offset {
-            let pos_offset = finished_drag_offset.x.round() as i64;
-            let pitch_offset = finished_drag_offset.y.round() as i32;
-
-            for (_section_range, section_id, section) in track.sections() {
-                let section_ui_data = track_ui.sections.force_get(section_id);
-
-                let mut notes_to_move: SmallVec<[(i64, Id<Note>); 8]> = SmallVec::new();
-                for (note_range, note_id, _note) in section.notes() {
-                    let note_ui_state = section_ui_data
-                        .notes
-                        .force_get(note_id);
-                    if note_ui_state.selected {
-                        notes_to_move.push((note_range, note_id));
-                    }
-                }
-                for &(note_start, note_id) in &notes_to_move {
-                    ctx.tracker.add(NoteMove::new(
-                        track_id,
-                        section_id,
-                        note_id,
-                        note_start,
-                        note_start + pos_offset,
-                        pitch_offset,
-                    ));
-                }
-                // }
-            }
         }
 
         // Top area (for displaying sections, etc)
@@ -532,7 +524,7 @@ impl PianoRollTab {
             },
         );
         {
-            let should_deselect_everything = result.should_deselect_everything();
+            let should_deselect_everything = result.should_deselect_everything() || interaction.clicked();
             let selection_changes = result.selection_changes();
             if should_deselect_everything {
                 // TODO rename these
@@ -541,6 +533,11 @@ impl PianoRollTab {
                         if section_ui.selected && selection_changes.get(&(track_id2, section_id2)).copied() != Some(true) {
                             ctx.tracker.add(UiSectionSelect::new(track_id2, section_id2, false));
                         }
+                    }
+                }
+                for (&(track_id, section_id), &selected) in selection_changes {
+                    if selected && !ctx.ui_state.tracks.get(track_id).and_then(|t| t.sections.get(section_id)).is_some_and(|n| n.selected) {
+                        ctx.tracker.add(UiSectionSelect::new(track_id, section_id, true));
                     }
                 }
             } else {
@@ -555,18 +552,14 @@ impl PianoRollTab {
         if let Some(finished_drag_offset) = finished_drag_offset {
             let finished_drag_offset = finished_drag_offset.x.round() as i64;
 
-            let mut sections_to_move = SmallVec::<[Range; 8]>::new();
             for (section_range, section_id, _section) in track.sections() {
                 if track_ui.sections.force_get(section_id).selected {
-                    sections_to_move.push(section_range);
+                    ctx.tracker.add(SectionMove::new(
+                        track_id,
+                        section_range,
+                        section_range.start + finished_drag_offset,
+                    ));
                 }
-            }
-            for &section_range in &sections_to_move {
-                ctx.tracker.add(SectionMove::new(
-                    track_id,
-                    section_range,
-                    section_range.start + finished_drag_offset,
-                ));
             }
             track.check_overlap();
         }
@@ -631,7 +624,7 @@ impl PianoRollTab {
             ));
         }
         if let Some(pointer_pos) = top_bar_interaction.interact_pointer_pos() {
-            ctx.tracker.add(UiSetPlayhead::new(snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _));
+            ctx.tracker.add_weak(UiSetPlayhead::new(snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _));
         }
         
 

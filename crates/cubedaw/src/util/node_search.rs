@@ -1,6 +1,6 @@
 use cubedaw_workerlib::NodeRegistry;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct NodeSearch {
     pub inner: String,
 }

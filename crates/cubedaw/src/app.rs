@@ -4,7 +4,7 @@ use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
 
 use crate::{
-    command::UiStateCommand,
+    command::{UiStateCommand, UiStateCommandWrapper},
     context::DockEvent,
     node,
     tab::{patch::PatchTab, pianoroll::PianoRollTab, track::TrackTab},
@@ -25,8 +25,7 @@ pub struct CubedawApp {
 
     dock_state: egui_dock::DockState<Id<Tab>>,
 
-    // Vec<(is collapsible, events)>
-    undo_stack: Vec<(bool, Vec<Box<dyn UiStateCommand>>)>,
+    undo_stack: Vec<Vec<Box<dyn UiStateCommandWrapper>>>,
 
     // The index where the next action will be placed.
     // i.e. if the stack is
@@ -42,16 +41,18 @@ impl CubedawApp {
         let mut app = {
             let mut state = cubedaw_lib::State::default();
             let mut ui_state = crate::UiState::default();
+            let mut ephemeral_state = crate::EphemeralState::default();
 
             fn execute(
                 mut command: impl UiStateCommand,
                 state: &mut cubedaw_lib::State,
                 ui_state: &mut crate::UiState,
+                ephemeral_state: &mut crate::EphemeralState,
             ) {
                 if let Some(inner) = command.inner() {
                     inner.execute(state);
                 }
-                command.ui_execute(ui_state);
+                command.ui_execute(ui_state, ephemeral_state);
             }
 
             let node_registry = Arc::new({
@@ -74,6 +75,7 @@ impl CubedawApp {
                 ),
                 &mut state,
                 &mut ui_state,
+                &mut ephemeral_state,
             );
 
             Self {
@@ -92,7 +94,7 @@ impl CubedawApp {
 
                 state,
                 ui_state,
-                ephemeral_state: crate::EphemeralState::default(),
+                ephemeral_state,
                 tabs: Default::default(),
 
                 node_registry,
@@ -125,7 +127,7 @@ impl CubedawApp {
         app
     }
 
-    fn ctx_finished(&mut self, mut result: crate::context::ContextResult) {
+    fn ctx_finished(&mut self, result: crate::context::ContextResult) {
         for event in result.dock_events {
             match event {
                 DockEvent::AddTabToDockState(tab_id) => {
@@ -146,26 +148,44 @@ impl CubedawApp {
             }
         }
 
-        let mut is_collapsible = true;
-        for event in &mut result.state_events {
-            event.ui_execute(&mut self.ui_state);
+        let mut tracker_result = result.tracker;
+        for event in &mut tracker_result.commands {
+            event.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
             if let Some(inner) = event.inner() {
                 inner.execute(&mut self.state);
-                // events that modify state aren't collapsible
-                is_collapsible = false;
             }
         }
-        if !result.state_events.is_empty() {
+        if !tracker_result.commands.is_empty() {
             if self.undo_index < self.undo_stack.len() {
                 self.undo_stack
                     .resize_with(self.undo_index, || unreachable!());
             }
-            result.state_events.shrink_to_fit();
-            if is_collapsible && let Some((true, last)) = self.undo_stack.last_mut() {
-                last.extend(result.state_events);
+            if !tracker_result.strong
+                && let Some(last) = self.undo_stack.last_mut()
+            {
+                let mut starting_index = 0;
+                if let (Some(last_command), Some(first_command)) =
+                    (last.first_mut(), tracker_result.commands.first_mut())
+                {
+                    if last_command.try_merge(first_command.as_ref()) {
+                        starting_index = 1;
+                    }
+                }
+                last.extend(tracker_result.commands.drain(starting_index..));
             } else {
-                self.undo_stack.push((is_collapsible, result.state_events));
-                self.undo_index += 1;
+                // if let (Some(last), Some(first)) = (
+                //     self.undo_stack.last_mut().and_then(|x| x.last_mut()),
+                //     tracker_result.commands.first(),
+                // ) {
+                //     if last.try_merge(first.as_ref()) {
+                //         tracker_result.commands.remove(0);
+                //     }
+                // }
+                if !tracker_result.commands.is_empty() {
+                    tracker_result.commands.shrink_to_fit();
+                    self.undo_stack.push(tracker_result.commands);
+                    self.undo_index += 1;
+                }
             }
         }
     }
@@ -231,7 +251,7 @@ impl eframe::App for CubedawApp {
             .inner;
 
         let result = ctx.finish();
-        if !result.state_events.is_empty() {
+        if !result.tracker.commands.is_empty() {
             egui_ctx.request_repaint();
         }
         self.ctx_finished(result);
@@ -254,21 +274,21 @@ impl eframe::App for CubedawApp {
             (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
         }) {
             if is_redo {
-                if let Some((_, actions_being_redone)) = self.undo_stack.get_mut(self.undo_index) {
+                if let Some(actions_being_redone) = self.undo_stack.get_mut(self.undo_index) {
                     for action in actions_being_redone.iter_mut() {
-                        action.ui_execute(&mut self.ui_state);
+                        action.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
                         if let Some(state_action) = action.inner() {
                             state_action.execute(&mut self.state);
                         }
                     }
                     self.undo_index += 1;
                 }
-            } else if let Some((_, actions_being_undone)) =
+            } else if let Some(actions_being_undone) =
                 self.undo_stack.get_mut(self.undo_index.wrapping_sub(1))
             {
                 // do undo actions in the opposite order
                 for action in actions_being_undone.iter_mut().rev() {
-                    action.ui_rollback(&mut self.ui_state);
+                    action.ui_rollback(&mut self.ui_state, &mut self.ephemeral_state);
                     if let Some(state_action) = action.inner() {
                         state_action.rollback(&mut self.state);
                     }

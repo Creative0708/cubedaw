@@ -1,5 +1,6 @@
 /// Miscellaneous node state used
 pub trait NodeState: 'static + Sized + Send + Sync + Clone + PartialEq + Eq {
+    fn title(&self) -> Cow<'static, str>;
     #[cfg(feature = "egui")]
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext);
 }
@@ -8,7 +9,7 @@ pub type DynNodeState = Box<dyn NodeStateWrapper>;
 
 #[cfg(feature = "egui")]
 mod ui {
-    use std::any::TypeId;
+    use std::{any::TypeId, borrow::Cow};
 
     use egui::Rangef;
 
@@ -79,7 +80,9 @@ mod ui {
 
     // TODO change this to unsafe possibly? actually just determine if the Any overhead is negligible
     pub trait NodeStateWrapper: 'static + sealed::Sealed + Send + Sync {
+        fn title(&self) -> Cow<'static, str>;
         fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext);
+
         fn clone(&self) -> Box<dyn NodeStateWrapper>;
         fn eq(&self, rhs: &dyn NodeStateWrapper) -> bool;
 
@@ -88,9 +91,13 @@ mod ui {
 
     impl<T: NodeState> sealed::Sealed for T {}
     impl<T: NodeState> NodeStateWrapper for T {
+        fn title(&self) -> Cow<'static, str> {
+            NodeState::title(self)
+        }
         fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
             NodeState::ui(self, ui, ctx)
         }
+
         fn clone(&self) -> Box<dyn NodeStateWrapper> {
             Box::new(Clone::clone(self))
         }
@@ -150,6 +157,8 @@ mod ui {
     }
     impl Eq for dyn NodeStateWrapper {}
 }
+
+use std::borrow::Cow;
 
 #[cfg(feature = "egui")]
 pub use ui::{NodeInputUiOptions, NodeStateWrapper, NodeUiContext};

@@ -1,13 +1,10 @@
-use cubedaw_command::{node::NodeUiUpdate, StateTracker};
+use cubedaw_command::node::NodeUiUpdate;
 use cubedaw_lib::{Id, NodeData, NodeInputUiOptions, NodeStateWrapper, Track};
 use cubedaw_node::Node;
-use egui::{
-    emath::TSTransform, pos2, Align, Align2, Color32, FontId, Layout, Pos2, Rect, Rounding, Stroke,
-    TextStyle, Vec2,
-};
+use egui::{emath::TSTransform, pos2, Rect, Vec2};
 
 use crate::{
-    command::node::{UiNodeAddOrRemove, UiNodeSelect},
+    command::node::{UiNodeAddOrRemove, UiNodeMove, UiNodeSelect},
     context::UiStateTracker,
     state::ui::NodeUiState,
     util::DragHandler,
@@ -126,10 +123,9 @@ impl PatchTab {
         let Some(track_id) = self.track_id else {
             unreachable!()
         };
-        let Some(Track { patch, .. }) = ctx.state.tracks.get(track_id) else {
-            unreachable!();
-        };
+        let Track { patch, .. } = ctx.state.tracks.force_get(track_id);
         let track_ui = ctx.ui_state.tracks.force_get(track_id);
+        let track_ephemeral = ctx.ephemeral_state.tracks.force_get_mut(track_id);
 
         let patch_ui = &ctx
             .ui_state
@@ -149,6 +145,11 @@ impl PatchTab {
             ui.menu_button("Add...", |ui| {
                 let mut node_added: Option<Box<dyn NodeStateWrapper>> = None;
                 // TODO make this a search bar
+                if ui.button("Math").clicked() {
+                    node_added = Some(Box::new(crate::node::math::MathNode::new_state(
+                        Default::default(),
+                    )));
+                }
                 if ui.button("Note Output").clicked() {
                     node_added = Some(Box::new(
                         cubedaw_workerlib::nodes::NoteOutputNode::new_state(Default::default()),
@@ -196,18 +197,27 @@ impl PatchTab {
 
         let result = self.drag_handler.handle(|prepared| {
             // what the heck is rustfmt doing
-            let handle_node = |prepared: &mut crate::util::Prepared<
+            let mut handle_node = |prepared: &mut crate::util::Prepared<
                 (Id<Track>, Id<NodeData>),
                 fn(Vec2) -> Vec2,
             >,
-                               ui: &mut egui::Ui,
-                               node_data: &NodeData,
-                               node_id: Option<Id<NodeData>>,
-                               node_ui: &NodeUiState,
-                               tracker: &mut UiStateTracker| {
+                                   ui: &mut egui::Ui,
+                                   node_data: &NodeData,
+                                   node_id: Option<Id<NodeData>>,
+                                   node_ui: &NodeUiState,
+                                   tracker: &mut UiStateTracker| {
                 const NODE_MARGIN: f32 = 8.0;
 
-                let pos = node_ui.pos;
+                let real_node_data =
+                    node_id.map(|node_id| (node_id, track_ephemeral.nodes.force_get_mut(node_id)));
+
+                let pos = if node_ui.selected
+                    && let Some(offset) = prepared.movement()
+                {
+                    node_ui.pos + offset
+                } else {
+                    node_ui.pos
+                };
 
                 let mut child_ui = ui.child_ui_with_id_source(
                     Rect::from_x_y_ranges(pos.x..=pos.x + node_ui.width, pos.y..=f32::INFINITY),
@@ -215,22 +225,39 @@ impl PatchTab {
                     node_id.unwrap_or(Id::new("currently_held_node")),
                 );
 
-                let mut frame = egui::Frame::window(child_ui.style());
+                let mut frame = egui::Frame::window(ui.style());
                 if node_ui.selected {
-                    let open_visuals = ui.visuals().widgets.open;
-                    // TODO "stealing" another stroke's color is kinda goofy.
-                    // decide if this is okay or find a workaround
-                    frame.stroke.color = open_visuals.bg_stroke.color;
-                    frame.fill = open_visuals.bg_fill;
+                    // TODO actually implement selection colors
+                    frame.stroke = egui::Stroke::new(
+                        frame.stroke.width * 1.2,
+                        frame.stroke.color.gamma_multiply(3.0),
+                    );
+                    frame.fill = frame.fill.gamma_multiply(1.2);
                 }
 
                 let mut frame_prepared = frame.begin(&mut child_ui);
                 {
+                    if let Some((node_id, ref node_ephemeral)) = real_node_data {
+                        let drag_response = child_ui.allocate_rect(
+                            Rect::from_min_size(node_ui.pos, node_ephemeral.size),
+                            egui::Sense::click_and_drag(),
+                        );
+                        prepared.process_interaction(
+                            drag_response,
+                            (track_id, node_id),
+                            node_ui.selected,
+                        );
+                    }
                     let mut ui_ctx = CubedawNodeUiContext::new(node_id, track_id, node_data);
 
                     let node_state = node_data.inner.as_ref();
                     let mut inner_node_ui = node_state.clone();
+
+                    // TODO add header colors
+                    frame_prepared.content_ui.label(inner_node_ui.title());
+                    frame_prepared.content_ui.separator();
                     inner_node_ui.ui(&mut frame_prepared.content_ui, &mut ui_ctx);
+
                     if *inner_node_ui != *node_state
                         && let Some(node_id) = node_id
                     {
@@ -239,15 +266,18 @@ impl PatchTab {
 
                     ui_ctx.finish(tracker);
 
-                    if let Some(node_id) = node_id {
-                        // only interact if the node is real.
-                        // this prevents issues where the user clicks on the node instead of the background by accident
+                    if let Some((node_id, node_ephemeral)) = real_node_data {
                         let response = frame_prepared.allocate_space(&mut child_ui);
                         prepared.process_interaction(
                             response,
                             (track_id, node_id),
                             node_ui.selected,
                         );
+
+                        node_ephemeral.size = frame
+                            .total_margin()
+                            .expand_rect(frame_prepared.content_ui.min_rect())
+                            .size();
                     }
                 }
                 frame_prepared.paint(&child_ui);
@@ -326,7 +356,8 @@ impl PatchTab {
         });
 
         {
-            let should_deselect_everything = result.should_deselect_everything();
+            let should_deselect_everything =
+                result.should_deselect_everything() || viewport_interaction.clicked();
             let selection_changes = result.selection_changes();
             if should_deselect_everything {
                 // TODO rename these
@@ -338,10 +369,30 @@ impl PatchTab {
                             .add(UiNodeSelect::new(track_id, node_id2, false));
                     }
                 }
+                for (&(track_id, node_id), &selected) in selection_changes {
+                    if selected
+                        && !ctx
+                            .ui_state
+                            .tracks
+                            .get(track_id)
+                            .and_then(|t| t.patch.nodes.get(node_id))
+                            .is_some_and(|n| n.selected)
+                    {
+                        ctx.tracker.add(UiNodeSelect::new(track_id, node_id, true));
+                    }
+                }
             } else {
                 for (&(track_id, node_id), &selected) in selection_changes {
                     ctx.tracker
                         .add(UiNodeSelect::new(track_id, node_id, selected));
+                }
+            }
+            if let Some(finished_drag_offset) = result.movement() {
+                for (&node_id, node_ui) in &track_ui.patch.nodes {
+                    if node_ui.selected {
+                        ctx.tracker
+                            .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
+                    }
                 }
             }
         }
@@ -349,47 +400,45 @@ impl PatchTab {
 }
 
 struct CubedawNodeUiContext<'a> {
-    id: Option<Id<NodeData>>,
+    node_id: Option<Id<NodeData>>,
     track_id: Id<Track>,
     node_data: &'a NodeData,
 
-    input_counter: usize,
-    output_counter: usize,
+    input_ypos: Vec<f32>,
+    output_ypos: Vec<f32>,
 
     tracker: UiStateTracker,
 }
 impl<'a> CubedawNodeUiContext<'a> {
     pub fn new(id: Option<Id<NodeData>>, track_id: Id<Track>, node_data: &'a NodeData) -> Self {
         Self {
-            id,
+            node_id: id,
             track_id,
             node_data,
 
-            input_counter: 0,
-            output_counter: 0,
+            input_ypos: Vec::new(),
+            output_ypos: Vec::new(),
 
             tracker: UiStateTracker::new(),
         }
     }
 
     fn finish(self, tracker: &mut UiStateTracker) {
-        if let Some(id) = self.id {
+        if let Some(id) = self.node_id {
             let old_num_inputs = self.node_data.inputs.len();
-            if self.input_counter < old_num_inputs {
-                let deleted_input_range = self.input_counter..old_num_inputs;
-                for (deleted_input, input_index) in self.node_data.inputs
-                    [deleted_input_range.clone()]
-                .iter()
-                .zip(deleted_input_range)
+            let num_inputs = self.input_ypos.len();
+            if num_inputs < old_num_inputs {
+                for (input_index, deleted_input) in (num_inputs..old_num_inputs)
+                    .zip(&self.node_data.inputs[num_inputs..old_num_inputs])
                 {
                     // do in reverse order because removing elements one-by-one from the vec is faster if you remove from last to first
                     for &connection in deleted_input.connections.iter().rev() {
-                        tracker.add(cubedaw_command::patch::CableAddOrRemove::removal(
+                        tracker.add_weak(cubedaw_command::patch::CableAddOrRemove::removal(
                             connection,
                             self.track_id,
                         ));
                     }
-                    tracker.add(cubedaw_command::node::NodeInputAddOrRemove::removal(
+                    tracker.add_weak(cubedaw_command::node::NodeInputAddOrRemove::removal(
                         id,
                         self.track_id,
                         input_index,
@@ -405,17 +454,18 @@ impl<'a> CubedawNodeUiContext<'a> {
 
 impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
     fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions) {
-        let input = self.node_data.inputs.get(self.input_counter);
+        let num_inputs = self.input_ypos.len();
+        let input = self.node_data.inputs.get(num_inputs);
 
         let previous_value = match input {
             Some(input) => input.value,
             None => {
-                if let Some(id) = self.id {
+                if let Some(node_id) = self.node_id {
                     self.tracker
-                        .add(cubedaw_command::node::NodeInputAddOrRemove::addition(
-                            id,
+                        .add_weak(cubedaw_command::node::NodeInputAddOrRemove::addition(
+                            node_id,
                             self.track_id,
-                            self.input_counter,
+                            num_inputs,
                             options.default_value,
                         ));
                 }
@@ -424,24 +474,45 @@ impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
         };
         let mut value = previous_value;
 
-        ui.add(DragValue::new(&mut value).name(Some(name)));
+        let response = ui.add(DragValue::new(&mut value).name(Some(name)));
 
-        if previous_value != value
-            && let Some(id) = self.id
-        {
-            self.tracker
-                .add(cubedaw_command::node::NodeInputChange::new(
-                    id,
-                    self.track_id,
-                    self.input_counter,
-                    previous_value,
-                    value,
-                ));
+        if let Some(id) = self.node_id {
+            let command = cubedaw_command::node::NodeInputChange::new(
+                id,
+                self.track_id,
+                num_inputs,
+                previous_value,
+                value,
+            );
+            if response.drag_stopped() || response.lost_focus() {
+                self.tracker.add(command);
+            } else if previous_value != value {
+                self.tracker.add_weak(command);
+            }
         }
 
-        self.input_counter += 1;
+        self.input_ypos.push(response.rect.center().y);
     }
     fn output_ui(&mut self, ui: &mut egui::Ui, name: &str) {
-        // do NOTHING!!!! TODO
+        let num_outputs = self.output_ypos.len();
+
+        let response = ui
+            .with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.add(egui::Label::new(name))
+            })
+            .inner;
+
+        if self.node_data.outputs.len() <= num_outputs {
+            if let Some(node_id) = self.node_id {
+                self.tracker
+                    .add_weak(cubedaw_command::node::NodeOutputAddOrRemove::addition(
+                        node_id,
+                        self.track_id,
+                        num_outputs,
+                    ));
+            }
+        }
+
+        self.output_ypos.push(response.rect.center().y);
     }
 }

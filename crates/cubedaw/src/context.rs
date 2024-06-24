@@ -3,7 +3,11 @@ use std::any::Any;
 use cubedaw_lib::{Id, State};
 use cubedaw_workerlib::NodeRegistry;
 
-use crate::{app::Tab, command::UiStateCommand, EphemeralState, Screen, UiState};
+use crate::{
+    app::Tab,
+    command::{UiStateCommand, UiStateCommandWrapper},
+    EphemeralState, Screen, UiState,
+};
 
 pub struct Context<'a> {
     // State: global data required to render the music; i.e. volumes, notes, etc
@@ -90,7 +94,7 @@ impl<'a> Context<'a> {
         self.ephemeral_state.selection_rect.finish();
         ContextResult {
             dock_events: self.dock_events,
-            state_events: self.tracker.finish(),
+            tracker: self.tracker.finish(),
         }
     }
 }
@@ -129,34 +133,51 @@ pub enum DockEvent {
 
 pub struct ContextResult {
     pub dock_events: Vec<DockEvent>,
-    pub state_events: Vec<Box<dyn UiStateCommand>>,
+    pub tracker: UiStateTrackerResult,
 }
 
 #[derive(Default)]
-pub struct UiStateTracker(Vec<Box<dyn UiStateCommand>>);
+pub struct UiStateTracker {
+    commands: Vec<Box<dyn UiStateCommandWrapper>>,
+    strong: bool,
+}
 
 impl UiStateTracker {
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            commands: Vec::new(),
+            strong: false,
+        }
     }
-    pub fn add(&mut self, mut command: impl UiStateCommand) {
-        if let Some((inner, last_inner)) = command
-            .inner()
-            .zip(self.0.last_mut().and_then(|x| x.inner()))
-        {
-            if last_inner.try_merge(inner) {
+    pub fn add(&mut self, command: impl UiStateCommand) {
+        // dbg!(std::any::type_name_of_val(&command));
+        self.strong = true;
+        self.add_weak(command)
+    }
+    pub fn add_weak(&mut self, command: impl UiStateCommand) {
+        if let Some(last) = self.commands.last_mut() {
+            if last.try_merge(&command) {
                 return;
             }
         }
-        self.0.push(Box::new(command));
+        self.commands.push(Box::new(command));
     }
     pub fn extend(&mut self, other: Self) {
-        self.0.extend(other.0);
+        self.commands.extend(other.commands);
+        self.strong |= other.strong;
     }
     pub fn take(&mut self) -> UiStateTracker {
         core::mem::take(self)
     }
-    pub fn finish(self) -> Vec<Box<dyn UiStateCommand>> {
-        self.0
+    pub fn finish(self) -> UiStateTrackerResult {
+        UiStateTrackerResult {
+            commands: self.commands,
+            strong: self.strong,
+        }
     }
+}
+
+pub struct UiStateTrackerResult {
+    pub commands: Vec<Box<dyn UiStateCommandWrapper>>,
+    pub strong: bool,
 }

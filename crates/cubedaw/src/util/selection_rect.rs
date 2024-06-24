@@ -3,6 +3,7 @@ use egui::Pos2;
 
 use crate::app::Tab;
 
+#[derive(Debug)]
 pub struct SelectionRect {
     drag_start_pos: Option<Pos2>,
     tab_id: Option<Id<Tab>>,

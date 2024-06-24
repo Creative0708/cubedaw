@@ -11,12 +11,12 @@ enum MathNodeType {
 }
 
 impl MathNodeType {
-    const fn to_str(&self) -> &'static str {
+    const fn to_str(self) -> &'static str {
         match self {
-            MathNodeType::Add => "add",
-            MathNodeType::Subtract => "subtract",
-            MathNodeType::Multiply => "multiply",
-            MathNodeType::Divide => "divide",
+            MathNodeType::Add => "Add",
+            MathNodeType::Subtract => "Rubtract",
+            MathNodeType::Multiply => "Multiply",
+            MathNodeType::Divide => "Divide",
         }
     }
 }
@@ -71,6 +71,10 @@ pub struct MathNodeUi {
 }
 
 impl NodeState for MathNodeUi {
+    fn title(&self) -> std::borrow::Cow<'static, str> {
+        self.node_type.to_str().into()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
         ComboBox::from_id_source(0)
             .selected_text(self.node_type.to_str())

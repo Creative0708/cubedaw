@@ -34,6 +34,10 @@ impl Node for NoteOutputNode {
 pub struct NoteOutputNodeState;
 
 impl NodeState for NoteOutputNodeState {
+    fn title(&self) -> std::borrow::Cow<'static, str> {
+        "Node Output".into()
+    }
+
     #[cfg(feature = "egui")]
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
         use cubedaw_lib::NodeInputUiOptions;

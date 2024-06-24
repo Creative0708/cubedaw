@@ -34,6 +34,10 @@ impl Node for TrackOutputNode {
 pub struct TrackOutputNodeState;
 
 impl NodeState for TrackOutputNodeState {
+    fn title(&self) -> std::borrow::Cow<'static, str> {
+        "Track Output".into()
+    }
+
     #[cfg(feature = "egui")]
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
         use cubedaw_lib::NodeInputUiOptions;
