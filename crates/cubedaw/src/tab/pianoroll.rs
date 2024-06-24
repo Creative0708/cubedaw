@@ -4,7 +4,6 @@ use cubedaw_command::{
 };
 use cubedaw_lib::{Id, Note, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
-use smallvec::SmallVec;
 
 use crate::{app::Tab, command::{misc::UiSetPlayhead, note::{UiNoteAddOrRemove, UiNoteSelect}, section::{UiSectionAddOrRemove, UiSectionSelect}}, state::ui::SectionUiState};
 
@@ -135,14 +134,14 @@ impl PianoRollTab {
             (viewport.bottom() / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
         );
 
-        let (_, interaction) = ui.allocate_exact_size(
+        let (_, response) = ui.allocate_exact_size(
             vec2(
                 (ctx.state.song_boundary.length() + SONG_PADDING * 2) as f32 * self.units_per_tick,
                 (MAX_NOTE_SHOWN - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
             ),
             egui::Sense::click_and_drag(),
         );
-        let snapped_hover_pos = interaction.hover_pos().map(|pos2| {
+        let snapped_hover_pos = response.hover_pos().map(|pos2| {
             let (pos, pitch) = screen_pos_to_note_pos(pos2);
             (snap_pos(pos, self.units_per_tick), pitch)
         });
@@ -325,7 +324,7 @@ impl PianoRollTab {
             }
         });
         {
-            let should_deselect_everything = result.should_deselect_everything() || interaction.clicked();
+            let should_deselect_everything = result.should_deselect_everything() || response.clicked();
             let selection_changes = result.selection_changes();
             if should_deselect_everything {
                 // TODO rename these
@@ -354,20 +353,14 @@ impl PianoRollTab {
                 let pos_offset = finished_drag_offset.x.round() as i64;
                 let pitch_offset = finished_drag_offset.y.round() as i32;
     
-                for (_section_range, section_id, section) in track.sections() {
-                    let section_ui = track_ui.sections.force_get(section_id);
-    
-                    for (note_pos, note_id, _note) in section.notes() {
-                        let note_ui_state = section_ui
-                            .notes
-                            .force_get(note_id);
-                        if note_ui_state.selected {
+                for (&section_id, section_ui) in &track_ui.sections {
+                    for (&note_id, note_ui) in &section_ui.notes {
+                        if note_ui.selected {
                             ctx.tracker.add(NoteMove::new(
                                 track_id,
                                 section_id,
                                 note_id,
-                                note_pos,
-                                note_pos + pos_offset,
+                                pos_offset,
                                 pitch_offset,
                             ));
                         }
@@ -376,7 +369,7 @@ impl PianoRollTab {
             }
         }
 
-        if interaction.hovered() && ui.input(|i| i.modifiers.ctrl) {
+        if response.hovered() && ui.input(|i| i.modifiers.ctrl) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::None);
             if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) && let Some((pos, pitch)) = snapped_hover_pos{
                 self.currently_drawn_note = Some((pos, Note::new(0, pitch)));
@@ -403,9 +396,9 @@ impl PianoRollTab {
                         }
                     };
                     ctx.tracker.add(UiNoteAddOrRemove::addition(
+                        Id::arbitrary(),
                         track_id,
                         section_id,
-                        Id::arbitrary(),
                         start_pos - section_range.start,
                         note,
                     ));
@@ -524,7 +517,7 @@ impl PianoRollTab {
             },
         );
         {
-            let should_deselect_everything = result.should_deselect_everything() || interaction.clicked();
+            let should_deselect_everything = result.should_deselect_everything() || response.clicked();
             let selection_changes = result.selection_changes();
             if should_deselect_everything {
                 // TODO rename these
@@ -564,7 +557,7 @@ impl PianoRollTab {
             track.check_overlap();
         }
 
-        interaction.context_menu(|ui| {
+        response.context_menu(|ui| {
             if ui.button("Add section").clicked() {
                 let section_range = Range::surrounding_pos(self.last_mouse_position.0);
                 ctx.tracker.add(UiSectionAddOrRemove::addition(
@@ -580,8 +573,8 @@ impl PianoRollTab {
         // if interaction.clicked() && single_thing_clicked.is_none() {
         //     single_thing_clicked = Some(None);
         // }
-        if self.currently_drawn_note.is_none() || interaction.drag_stopped() {
-            ctx.ephemeral_state.selection_rect.process_interaction(interaction, self.id);
+        if self.currently_drawn_note.is_none() || response.drag_stopped() {
+            ctx.ephemeral_state.selection_rect.process_interaction(&response, self.id);
         }
 
         // if let Some(single_thing_clicked) = single_thing_clicked {
@@ -627,6 +620,19 @@ impl PianoRollTab {
             ctx.tracker.add_weak(UiSetPlayhead::new(snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _));
         }
         
+        if ctx.focused_tab() == Some(self.id) && ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::default(), egui::Key::Delete)) {
+            // we should really store the selected sections/notes/whatever
+            // so we don't have to iterate over _every_ note in order to find the selected ones
+            for (&track_id2, track_ui) in &ctx.ui_state.tracks {
+                for (&section_id2, section_ui) in &track_ui.sections {
+                    for (&note_id2, note_ui) in &section_ui.notes {
+                        if note_ui.selected {
+                            ctx.tracker.add(UiNoteAddOrRemove::removal(track_id2, section_id2, note_id2));
+                        }
+                    }
+                }
+            }
+        }
 
         if let Some(hover_pos) = snapped_hover_pos {
             self.last_mouse_position = hover_pos;

@@ -26,7 +26,7 @@ impl SelectionRect {
         }
     }
 
-    pub fn process_interaction(&mut self, interaction: egui::Response, tab_id: Id<Tab>) {
+    pub fn process_interaction(&mut self, interaction: &egui::Response, tab_id: Id<Tab>) {
         if interaction.drag_started() {
             self.drag_start_pos = interaction.ctx.input(|i| i.pointer.interact_pos());
             self.tab_id = Some(tab_id);

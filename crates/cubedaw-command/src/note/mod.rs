@@ -7,8 +7,7 @@ pub struct NoteMove {
     track_id: Id<Track>,
     section_id: Id<Section>,
     note_id: Id<Note>,
-    starting_pos: i64,
-    new_pos: i64,
+    pos_offset: i64,
     pitch_offset: i32,
 }
 
@@ -17,57 +16,43 @@ impl NoteMove {
         track_id: Id<Track>,
         section_id: Id<Section>,
         note_id: Id<Note>,
-        starting_pos: i64,
-        new_pos: i64,
+        pos_offset: i64,
         pitch_offset: i32,
     ) -> Self {
         Self {
             track_id,
             section_id,
             note_id,
-            starting_pos,
-            new_pos,
+            pos_offset,
             pitch_offset,
         }
+    }
+
+    fn section<'a>(
+        &self,
+        state: &'a mut cubedaw_lib::State,
+    ) -> Option<&'a mut cubedaw_lib::Section> {
+        Some(
+            state
+                .tracks
+                .get_mut(self.track_id)?
+                .inner
+                .section_mut()?
+                .section_mut(self.section_id)?,
+        )
     }
 }
 
 impl StateCommand for NoteMove {
     fn execute(&mut self, state: &mut cubedaw_lib::State) {
-        let section = state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("tried to move note in nonexistent track")
-            .inner
-            .section_mut()
-            .expect("track isn't a section track")
-            .section_mut(self.section_id)
-            .expect("tried to move note in nonexistent section");
-
-        section.move_note(
-            self.starting_pos,
-            self.note_id,
-            self.new_pos,
-            self.pitch_offset,
-        );
+        if let Some(section) = self.section(state) {
+            section.move_note(self.note_id, self.pos_offset, self.pitch_offset);
+        }
     }
     fn rollback(&mut self, state: &mut cubedaw_lib::State) {
-        let section = state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("tried to move note in nonexistent track")
-            .inner
-            .section_mut()
-            .expect("track isn't a section track")
-            .section_mut(self.section_id)
-            .expect("tried to move note in nonexistent section");
-
-        section.move_note(
-            self.new_pos,
-            self.note_id,
-            self.starting_pos,
-            -self.pitch_offset,
-        );
+        if let Some(section) = self.section(state) {
+            section.move_note(self.note_id, -self.pos_offset, -self.pitch_offset);
+        }
     }
 }
 
@@ -85,10 +70,10 @@ pub struct NoteAddOrRemove {
 impl NoteAddOrRemove {
     pub fn addition(
         id: Id<Note>,
-        start_pos: i64,
-        data: Note,
         track_id: Id<Track>,
         section_id: Id<Section>,
+        start_pos: i64,
+        data: Note,
     ) -> Self {
         Self {
             id,
@@ -99,15 +84,10 @@ impl NoteAddOrRemove {
             is_removal: false,
         }
     }
-    pub fn removal(
-        id: Id<Note>,
-        start_pos: i64,
-        track_id: Id<Track>,
-        section_id: Id<Section>,
-    ) -> Self {
+    pub fn removal(id: Id<Note>, track_id: Id<Track>, section_id: Id<Section>) -> Self {
         Self {
             id,
-            start_pos,
+            start_pos: 0, // dummy value, will be replaced
             track_id,
             section_id,
             data: None,
@@ -128,37 +108,38 @@ impl NoteAddOrRemove {
         self.is_removal
     }
 
+    fn section<'a>(
+        &self,
+        state: &'a mut cubedaw_lib::State,
+    ) -> Option<&'a mut cubedaw_lib::Section> {
+        Some(
+            state
+                .tracks
+                .get_mut(self.track_id)?
+                .inner
+                .section_mut()?
+                .section_mut(self.section_id)?,
+        )
+    }
+
     fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
         let note_data = self
             .data
             .take()
             .expect("called execute_add on empty NoteAddOrRemove");
 
-        state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("tried to add note to nonexistent track")
-            .inner
-            .section_mut()
-            .expect("track isn't a section track")
-            .section_mut(self.section_id)
-            .expect("tried to add note to nonexistent section")
-            .insert_note(self.start_pos, self.id, note_data);
+        if let Some(section) = self.section(state) {
+            section.insert_note(self.start_pos, self.id, note_data);
+        }
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
-        let note_data = state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("tried to add note to nonexistent track")
-            .inner
-            .section_mut()
-            .expect("track isn't a section track")
-            .section_mut(self.section_id)
-            .expect("tried to add note to nonexistent section")
-            .remove_note(self.start_pos, self.id);
+        if let Some(section) = self.section(state) {
+            let (start_pos, note_data) = section.remove_note(self.id);
 
-        if self.data.replace(note_data).is_some() {
-            panic!("called execute_remove on nonempty NoteAddOrRemove");
+            if self.data.replace(note_data).is_some() {
+                panic!("called execute_remove on nonempty NoteAddOrRemove");
+            }
+            self.start_pos = start_pos;
         }
     }
 }

@@ -12,25 +12,20 @@ pub struct UiNoteAddOrRemove {
 
 impl UiNoteAddOrRemove {
     pub fn addition(
+        id: Id<Note>,
         track_id: Id<Track>,
         section_id: Id<Section>,
-        id: Id<Note>,
         start_pos: i64,
         data: Note,
     ) -> Self {
         Self {
-            inner: NoteAddOrRemove::addition(id, start_pos, data, track_id, section_id),
+            inner: NoteAddOrRemove::addition(id, track_id, section_id, start_pos, data),
             ui_data: None,
         }
     }
-    pub fn removal(
-        track_id: Id<Track>,
-        section_id: Id<Section>,
-        id: Id<Note>,
-        start_pos: i64,
-    ) -> Self {
+    pub fn removal(track_id: Id<Track>, section_id: Id<Section>, id: Id<Note>) -> Self {
         Self {
-            inner: NoteAddOrRemove::removal(id, start_pos, track_id, section_id),
+            inner: NoteAddOrRemove::removal(id, track_id, section_id),
             ui_data: None,
         }
     }

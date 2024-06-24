@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use cubedaw_lib::{Id, State};
+use cubedaw_lib::{Id, IdMap, State};
 use cubedaw_workerlib::NodeRegistry;
 
 use crate::{
@@ -34,6 +34,8 @@ pub struct Context<'a> {
 
     dock_events: Vec<DockEvent>,
 
+    focused_tab: Option<Id<Tab>>,
+
     time_since_last_frame: f32,
 }
 
@@ -44,6 +46,7 @@ impl<'a> Context<'a> {
         ephemeral_state: &'a mut EphemeralState,
         tabs: &'a mut Tabs,
         node_registry: &'a NodeRegistry,
+        focused_track: Option<Id<Tab>>,
         time_since_last_frame: f32,
     ) -> Self {
         Self {
@@ -56,6 +59,8 @@ impl<'a> Context<'a> {
 
             tracker: UiStateTracker::new(),
             dock_events: Vec::new(),
+
+            focused_tab: focused_track,
 
             time_since_last_frame,
         }
@@ -78,7 +83,7 @@ impl<'a> Context<'a> {
 
         self.dock_events.push(DockEvent::AddTabToDockState(id));
 
-        let tab = self.tabs.map.entry(id).or_insert(Box::new(tab));
+        let tab = self.tabs.map.insert_and_get_mut(id, Box::new(tab));
 
         // TODO any way to safely remove the unreachable here?
         (&mut **tab as &mut dyn Any)
@@ -88,6 +93,10 @@ impl<'a> Context<'a> {
 
     pub fn queue_tab_removal_from_map(&mut self, id: Id<Box<dyn Screen>>) {
         self.dock_events.push(DockEvent::RemoveTabFromMap(id))
+    }
+
+    pub fn focused_tab(&self) -> Option<Id<Tab>> {
+        self.focused_tab
     }
 
     pub fn finish(self) -> ContextResult {
@@ -101,7 +110,7 @@ impl<'a> Context<'a> {
 
 #[derive(Default)]
 pub struct Tabs {
-    pub map: egui::ahash::HashMap<Id<Tab>, Tab>,
+    pub map: IdMap<Tab>,
 }
 
 impl Tabs {

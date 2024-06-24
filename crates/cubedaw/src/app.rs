@@ -114,6 +114,7 @@ impl CubedawApp {
             &mut app.ephemeral_state,
             &mut app.tabs,
             &app.node_registry,
+            None,
             0.0,
         );
 
@@ -143,7 +144,7 @@ impl CubedawApp {
                     }
                 }
                 DockEvent::RemoveTabFromMap(tab_id) => {
-                    self.tabs.map.remove(&tab_id);
+                    self.tabs.map.remove(tab_id);
                 }
             }
         }
@@ -203,6 +204,7 @@ impl eframe::App for CubedawApp {
             &mut self.ephemeral_state,
             &mut self.tabs,
             &self.node_registry,
+            self.dock_state.find_active_focused().map(|(_, &mut id)| id),
             frame_duration,
         );
 
@@ -308,18 +310,18 @@ pub struct CubedawTabViewer<'a> {
 impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
     type Tab = Id<Tab>;
 
-    fn title(&mut self, id: &mut Self::Tab) -> egui::WidgetText {
+    fn title(&mut self, &mut id: &mut Self::Tab) -> egui::WidgetText {
         let tab = self.ctx.tabs.map.get(id).unwrap();
         tab.title()
     }
 
-    fn id(&mut self, id: &mut Self::Tab) -> egui::Id {
+    fn id(&mut self, &mut id: &mut Self::Tab) -> egui::Id {
         let tab = self.ctx.tabs.map.get(id).unwrap();
         tab.id().into()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, &mut id: &mut Self::Tab) {
-        let mut tab = self.ctx.tabs.map.remove(&id).unwrap();
+        let mut tab = self.ctx.tabs.map.remove(id).unwrap();
         tab.update(&mut self.ctx, ui);
         self.ctx.ephemeral_state.selection_rect.draw(ui, id);
         self.ctx.tabs.map.insert(tab.id(), tab);

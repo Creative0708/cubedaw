@@ -10,7 +10,7 @@ pub struct Section {
 
     // an invariant is that there is an entry for a note in note_map iff there is one in notes.
     // TODO possibly convert to unsafe for optimizations???
-    note_map: IdMap<Note>,
+    note_map: IdMap<Note, (i64, Note)>,
 
     notes: IntervalTree<i64, Id<Note>>,
 }
@@ -29,36 +29,33 @@ impl Section {
 
     pub fn insert_note(&mut self, start_pos: i64, note_id: Id<Note>, note: Note) {
         self.notes.insert(note.range_with(start_pos), note_id);
-        self.note_map.insert(note_id, note);
+        self.note_map.insert(note_id, (start_pos, note));
     }
 
-    pub fn remove_note(&mut self, start_pos: i64, note_id: Id<Note>) -> Note {
-        let note = self.note_map.take(note_id);
+    pub fn remove_note(&mut self, note_id: Id<Note>) -> (i64, Note) {
+        let (start_pos, note) = self.note_map.take(note_id);
         self.notes.delete(note.range_with(start_pos));
-        note
+        (start_pos, note)
     }
 
-    pub fn move_note(
-        &mut self,
-        note_start: i64,
-        note_id: Id<Note>,
-        new_start: i64,
-        pitch_offset: i32,
-    ) {
-        let note = self
+    pub fn move_note(&mut self, note_id: Id<Note>, pos_offset: i64, pitch_offset: i32) {
+        dbg!(note_id, pos_offset, pitch_offset);
+        let (pos, note) = self
             .note_map
             .get_mut(note_id)
             .expect("note in self.notes but not in state.notes????");
-        self.notes.delete(note.range_with(note_start));
+
+        self.notes.delete(note.range_with(*pos));
         note.pitch += pitch_offset;
-        self.notes.insert(note.range_with(new_start), note_id);
+        *pos += pos_offset;
+        self.notes.insert(note.range_with(*pos), note_id);
     }
 
-    pub fn note(&self, id: Id<Note>) -> Option<&Note> {
-        self.note_map.get(id)
+    pub fn note(&self, id: Id<Note>) -> Option<(i64, &Note)> {
+        self.note_map.get(id).map(|(id, note)| (*id, note))
     }
-    pub fn note_mut(&mut self, id: Id<Note>) -> Option<&mut Note> {
-        self.note_map.get_mut(id)
+    pub fn note_mut(&mut self, id: Id<Note>) -> Option<(i64, &mut Note)> {
+        self.note_map.get_mut(id).map(|(id, note)| (*id, note))
     }
 
     pub fn notes_intersecting(&self, range: Range) -> impl Iterator<Item = (i64, Id<Note>, &Note)> {
@@ -66,9 +63,11 @@ impl Section {
             (
                 entry.interval.start,
                 *entry.value,
-                self.note_map
+                &self
+                    .note_map
                     .get(*entry.value)
-                    .expect("id in self.notes but not in self.note_map???"),
+                    .expect("id in self.notes but not in self.note_map???")
+                    .1,
             )
         })
     }

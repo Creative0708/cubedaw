@@ -105,7 +105,8 @@ impl WorkerJob {
                                 .expect("track isn't a section track???")
                                 .section(section_id)
                         })
-                        .and_then(|section| section.note(note_id)),
+                        .and_then(|section| section.note(note_id))
+                        .map(|(_, note)| note),
                     NoteDescriptor::Live { ref note, .. } => Some(note),
                 };
             }
