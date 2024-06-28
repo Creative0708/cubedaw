@@ -15,9 +15,14 @@ pub use resource_key::ResourceKey;
 mod patch;
 pub use patch::{Cable, CableTag, NodeData, NodeInput, NodeOutput, NodeTag, Patch};
 mod node;
-pub use node::{DynNodeState, NodeState};
+pub use node::{DynNode, DynNodeState, Node, NodeCreationContext, NodeState};
+pub mod builtin_nodes;
+mod registry;
+pub use registry::{DynNodeFactory, NodeRegistry, NodeRegistryEntry, NodeStateFactory};
+mod buffer;
+pub use buffer::{Buffer, BufferType};
 #[cfg(feature = "egui")]
-pub use node::{NodeInputUiOptions, NodeStateWrapper, NodeUiContext, ValueHandler};
+pub use node::{NodeContext, NodeInputUiOptions, NodeStateWrapper, NodeUiContext, ValueHandler};
 
 // TODO replace with more robust system (for scales other than 12TET, etc.)
 pub fn pitch_to_hertz(pitch: f32) -> f32 {

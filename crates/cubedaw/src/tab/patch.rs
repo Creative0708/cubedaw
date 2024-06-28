@@ -1,8 +1,8 @@
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{
-    Cable, CableTag, Id, IdMap, NodeData, NodeInput, NodeInputUiOptions, NodeStateWrapper, Track,
+    Cable, CableTag, Id, IdMap, Node as _, NodeData, NodeInput, NodeInputUiOptions,
+    NodeStateWrapper, Track,
 };
-use cubedaw_node::Node;
 use egui::{emath::TSTransform, pos2, Pos2, Rect, Vec2};
 
 use crate::{
@@ -173,12 +173,12 @@ impl PatchTab {
                 }
                 if ui.button("Note Output").clicked() {
                     node_added = Some(Box::new(
-                        cubedaw_workerlib::nodes::NoteOutputNode::new_state(Default::default()),
+                        cubedaw_lib::builtin_nodes::NoteOutputNode::new_state(Default::default()),
                     ));
                 }
                 if ui.button("Track Output").clicked() {
                     node_added = Some(Box::new(
-                        cubedaw_workerlib::nodes::TrackOutputNode::new_state(Default::default()),
+                        cubedaw_lib::builtin_nodes::TrackOutputNode::new_state(Default::default()),
                     ));
                 }
 

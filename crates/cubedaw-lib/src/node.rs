@@ -8,6 +8,87 @@ pub trait NodeState: 'static + Sized + Send + Sync + Clone + PartialEq + Eq {
 
 pub type DynNodeState = Box<dyn NodeStateWrapper>;
 
+pub type DynNode = Box<dyn NodeWrapper>;
+
+pub enum DataSource<'a> {
+    Const(f32),
+    NodeOutput(&'a [f32]),
+}
+impl std::ops::Index<u32> for DataSource<'_> {
+    type Output = f32;
+    fn index(&self, index: u32) -> &Self::Output {
+        match self {
+            Self::Const(val) => val,
+            Self::NodeOutput(buf) => &buf[index as usize],
+        }
+    }
+}
+
+pub enum DataDrain<'a> {
+    Disconnected,
+    NodeInput(&'a mut [f32]),
+}
+impl<'a> DataDrain<'a> {
+    pub fn set(&mut self, i: u32, val: f32) {
+        match self {
+            Self::Disconnected => (),
+            Self::NodeInput(buf) => {
+                buf[i as usize] = val;
+            }
+        }
+    }
+}
+
+pub trait NodeContext<'a> {
+    fn sample_rate(&self) -> u32;
+    fn buffer_size(&self) -> u32;
+    fn input(&self, index: u32) -> DataSource<'a>;
+    fn output(&self, index: u32) -> DataDrain<'a>;
+}
+
+pub trait Node: 'static + Sized + Send + Clone {
+    // the reason for the whole Self::State thing is to have a way to have the ui thread render without waiting for thread synchronization
+    // (which could cause very bad ui delays.)
+    // also we need to be able to serialize the state to disk and this provides a convenient struct to do so
+    type State: NodeState;
+
+    fn new() -> Self;
+    fn new_state(creation_ctx: NodeCreationContext<'_>) -> Self::State;
+
+    fn process(&mut self, state: &Self::State, ctx: &mut dyn NodeContext<'_>);
+}
+
+mod sealed {
+    pub trait Sealed {}
+}
+/// Object-safe wrapper for `Node`. See [`Node`] for the actual functionality.
+pub trait NodeWrapper: 'static + Send + sealed::Sealed {
+    fn process(&mut self, state: &dyn NodeStateWrapper, ctx: &mut dyn NodeContext<'_>);
+
+    fn clone(&self) -> Box<dyn NodeWrapper>;
+}
+
+impl<T: Node> sealed::Sealed for T {}
+impl<T: Node> NodeWrapper for T {
+    fn process(&mut self, state: &dyn NodeStateWrapper, ctx: &mut dyn NodeContext<'_>) {
+        self.process(state.downcast_ref().expect("mismatched state type"), ctx)
+    }
+
+    fn clone(&self) -> Box<dyn NodeWrapper> {
+        Box::new(self.clone())
+    }
+}
+impl Clone for Box<dyn NodeWrapper> {
+    fn clone(&self) -> Self {
+        NodeWrapper::clone(self.as_ref())
+    }
+}
+
+#[derive(Default)]
+pub struct NodeCreationContext<'a> {
+    pub alias: Option<std::borrow::Cow<'a, str>>,
+}
+
 #[cfg(feature = "egui")]
 mod ui {
     use std::{any::TypeId, borrow::Cow};
@@ -20,24 +101,6 @@ mod ui {
         fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions);
         fn output_ui(&mut self, ui: &mut egui::Ui, name: &str);
     }
-
-    // TODO decide if this is necessary
-    // #[derive(Clone, Debug)]
-    // pub struct NodeVisuals {
-    //     dragvalue_color
-    // }
-    // impl NodeVisuals {
-    //     pub fn from_memory(ctx: &egui::Context) -> Self {
-    //         ctx.data_mut(|d| d.get_persisted(id))
-    //     }
-    // }
-    // impl Default for NodeVisuals {
-    //     fn default() -> Self {
-    //         Self {
-
-    //         }
-    //     }
-    // }
 
     pub struct NodeInputUiOptions<'a> {
         pub display: &'a dyn ValueHandler,

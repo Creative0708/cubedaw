@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use crate::Buffer;
+use cubedaw_lib::Buffer;
 
 pub struct SyncCumulativeBuffer {
     locked_inner: OnceLock<Buffer>,

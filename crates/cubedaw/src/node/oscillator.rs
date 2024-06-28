@@ -129,7 +129,7 @@ pub struct OscillatorNode {
     oscillator_cycle: f32,
 }
 
-impl cubedaw_node::Node for OscillatorNode {
+impl cubedaw_lib::Node for OscillatorNode {
     type State = OscillatorNodeState;
 
     fn new() -> Self {
@@ -138,7 +138,7 @@ impl cubedaw_node::Node for OscillatorNode {
         }
     }
 
-    fn new_state(ctx: cubedaw_node::NodeCreationContext<'_>) -> Self::State {
+    fn new_state(ctx: cubedaw_lib::NodeCreationContext<'_>) -> Self::State {
         OscillatorNodeState {
             node_type: match ctx.alias.as_deref() {
                 Some("sine") => OscillatorNodeType::Sine,
@@ -152,7 +152,7 @@ impl cubedaw_node::Node for OscillatorNode {
     }
 
     // TODO optimize (saw/square/whatever waves are optimizable but how the hell do we optimize the sin lookup table)
-    fn process(&mut self, state: &Self::State, ctx: &mut dyn cubedaw_node::NodeContext<'_>) {
+    fn process(&mut self, state: &Self::State, ctx: &mut dyn cubedaw_lib::NodeContext<'_>) {
         let pitch = ctx.input(0);
         let volume = ctx.input(1);
         let mut output = ctx.output(0);

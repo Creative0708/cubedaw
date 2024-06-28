@@ -896,7 +896,6 @@ dependencies = [
  "bytemuck",
  "cubedaw-command",
  "cubedaw-lib",
- "cubedaw-node",
  "cubedaw-worker",
  "cubedaw-workerlib",
  "eframe",
@@ -911,7 +910,6 @@ name = "cubedaw-command"
 version = "0.1.0"
 dependencies = [
  "cubedaw-lib",
- "cubedaw-node",
  "cubedaw-workerlib",
 ]
 
@@ -920,17 +918,10 @@ name = "cubedaw-lib"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "bytemuck",
  "egui",
  "meminterval",
  "smallvec",
-]
-
-[[package]]
-name = "cubedaw-node"
-version = "0.1.0"
-dependencies = [
- "cubedaw-lib",
- "egui",
 ]
 
 [[package]]
@@ -941,7 +932,6 @@ dependencies = [
  "crossbeam",
  "cubedaw-command",
  "cubedaw-lib",
- "cubedaw-node",
  "cubedaw-workerlib",
  "egui",
  "smallvec",
@@ -955,7 +945,6 @@ dependencies = [
  "bytemuck",
  "crossbeam",
  "cubedaw-lib",
- "cubedaw-node",
  "egui",
  "smallvec",
 ]

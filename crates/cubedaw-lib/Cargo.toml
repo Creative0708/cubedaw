@@ -10,6 +10,7 @@ ahash = { workspace = true }
 smallvec = { workspace = true }
 egui = { workspace = true, optional = true }
 meminterval = { workspace = true }
+bytemuck = { workspace = true }
 
 [features]
 egui = ["dep:egui"]

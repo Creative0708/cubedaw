@@ -8,10 +8,9 @@ version = "0.1.0"
 [dependencies]
 cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-workerlib = { path = "../cubedaw-workerlib" }
-cubedaw-node = { path = "../cubedaw-node" }
 
 [features]
-"egui" = ["cubedaw-lib/egui", "cubedaw-node/egui"]
+"egui" = ["cubedaw-lib/egui"]
 
 [lints]
 workspace = true

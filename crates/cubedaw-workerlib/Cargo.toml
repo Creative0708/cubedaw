@@ -9,7 +9,6 @@ version = "0.1.0"
 ahash = { workspace = true }
 smallvec = { workspace = true }
 cubedaw-lib = { path = "../cubedaw-lib" }
-cubedaw-node = { path = "../cubedaw-node" }
 crossbeam = { workspace = true }
 bytemuck = { workspace = true }
 egui = { workspace = true, optional = true }

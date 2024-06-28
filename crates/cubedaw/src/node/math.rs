@@ -1,5 +1,5 @@
+use cubedaw_lib::{Node, NodeContext};
 use cubedaw_lib::{NodeState, NodeUiContext};
-use cubedaw_node::{Node, NodeContext};
 use egui::ComboBox;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -31,7 +31,7 @@ impl Node for MathNode {
         Self
     }
 
-    fn new_state(ctx: cubedaw_node::NodeCreationContext) -> Self::State {
+    fn new_state(ctx: cubedaw_lib::NodeCreationContext) -> Self::State {
         Self::State {
             node_type: match ctx.alias.as_deref() {
                 Some("add") => MathNodeType::Add,

@@ -1,26 +1,21 @@
-use cubedaw_lib::{NodeState, NodeUiContext};
-use cubedaw_node::{Node, NodeContext};
-
-use crate::Buffer;
-
 #[derive(Clone)]
 pub struct TrackOutputNode {
-    buffer: Buffer,
+    buffer: crate::Buffer,
 }
 
-impl Node for TrackOutputNode {
+impl crate::Node for TrackOutputNode {
     type State = TrackOutputNodeState;
 
     fn new() -> Self {
         Self {
-            buffer: Buffer::default(),
+            buffer: crate::Buffer::default(),
         }
     }
-    fn new_state(_creation_ctx: cubedaw_node::NodeCreationContext<'_>) -> Self::State {
+    fn new_state(_creation_ctx: crate::NodeCreationContext<'_>) -> Self::State {
         TrackOutputNodeState
     }
 
-    fn process(&mut self, _state: &Self::State, ctx: &mut dyn NodeContext<'_>) {
+    fn process(&mut self, _state: &Self::State, ctx: &mut dyn crate::NodeContext<'_>) {
         let buffer_size = ctx.buffer_size();
         self.buffer.resize(buffer_size);
 
@@ -35,15 +30,13 @@ impl Node for TrackOutputNode {
 #[derive(Clone, PartialEq, Eq)]
 pub struct TrackOutputNodeState;
 
-impl NodeState for TrackOutputNodeState {
+impl crate::NodeState for TrackOutputNodeState {
     fn title(&self) -> std::borrow::Cow<'static, str> {
         "Track Output".into()
     }
 
     #[cfg(feature = "egui")]
-    fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) {
-        use cubedaw_lib::NodeInputUiOptions;
-
-        ctx.input_ui(ui, "Output", NodeInputUiOptions::uninteractable());
+    fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn crate::NodeUiContext) {
+        ctx.input_ui(ui, "Output", crate::NodeInputUiOptions::uninteractable());
     }
 }

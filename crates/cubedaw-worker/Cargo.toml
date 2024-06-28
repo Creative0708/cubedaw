@@ -10,7 +10,6 @@ ahash = { workspace = true }
 smallvec = { workspace = true }
 cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-command = { path = "../cubedaw-command" }
-cubedaw-node = { path = "../cubedaw-node" }
 cubedaw-workerlib = { path = "../cubedaw-workerlib" }
 egui = { workspace = true, optional = true }
 crossbeam = { workspace = true }

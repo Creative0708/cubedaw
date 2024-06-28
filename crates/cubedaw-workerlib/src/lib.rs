@@ -1,14 +1,10 @@
-mod registry;
 use std::sync::Arc;
 mod sync;
 pub(crate) use sync::{SyncCumulativeBuffer, SyncCumulativeBufferGuard};
 
-pub use registry::{DynNodeFactory, NodeRegistry};
+pub use cubedaw_lib::{DynNodeFactory, NodeRegistry};
 mod state;
 pub use state::{WorkerJob, WorkerSectionTrackState, WorkerState};
-mod buffer;
-pub use buffer::Buffer;
-pub mod nodes;
 
 #[derive(Clone)]
 pub struct WorkerOptions {

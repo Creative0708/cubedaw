@@ -1,10 +1,9 @@
 use std::any::TypeId;
 
+use crate::{DynNode, DynNodeState, Id, IdMap, Node, NodeCreationContext, ResourceKey};
 use ahash::{HashMap, HashMapExt};
-use cubedaw_lib::{DynNodeState, Id, IdMap, ResourceKey};
-use cubedaw_node::{DynNode, Node, NodeCreationContext};
 
-use crate::nodes;
+use crate::builtin_nodes as nodes;
 
 pub type DynNodeFactory = Box<dyn Send + Sync + Fn() -> DynNode>;
 
@@ -60,7 +59,7 @@ impl NodeRegistry {
             entry_type: NameEntryType::Alias,
         });
     }
-    pub fn get_resource_key_of(&self, node: &dyn cubedaw_lib::NodeStateWrapper) -> Id<ResourceKey> {
+    pub fn get_resource_key_of(&self, node: &dyn crate::NodeStateWrapper) -> Id<ResourceKey> {
         *self
             .type_id_to_resource_key
             .get(&node.type_id())

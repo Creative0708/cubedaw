@@ -6,7 +6,6 @@ members = [
     "crates/cubedaw",
     "crates/cubedaw-lib",
     "crates/cubedaw-workerlib",
-    "crates/cubedaw-node",
     "crates/cubedaw-worker",
     "crates/cubedaw-command",
 ]

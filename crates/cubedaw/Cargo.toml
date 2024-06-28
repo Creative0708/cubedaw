@@ -12,7 +12,6 @@ egui_dock = { git = "https://github.com/Creative0708/egui_dock.git", rev = "0046
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
 cubedaw-workerlib = { path = "../cubedaw-workerlib", features = ["egui"] }
-cubedaw-node = { path = "../cubedaw-node", features = ["egui"] }
 cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }
