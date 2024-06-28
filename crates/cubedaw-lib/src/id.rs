@@ -75,14 +75,14 @@ impl<T> Id<T> {
     }
 
     pub fn with<U>(self, child: impl Hash) -> Id<U> {
-        Id::<U>::from_raw(with_impl(self.raw(), child))
+        Id::from_raw(with_impl(self.raw(), child))
     }
 
     pub fn arbitrary() -> Self {
         Self::from_raw(arbitrary_impl())
     }
 
-    pub const fn transmute<U>(self) -> Id<U> {
+    pub const fn cast<U>(self) -> Id<U> {
         Id::from_raw(self.raw())
     }
 }
@@ -114,6 +114,12 @@ impl<T> Hash for Id<T> {
 impl<T> From<Id<T>> for egui::Id {
     fn from(value: Id<T>) -> Self {
         egui::Id::new(value.0)
+    }
+}
+#[cfg(feature = "egui")]
+impl<T> From<egui::Id> for Id<T> {
+    fn from(value: egui::Id) -> Self {
+        Self::new(value)
     }
 }
 

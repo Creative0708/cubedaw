@@ -2,14 +2,13 @@
 authors = ["Colin Cai <therealcreative0708@gmail.com>"]
 edition.workspace = true
 name = "cubedaw"
-rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
 cubedaw-command = { path = "../cubedaw-command" }
 egui = { workspace = true }
-eframe = "0.27.2"
-egui_dock = "0.12.0"
+eframe = { git = "https://github.com/emilk/egui.git", rev = "db8db50bf31ddff42d35a96410afc856ddb3fd27" }
+egui_dock = { git = "https://github.com/Creative0708/egui_dock.git", rev = "00464970708b7d93cc10489e0c4e7cd4fe6d4ccc" }
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
 cubedaw-workerlib = { path = "../cubedaw-workerlib", features = ["egui"] }

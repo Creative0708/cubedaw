@@ -1,3 +1,4 @@
+
 use cubedaw_lib::{Id, Range, Track};
 use egui::vec2;
 
@@ -95,7 +96,7 @@ impl crate::Screen for TrackTab {
                         ),
                         egui::Sense::click_and_drag(),
                     );
-                    self.track_header(ctx, &mut ui.child_ui(rect, *ui.layout()), track_id);
+                    self.track_header(ctx, &mut ui.child_ui(rect, *ui.layout(), None), track_id);
                 }
             });
     }

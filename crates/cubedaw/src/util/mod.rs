@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use ahash::{HashMap, HashMapExt};
+use cubedaw_lib::Id;
 use egui::Vec2;
 
 mod selection_rect;
@@ -8,82 +9,12 @@ pub use selection_rect::SelectionRect;
 mod node_search;
 pub use node_search::NodeSearch;
 
-mod private {
-    use cubedaw_lib::Id;
-
-    // TODO why do these trait impls exist
-    pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {}
-    impl SelectablePath for Id<cubedaw_lib::Track> {}
-    impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::Section>) {}
-    impl SelectablePath
-        for (
-            Id<cubedaw_lib::Track>,
-            Id<cubedaw_lib::Section>,
-            Id<cubedaw_lib::Note>,
-        )
-    {
-    }
-    impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::NodeData>) {}
-
-    // pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
-    //     type Ui: SelectableUi;
-    //     type Command: Sized + 'static;
-    //     fn create_command(&self, selected: bool) -> Self::Command;
-    // }
-    // pub trait SelectableUi: Sized + 'static {
-    //     fn selected(&self) -> bool;
-    // }
-
-    // impl SelectablePath for Id<cubedaw_lib::Track> {
-    //     type Ui = crate::state::ui::TrackUiState;
-    //     type Command = crate::command::track::UiTrackSelect;
-
-    //     fn create_command(&self, selected: bool) -> Self::Command {
-    //         Self::Command::new(*self, selected)
-    //     }
-    // }
-    // impl SelectableUi for crate::state::ui::TrackUiState {
-    //     fn selected(&self) -> bool {
-    //         self.selected
-    //     }
-    // }
-    // impl SelectablePath for (Id<cubedaw_lib::Track>, Id<cubedaw_lib::Section>) {
-    //     type Ui = crate::state::ui::SectionUiState;
-    //     type Command = crate::command::section::UiSectionSelect;
-
-    //     fn create_command(&self, selected: bool) -> Self::Command {
-    //         Self::Command::new(self.0, self.1, selected)
-    //     }
-    // }
-    // impl SelectableUi for crate::state::ui::SectionUiState {
-    //     fn selected(&self) -> bool {
-    //         self.selected
-    //     }
-    // }
-    // impl SelectablePath
-    //     for (
-    //         Id<cubedaw_lib::Track>,
-    //         Id<cubedaw_lib::Section>,
-    //         Id<cubedaw_lib::Note>,
-    //     )
-    // {
-    //     type Ui = crate::state::ui::NoteUiState;
-    //     type Command = crate::command::note::UiNoteSelect;
-
-    //     fn create_command(&self, selected: bool) -> Self::Command {
-    //         Self::Command::new(self.0, self.1, self.2, selected)
-    //     }
-    // }
-    // impl SelectableUi for crate::state::ui::NoteUiState {
-    //     fn selected(&self) -> bool {
-    //         self.selected
-    //     }
-    // }
-}
+pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {}
+impl<T: Sized + std::hash::Hash + Eq + PartialEq + 'static> SelectablePath for T {}
 
 #[derive(Debug)]
 pub struct DragHandler {
-    is_dragging: bool,
+    dragged_id: Option<Id>,
     raw_movement: Vec2,
     scale: Vec2,
 }
@@ -91,13 +22,13 @@ pub struct DragHandler {
 impl DragHandler {
     pub fn new() -> Self {
         Self {
-            is_dragging: false,
+            dragged_id: None,
             raw_movement: Vec2::ZERO,
             scale: Vec2::new(1.0, 1.0),
         }
     }
     fn reset(&mut self) {
-        self.is_dragging = false;
+        self.dragged_id = None;
         self.raw_movement = Vec2::ZERO;
     }
 
@@ -105,23 +36,26 @@ impl DragHandler {
         self.scale = scale.into();
     }
 
+    pub fn is_dragging(&self) -> bool {
+        self.dragged_id.is_some()
+    }
     pub fn raw_movement(&self) -> Option<Vec2> {
-        self.is_dragging.then_some(self.raw_movement)
+        self.is_dragging().then_some(self.raw_movement)
     }
     pub fn raw_movement_x(&self) -> Option<f32> {
-        self.is_dragging.then_some(self.raw_movement.x)
+        self.is_dragging().then_some(self.raw_movement.x)
     }
     pub fn raw_movement_y(&self) -> Option<f32> {
-        self.is_dragging.then_some(self.raw_movement.y)
+        self.is_dragging().then_some(self.raw_movement.y)
     }
 
-    pub fn handle<T: private::SelectablePath, R>(
+    pub fn handle<T: SelectablePath, R>(
         &mut self,
         f: impl FnOnce(&mut Prepared<T, fn(Vec2) -> Vec2>) -> R,
     ) -> DragHandlerResult<T, R> {
         self.handle_snapped(|x| x, f)
     }
-    pub fn handle_snapped<T: private::SelectablePath, R, F: Fn(Vec2) -> Vec2>(
+    pub fn handle_snapped<T: SelectablePath, R, F: Fn(Vec2) -> Vec2>(
         &mut self,
         snap_fn: F,
         f: impl FnOnce(&mut Prepared<T, F>) -> R,
@@ -148,9 +82,9 @@ impl Default for DragHandler {
     }
 }
 
-pub struct Prepared<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> {
+pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> {
     drag_handler: &'a mut DragHandler,
-    // Vec<(changed id, whether it is selected)>
+    // HashMap<changed path, whether it is selected>
     selection_changes: HashMap<T, bool>,
     should_deselect_everything: bool,
     finished_movement: Option<Vec2>,
@@ -159,9 +93,12 @@ pub struct Prepared<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> {
     snap_fn: F,
 }
 
-impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
+impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
     pub fn set_scale(&mut self, scale: impl Into<Vec2>) {
         self.drag_handler.set_scale(scale)
+    }
+    pub fn dragged_id(&self) -> Option<Id> {
+        self.drag_handler.dragged_id
     }
     pub fn movement(&self) -> Option<Vec2> {
         self.drag_handler.raw_movement().map(|m| (self.snap_fn)(m))
@@ -179,11 +116,13 @@ impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
 
     pub fn process_interaction(
         &mut self,
+        id: Id,
         resp: egui::Response,
         path: T,
         is_currently_selected: bool,
     ) {
         if resp.drag_started() {
+            self.drag_handler.dragged_id = Some(id);
             self.new_drag_movement = Some(Vec2::ZERO);
         }
         if resp.clicked() || (resp.drag_started() && !is_currently_selected) {
@@ -191,7 +130,7 @@ impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
                 // if user shift-clicks, toggle the selectedness without affecting anything else
                 self.selection_changes.insert(path, !is_currently_selected);
             } else {
-                // if user clicks without pressing shift,
+                // if user clicks without pressing shift, deselect everything else
                 self.should_deselect_everything = true;
                 self.selection_changes.insert(path, true);
             }
@@ -200,10 +139,8 @@ impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
             self.new_drag_movement = Some(resp.drag_delta());
         }
         if resp.drag_stopped() {
-            if self.drag_handler.is_dragging {
+            if self.drag_handler.is_dragging() {
                 self.finished_movement = Some(self.drag_handler.raw_movement);
-            } else {
-                unreachable!();
             }
         } else if resp.ctx.input(|i| i.pointer.primary_released()) {
             self.canceled = true;
@@ -212,7 +149,6 @@ impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
 
     fn end(self) -> DragHandlerResult<T, ()> {
         if let Some(new_drag_movement) = self.new_drag_movement {
-            self.drag_handler.is_dragging = true;
             self.drag_handler.raw_movement += new_drag_movement * self.drag_handler.scale;
         }
 
@@ -235,27 +171,14 @@ impl<'a, T: private::SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
     }
 }
 
-pub struct DragHandlerResult<T: private::SelectablePath, R> {
-    movement: Option<Vec2>,
-    should_deselect_everything: bool,
-    selection_changes: HashMap<T, bool>,
-    inner: R,
+pub struct DragHandlerResult<T: SelectablePath, R> {
+    pub movement: Option<Vec2>,
+    pub should_deselect_everything: bool,
+    pub selection_changes: HashMap<T, bool>,
+    pub inner: R,
 }
 
-impl<T: private::SelectablePath, R> DragHandlerResult<T, R> {
-    pub fn selection_changes(&self) -> &HashMap<T, bool> {
-        &self.selection_changes
-    }
-    pub fn should_deselect_everything(&self) -> bool {
-        self.should_deselect_everything
-    }
-    pub fn movement(&self) -> Option<Vec2> {
-        self.movement
-    }
-    pub fn inner(self) -> R {
-        self.inner
-    }
-
+impl<T: SelectablePath, R> DragHandlerResult<T, R> {
     fn with_inner<S>(self, inner: S) -> DragHandlerResult<T, S> {
         let Self {
             movement,

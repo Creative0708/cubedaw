@@ -24,8 +24,10 @@ impl Node for TrackOutputNode {
         let buffer_size = ctx.buffer_size();
         self.buffer.resize(buffer_size);
 
+        let input = ctx.input(0);
+
         for i in 0..buffer_size {
-            self.buffer[i as usize] = ctx.input(0).get(i);
+            self.buffer[i as usize] = input[i];
         }
     }
 }

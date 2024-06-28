@@ -14,4 +14,7 @@ pub trait Screen: Any {
     fn title(&self) -> egui::WidgetText;
 
     fn update(&mut self, ctx: &mut Context, ui: &mut egui::Ui);
+
+    // for cleaning up layers and such.
+    fn drop(self: Box<Self>, _egui_ctx: &egui::Context) {}
 }

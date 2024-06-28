@@ -1,6 +1,6 @@
 use cubedaw_command::node::NodeAddOrRemove;
 use cubedaw_lib::{Id, IdMap, NodeData, Track};
-use egui::{Pos2, Vec2};
+use egui::Vec2;
 
 use crate::state::ui::NodeUiState;
 
@@ -114,8 +114,7 @@ impl UiNodeSelect {
     fn node<'a>(&self, ui_state: &'a mut crate::UiState) -> Option<&'a mut NodeUiState> {
         ui_state
             .tracks
-            .get_mut(self.track_id)
-            .expect("tried selecting node on nonexistent track")
+            .force_get_mut(self.track_id)
             .patch
             .nodes
             .get_mut(self.id)

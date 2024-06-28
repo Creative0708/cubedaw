@@ -1,4 +1,8 @@
-use crate::{Id, IdMap, NodeStateWrapper, ResourceKey};
+use std::collections::VecDeque;
+
+use ahash::HashSetExt;
+
+use crate::{Id, IdMap, IdSet, NodeStateWrapper, ResourceKey};
 
 #[derive(Debug, Default, Clone)]
 pub struct Patch {
@@ -23,22 +27,91 @@ impl Patch {
         self.nodes.get_mut(id)
     }
 
-    pub fn insert_cable(&mut self, cable_id: Id<Cable>, cable: Cable) {
+    pub fn cables(&self) -> impl Iterator<Item = (Id<Cable>, &Cable)> {
+        self.cables.iter().map(|(&id, data)| (id, data))
+    }
+
+    /// Convenience function.
+    pub fn set_cable_tag(&self, cable: &mut Cable) {
+        cable.tag = self.get_cable_tag_if_added(cable);
+    }
+    pub fn get_cable_tag_if_added(&self, cable: &Cable) -> CableTag {
+        let input_node = self.nodes.force_get(cable.input_node);
+        let output_node = self.nodes.force_get(cable.output_node);
+
+        if !input_node.tag.is_compatible_with(output_node.tag) {
+            return CableTag::Invalid;
+        }
+
+        // check if output node is before input node.
+        // this is just BFS on a graph. i told you competitive programming would come in handy someday!
+        let mut visited = IdSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(cable.input_node);
+        visited.insert(cable.input_node);
+        while let Some(id) = queue.pop_front() {
+            if id == cable.output_node {
+                // cycle detected! cable is invalid
+                return CableTag::Invalid;
+            }
+            for input in &self.nodes.force_get(id).inputs {
+                for &cable_id in &input.connections {
+                    let cable = self.cables.force_get(cable_id);
+                    if !cable.tag.is_valid() {
+                        continue;
+                    }
+                    if visited.insert(cable.input_node) {
+                        queue.push_back(cable.input_node);
+                    }
+                }
+            }
+        }
+        // output node is not before input node. there are no cycles and it is valid!
+        if input_node.tag == NodeTag::Disconnected && output_node.tag == NodeTag::Disconnected {
+            CableTag::Disconnected
+        } else {
+            CableTag::Valid
+        }
+    }
+    pub fn insert_cable(&mut self, cable_id: Id<Cable>, mut cable: Cable) {
+        self.set_cable_tag(&mut cable);
+
+        let input_node = self.nodes.force_get_mut(cable.input_node);
+        let input_output = &mut input_node.outputs[cable.input_output_index as usize];
+        input_output.connections.push(cable_id);
+
+        let output_node = self.nodes.force_get_mut(cable.output_node);
+        let output_input = &mut output_node.inputs[cable.output_input_index as usize];
+        output_input.connections.push(cable_id);
+
         self.cables.insert(cable_id, cable);
     }
     pub fn take_cable(&mut self, cable_id: Id<Cable>) -> Cable {
         let cable = self.cables.take(cable_id);
 
-        self.nodes
-            .get_mut(cable.input_node)
-            .expect("cable connected to nonexistent node?!?")
-            .outputs
-            .remove(cable.input_output_index);
-        self.nodes
-            .get_mut(cable.output_node)
-            .expect("cable connected to nonexistent node?!?")
-            .inputs
-            .remove(cable.input_output_index);
+        let input_node = self.nodes.force_get_mut(cable.input_node);
+        let input_output = &mut input_node.outputs[cable.input_output_index as usize];
+        let cable_index = input_output
+            .connections
+            .iter()
+            .position(|&x| x == cable_id)
+            .expect("node output doesn't have an entry for connected cable");
+        input_output.connections.remove(cable_index);
+        for &cable in &input_output.connections[cable_index..] {
+            self.cables.force_get_mut(cable).input_output_index -= 1;
+        }
+
+        let output_node = self.nodes.force_get_mut(cable.output_node);
+        let output_input = &mut output_node.inputs[cable.output_input_index as usize];
+        let cable_index = output_input
+            .connections
+            .iter()
+            .position(|&x| x == cable_id)
+            .expect("node input doesn't have an entry for connected cable");
+        output_input.connections.remove(cable_index);
+        for &cable in &output_input.connections[cable_index..] {
+            self.cables.force_get_mut(cable).output_input_index -= 1;
+        }
 
         cable
     }
@@ -76,13 +149,14 @@ pub struct Cable {
     // this cable). confusing
     pub input_node: Id<NodeData>,
     // TODO rename
-    pub input_output_index: usize,
+    pub input_output_index: u32,
 
     pub output_node: Id<NodeData>,
-    pub output_input_index: usize,
+    pub output_input_index: u32,
 
-    pub invalid: bool,
     pub output_multiplier_fac: f32,
+
+    pub tag: CableTag,
 }
 impl Cable {
     pub fn assert_valid(&self, patch: &Patch) {
@@ -93,10 +167,32 @@ impl Cable {
                 .expect("nonexistent output node"),
         );
 
-        assert_eq!(
-            input_node.tag, output_node.tag,
-            "node tags connected to the same cable should be equal"
-        );
+        if self.tag.is_valid() {
+            assert_eq!(
+                input_node.tag, output_node.tag,
+                "node tags connected to the same valid cable should be equal"
+            );
+        }
+    }
+}
+
+/// What status a cable can be in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CableTag {
+    /// Nothing's wrong with the cable! :D
+    Valid,
+    /// The cable, if added, would result in an invalid patch (i.e. having cycles or the like).
+    Invalid,
+    /// The cable doesn't cause an invalid patch but is unused when processing audio.
+    Disconnected,
+}
+impl CableTag {
+    /// Whether the cable is in one of the valid states.
+    pub fn is_valid(self) -> bool {
+        match self {
+            Self::Valid | Self::Disconnected => true,
+            Self::Invalid => false,
+        }
     }
 }
 
@@ -146,9 +242,28 @@ impl NodeData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum NodeTag {
+    #[default]
     Disconnected,
     Note,
     Track,
+    Special,
 }
+
+impl NodeTag {
+    fn is_compatible_with(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Special, _) | (_, Self::Special) => true,
+            (a, b) if a == b => true,
+            _ => false,
+        }
+    }
+}
+
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// pub enum NodeRelation {
+//     Ancestor,
+//     Descendant,
+//     Disconnected
+// }

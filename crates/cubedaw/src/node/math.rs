@@ -13,10 +13,10 @@ enum MathNodeType {
 impl MathNodeType {
     const fn to_str(self) -> &'static str {
         match self {
-            MathNodeType::Add => "Add",
-            MathNodeType::Subtract => "Rubtract",
-            MathNodeType::Multiply => "Multiply",
-            MathNodeType::Divide => "Divide",
+            Self::Add => "Add",
+            Self::Subtract => "Subtract",
+            Self::Multiply => "Multiply",
+            Self::Divide => "Divide",
         }
     }
 }
@@ -25,7 +25,7 @@ impl MathNodeType {
 pub struct MathNode;
 
 impl Node for MathNode {
-    type State = MathNodeUi;
+    type State = MathNodeState;
 
     fn new() -> Self {
         Self
@@ -44,14 +44,15 @@ impl Node for MathNode {
         }
     }
 
+    // TODO optimize
     fn process(&mut self, state: &Self::State, ctx: &mut dyn NodeContext<'_>) {
         let a_in = ctx.input(0);
         let b_in = ctx.input(1);
         let mut out = ctx.output(0);
 
         for i in 0..ctx.buffer_size() {
-            let a = a_in.get(i);
-            let b = b_in.get(i);
+            let a = a_in[i];
+            let b = b_in[i];
             out.set(
                 i,
                 match state.node_type {
@@ -66,12 +67,12 @@ impl Node for MathNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MathNodeUi {
+pub struct MathNodeState {
     node_type: MathNodeType,
 }
 
-impl NodeState for MathNodeUi {
-    fn title(&self) -> std::borrow::Cow<'static, str> {
+impl NodeState for MathNodeState {
+    fn title(&self) -> std::borrow::Cow<'_, str> {
         self.node_type.to_str().into()
     }
 

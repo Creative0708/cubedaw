@@ -37,7 +37,7 @@ pub struct CubedawApp {
 }
 
 impl CubedawApp {
-    pub fn new(_: &eframe::CreationContext) -> Self {
+    pub fn new(creation_context: &eframe::CreationContext) -> Self {
         let mut app = {
             let mut state = cubedaw_lib::State::default();
             let mut ui_state = crate::UiState::default();
@@ -123,12 +123,12 @@ impl CubedawApp {
         ctx.create_tab::<PatchTab>();
 
         let result = ctx.finish();
-        app.ctx_finished(result);
+        app.ctx_finished(result, &creation_context.egui_ctx);
 
         app
     }
 
-    fn ctx_finished(&mut self, result: crate::context::ContextResult) {
+    fn ctx_finished(&mut self, result: crate::context::ContextResult, egui_ctx: &egui::Context) {
         for event in result.dock_events {
             match event {
                 DockEvent::AddTabToDockState(tab_id) => {
@@ -144,7 +144,8 @@ impl CubedawApp {
                     }
                 }
                 DockEvent::RemoveTabFromMap(tab_id) => {
-                    self.tabs.map.remove(tab_id);
+                    let tab = self.tabs.map.remove(tab_id).expect("tried to remove nonexistent tab");
+                    tab.drop(egui_ctx);
                 }
             }
         }
@@ -256,7 +257,7 @@ impl eframe::App for CubedawApp {
         if !result.tracker.commands.is_empty() {
             egui_ctx.request_repaint();
         }
-        self.ctx_finished(result);
+        self.ctx_finished(result, egui_ctx);
 
         if self.ephemeral_state.is_playing {
             // time * bpm * 60.0 = # of beats
@@ -312,24 +313,23 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
 
     fn title(&mut self, &mut id: &mut Self::Tab) -> egui::WidgetText {
         let tab = self.ctx.tabs.map.get(id).unwrap();
-        tab.title()
+        tab.title().text().into()
     }
 
     fn id(&mut self, &mut id: &mut Self::Tab) -> egui::Id {
         let tab = self.ctx.tabs.map.get(id).unwrap();
-        tab.id().into()
+        egui::Id::new(tab.id())
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, &mut id: &mut Self::Tab) {
         let mut tab = self.ctx.tabs.map.remove(id).unwrap();
         tab.update(&mut self.ctx, ui);
-        self.ctx.ephemeral_state.selection_rect.draw(ui, id);
+        self.ctx.ephemeral_state.selection_rect.draw( ui, id);
         self.ctx.tabs.map.insert(tab.id(), tab);
     }
 
-    fn on_close(&mut self, id: &mut Self::Tab) -> bool {
-        println!("deleting {id:?}");
-        self.ctx.queue_tab_removal_from_map(*id);
+    fn on_close(&mut self, &mut id: &mut Self::Tab) -> bool {
+        self.ctx.queue_tab_removal_from_map(id);
         true
     }
 }

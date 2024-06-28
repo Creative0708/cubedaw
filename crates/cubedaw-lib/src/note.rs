@@ -5,7 +5,7 @@ use crate::Range;
 pub struct Note {
     pub length: u64,
 
-    // Logarithmic pitch. Middle C (261.626 Hz) == 0, so in 12TET C# == 1, E == 4, etc.
+    // Logarithmic pitch. Middle C (261.626 Hz, usually) == 0, so in 12TET C# == 1, E == 4, etc.
     pub pitch: i32,
 }
 

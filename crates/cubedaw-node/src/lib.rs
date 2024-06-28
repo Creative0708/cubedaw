@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use cubedaw_lib::{NodeState, NodeStateWrapper};
 
 pub type DynNode = Box<dyn NodeWrapper>;
@@ -6,14 +8,16 @@ pub enum DataSource<'a> {
     Const(f32),
     NodeOutput(&'a [f32]),
 }
-impl<'a> DataSource<'a> {
-    pub fn get(&self, i: u32) -> f32 {
+impl Index<u32> for DataSource<'_> {
+    type Output = f32;
+    fn index(&self, index: u32) -> &Self::Output {
         match self {
-            Self::Const(val) => *val,
-            Self::NodeOutput(buf) => buf[i as usize],
+            Self::Const(val) => val,
+            Self::NodeOutput(buf) => &buf[index as usize],
         }
     }
 }
+
 pub enum DataDrain<'a> {
     Disconnected,
     NodeInput(&'a mut [f32]),

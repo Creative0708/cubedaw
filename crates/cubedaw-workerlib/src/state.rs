@@ -146,6 +146,7 @@ impl WorkerSectionTrackState {
                 cubedaw_lib::NodeTag::Track => {
                     track_nodes.insert(id, registry.create_node(note.key));
                 }
+                cubedaw_lib::NodeTag::Special => (),
             }
         }
 

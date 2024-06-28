@@ -1,44 +1,93 @@
-use cubedaw_lib::{Id, NodeData, NodeInput, NodeStateWrapper, Patch, Track};
+use cubedaw_lib::{Id, NodeData, NodeStateWrapper, Track};
 
 use crate::StateCommand;
 
 #[derive(Clone)]
-pub struct NodeUiUpdate {
-    track_id: Id<Track>,
+pub struct NodeStateUpdate {
     id: Id<NodeData>,
+    track_id: Id<Track>,
     data: Box<dyn NodeStateWrapper>,
+    input_values: Vec<f32>,
+    old_input_values: Vec<f32>,
+    num_outputs: u32,
+    old_num_outputs: u32,
 }
 
-impl NodeUiUpdate {
-    pub fn new(track_id: Id<Track>, id: Id<NodeData>, data: Box<dyn NodeStateWrapper>) -> Self {
-        Self { track_id, id, data }
-    }
-}
-
-impl NodeUiUpdate {
-    fn swap_data(&mut self, state: &mut cubedaw_lib::State) {
-        let node = state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("nonexistent track")
-            .patch
-            .node_mut(self.id)
-            .expect("nonexistent node");
-        if NodeStateWrapper::type_id(self.data.as_ref())
-            != NodeStateWrapper::type_id(node.inner.as_ref())
-        {
-            panic!("tried to replace NodeData with NodeData of different type")
+impl NodeStateUpdate {
+    pub fn new(
+        id: Id<NodeData>,
+        track_id: Id<Track>,
+        data: Box<dyn NodeStateWrapper>,
+        input_values: Vec<f32>,
+        old_input_values: Vec<f32>,
+        num_outputs: u32,
+        old_num_outputs: u32,
+    ) -> Self {
+        Self {
+            track_id,
+            id,
+            data,
+            input_values,
+            old_input_values,
+            num_outputs,
+            old_num_outputs,
         }
-        core::mem::swap(&mut self.data, &mut node.inner);
     }
 }
 
-impl StateCommand for NodeUiUpdate {
+impl NodeStateUpdate {
+    pub fn track_id(&self) -> Id<Track> {
+        self.track_id
+    }
+    pub fn id(&self) -> Id<NodeData> {
+        self.id
+    }
+
+    fn node<'a>(
+        &mut self,
+        state: &'a mut cubedaw_lib::State,
+    ) -> Option<&'a mut cubedaw_lib::NodeData> {
+        Some(
+            state
+                .tracks
+                .get_mut(self.track_id)?
+                .patch
+                .node_mut(self.id)?,
+        )
+    }
+
+    fn do_the_thing(&mut self, state: &mut cubedaw_lib::State, is_rollback: bool) {
+        if let Some(node) = self.node(state) {
+            let (input_values, num_outputs) = if is_rollback {
+                (&mut self.old_input_values, self.old_num_outputs)
+            } else {
+                (&mut self.input_values, self.num_outputs)
+            };
+
+            node.inputs.resize(input_values.len(), Default::default());
+            for (input, &value) in node.inputs.iter_mut().zip(input_values.iter()) {
+                input.value = value;
+            }
+
+            node.outputs
+                .resize(num_outputs as usize, Default::default());
+
+            if NodeStateWrapper::type_id(self.data.as_ref())
+                != NodeStateWrapper::type_id(node.inner.as_ref())
+            {
+                panic!("tried to replace NodeData with NodeData of different type")
+            }
+            core::mem::swap(&mut self.data, &mut node.inner);
+        }
+    }
+}
+
+impl StateCommand for NodeStateUpdate {
     fn execute(&mut self, state: &mut cubedaw_lib::State) {
-        self.swap_data(state);
+        self.do_the_thing(state, false);
     }
     fn rollback(&mut self, state: &mut cubedaw_lib::State) {
-        self.swap_data(state);
+        self.do_the_thing(state, true);
     }
 }
 
@@ -182,189 +231,6 @@ impl StateCommand for NodeInputChange {
             true
         } else {
             false
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct NodeInputAddOrRemove {
-    id: Id<NodeData>,
-    track_id: Id<Track>,
-    input_index: usize,
-    value: f32,
-
-    is_removal: bool,
-}
-
-impl NodeInputAddOrRemove {
-    pub fn addition(id: Id<NodeData>, track_id: Id<Track>, input_index: usize, value: f32) -> Self {
-        Self {
-            id,
-            track_id,
-            input_index,
-            value,
-            is_removal: false,
-        }
-    }
-    pub fn removal(
-        id: Id<NodeData>,
-        track_id: Id<Track>,
-        input_index: usize,
-        old_value: f32,
-    ) -> Self {
-        Self {
-            id,
-            track_id,
-            input_index,
-            value: old_value,
-            is_removal: true,
-        }
-    }
-
-    fn get_node<'a>(
-        &self,
-        state: &'a mut cubedaw_lib::State,
-    ) -> Option<&'a mut cubedaw_lib::NodeData> {
-        Some(
-            state
-                .tracks
-                .get_mut(self.track_id)?
-                .patch
-                .node_mut(self.id)?,
-        )
-    }
-
-    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
-        let Some(node) = self.get_node(state) else {
-            return;
-        };
-
-        assert!(
-            node.inputs.len() == self.input_index,
-            "tried to add input in the middle of the input list"
-        );
-
-        node.inputs.push(NodeInput {
-            value: self.value,
-            ..Default::default()
-        });
-    }
-    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
-        let Some(node) = self.get_node(state) else {
-            return;
-        };
-
-        assert!(
-            node.inputs.len() == self.input_index + 1,
-            "tried to delete input from the middle of the input list"
-        );
-        let popped = node.inputs.pop();
-        assert!(
-            popped.is_some_and(|popped| popped.connections.is_empty()),
-            "tried to delete input still connected to cable"
-        );
-    }
-}
-
-impl StateCommand for NodeInputAddOrRemove {
-    fn execute(&mut self, state: &mut cubedaw_lib::State) {
-        if self.is_removal {
-            self.execute_remove(state);
-        } else {
-            self.execute_add(state);
-        }
-    }
-    fn rollback(&mut self, state: &mut cubedaw_lib::State) {
-        if self.is_removal {
-            self.execute_add(state);
-        } else {
-            self.execute_remove(state);
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct NodeOutputAddOrRemove {
-    id: Id<NodeData>,
-    track_id: Id<Track>,
-    output_index: usize,
-
-    is_removal: bool,
-}
-
-impl NodeOutputAddOrRemove {
-    pub fn addition(id: Id<NodeData>, track_id: Id<Track>, output_index: usize) -> Self {
-        Self {
-            id,
-            track_id,
-            output_index,
-            is_removal: false,
-        }
-    }
-    pub fn removal(id: Id<NodeData>, track_id: Id<Track>, output_index: usize) -> Self {
-        Self {
-            id,
-            track_id,
-            output_index,
-            is_removal: true,
-        }
-    }
-
-    fn get_node<'a>(
-        &self,
-        state: &'a mut cubedaw_lib::State,
-    ) -> Option<&'a mut cubedaw_lib::NodeData> {
-        Some(
-            state
-                .tracks
-                .get_mut(self.track_id)?
-                .patch
-                .node_mut(self.id)?,
-        )
-    }
-
-    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
-        let Some(node) = self.get_node(state) else {
-            return;
-        };
-
-        assert!(
-            node.outputs.len() == self.output_index,
-            "tried to add output in the middle of the output list"
-        );
-
-        node.outputs.push(cubedaw_lib::NodeOutput::default());
-    }
-    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
-        let Some(node) = self.get_node(state) else {
-            return;
-        };
-
-        assert!(
-            node.outputs.len() == self.output_index + 1,
-            "tried to delete output from the middle of the output list"
-        );
-        let popped = node.outputs.pop();
-        assert!(
-            popped.is_some_and(|popped| popped.connections.is_empty()),
-            "tried to delete output still connected to cable"
-        );
-    }
-}
-
-impl StateCommand for NodeOutputAddOrRemove {
-    fn execute(&mut self, state: &mut cubedaw_lib::State) {
-        if self.is_removal {
-            self.execute_remove(state);
-        } else {
-            self.execute_add(state);
-        }
-    }
-    fn rollback(&mut self, state: &mut cubedaw_lib::State) {
-        if self.is_removal {
-            self.execute_add(state);
-        } else {
-            self.execute_remove(state);
         }
     }
 }

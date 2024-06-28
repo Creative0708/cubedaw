@@ -1,15 +1,29 @@
 //! like `egui::DragValue`, but imitating the blender version.
 
-use egui::{emath::inverse_lerp, *};
+use cubedaw_lib::ValueHandler;
+use egui::{emath::inverse_lerp, text_edit::TextEditState, *};
 
 /// A Blender-like draggable slider.
 pub struct DragValue<'a> {
     reference: &'a mut f32,
 
     range: Rangef,
-    snap_fn: &'a dyn Fn(f32) -> f32,
-    display: &'a dyn DragValueDisplay,
+    display_range: Rangef,
+    display: &'a dyn ValueHandler,
     name: Option<&'a str>,
+}
+
+struct DefaultValueDisplay;
+impl ValueHandler for DefaultValueDisplay {
+    fn to_input(&self, val: f32) -> String {
+        format!("{val:.2}")
+    }
+    fn parse_input(&self, str: &str) -> Option<f32> {
+        str.parse().ok()
+    }
+    fn snap(&self, val: f32) -> f32 {
+        (val * 12.0).round() / 12.0
+    }
 }
 
 impl<'a> DragValue<'a> {
@@ -17,19 +31,22 @@ impl<'a> DragValue<'a> {
         Self {
             reference,
 
-            range: Rangef::new(0.0, 1.0),
-            snap_fn: &std::convert::identity,
-            display: &DefaultDragValueDisplay,
+            range: Rangef::EVERYTHING,
+            display_range: Rangef::new(0.0, 1.0),
+            display: &DefaultValueDisplay,
             name: None,
         }
     }
     pub fn range(self, range: Rangef) -> Self {
         Self { range, ..self }
     }
-    pub fn snap_fn(self, snap_fn: &'a dyn Fn(f32) -> f32) -> Self {
-        Self { snap_fn, ..self }
+    pub fn display_range(self, display_range: Rangef) -> Self {
+        Self {
+            display_range,
+            ..self
+        }
     }
-    pub fn display(self, display: &'a dyn DragValueDisplay) -> Self {
+    pub fn display(self, display: &'a dyn ValueHandler) -> Self {
         Self { display, ..self }
     }
     pub fn name(self, name: Option<&'a str>) -> Self {
@@ -43,7 +60,7 @@ impl<'a> Widget for DragValue<'a> {
             reference,
 
             range,
-            snap_fn,
+            display_range,
             display,
             name,
         } = self;
@@ -60,8 +77,6 @@ impl<'a> Widget for DragValue<'a> {
         });
 
         let mut value = *reference;
-
-        let aim_rad = ui.input(|i| i.aim_radius());
 
         let change = ui.input_mut(|input| {
             let mut change = 0.0;
@@ -84,15 +99,19 @@ impl<'a> Widget for DragValue<'a> {
         });
 
         if change != 0.0 {
-            value = snap_fn(value + change);
+            value = display.snap(value + change);
         }
 
         let text_style = ui.style().drag_value_text_style.clone();
 
-        let mut response = if is_kb_editing {
+        let response = if is_kb_editing {
             let mut value_text = ui
                 .data_mut(|data| data.remove_temp::<String>(id))
-                .unwrap_or_else(|| display.to_input(value));
+                .unwrap_or_else(|| {
+                    // this shouldn't ever happen (we set the data when transitioning to kb editing)
+                    // but it's not a catastrophic issue if it does. default value go brrrrr
+                    display.to_input(value)
+                });
             let response = ui.add(
                 TextEdit::singleline(&mut value_text)
                     .clip_text(false)
@@ -106,7 +125,7 @@ impl<'a> Widget for DragValue<'a> {
             );
 
             if response.lost_focus() {
-                if let Some(parsed_value) = display.parse_input(value_text) {
+                if let Some(parsed_value) = display.parse_input(value_text.trim()) {
                     *reference = parsed_value;
                 }
             } else {
@@ -116,20 +135,14 @@ impl<'a> Widget for DragValue<'a> {
             response
         } else {
             let value_text = display.to_display(value);
-            let num_chars = value_text.chars().count();
 
             let max_width = ui.max_rect().width();
 
-            let number_galley = WidgetText::from(value_text).into_galley(
-                ui,
-                Some(false),
-                max_width,
-                TextStyle::Button,
-            );
+            let number_galley = value_text.into_galley(ui, None, max_width, TextStyle::Button);
             let name_galley = name.map(|name| {
                 WidgetText::from(name).into_galley(
                     ui,
-                    Some(false),
+                    None,
                     max_width - number_galley.rect.width(),
                     TextStyle::Button,
                 )
@@ -148,53 +161,55 @@ impl<'a> Widget for DragValue<'a> {
             let (rect, response) =
                 ui.allocate_at_least(vec2(max_width, desired_height), Sense::click_and_drag());
 
+            // TODO make configurable
+            if response.hovered()
+                && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Backspace))
+            {
+                *reference = display.default_value();
+            }
+
             let mut response = response.on_hover_cursor(CursorIcon::ResizeHorizontal);
 
-            // if ui.style().explanation_tooltips {
-            //     response = response.on_hover_text(format!(
-            //         "{}{}{}\nDrag to edit or click to enter a value.\nPress 'Shift' while dragging for better control.",
-            //         prefix,
-            //         value as f32,
-            //         suffix
-            //     ));
-            // }
+            if ui.style().explanation_tooltips {
+                response = response.on_hover_text(format!(
+                    "{}\nDrag to edit or click to enter a value.\nPress 'Shift' while dragging for better control.",
+                    value,
+                ));
+            }
 
             if ui.input(|i| i.pointer.any_pressed() || i.pointer.any_released()) {
                 ui.data_mut(|data| data.remove::<f32>(id));
             }
 
             if response.clicked() {
-                ui.data_mut(|data| data.remove::<String>(id));
                 ui.memory_mut(|mem| mem.request_focus(id));
-                let mut state = TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+
+                let input_text = display.to_input(value);
+                let mut state = TextEditState::default();
                 state.cursor.set_char_range(Some(text::CCursorRange::two(
                     text::CCursor::default(),
-                    text::CCursor::new(num_chars),
+                    text::CCursor::new(input_text.chars().count()),
                 )));
                 state.store(ui.ctx(), response.id);
+                ui.data_mut(|data| data.insert_temp::<String>(id, input_text));
             } else if response.dragged() {
-                ui.ctx().set_cursor_icon(CursorIcon::None);
+                // TODO egui can't lock the cursor like blender does. is that behavior necessary?
+                // if it is, how do we do that
+                // ui.ctx().set_cursor_icon(CursorIcon::None);
 
                 if response.drag_started()
+                    && range != Rangef::EVERYTHING
                     && let Some(drag_pos) = response.interact_pointer_pos()
                 {
                     if let Some(initial_value) = inverse_lerp(rect.x_range().into(), drag_pos.x) {
-                        value = snap_fn(lerp(range, initial_value));
+                        value = display.snap(lerp(display_range, initial_value));
                         *reference = value;
                     }
                 }
 
                 let delta_points = response.drag_delta().x;
 
-                let mut speed = range.span() / rect.width();
-                let layer_id = ui.layer_id();
-                if let Some(scale) = ui.ctx().memory(|m| {
-                    m.layer_transforms
-                        .get(&layer_id)
-                        .map(|transform| transform.scaling)
-                }) {
-                    speed *= scale;
-                }
+                let speed = display_range.span() / rect.width();
                 let speed = if shift { speed * 0.1 } else { speed };
 
                 let delta_value = delta_points * speed;
@@ -204,13 +219,11 @@ impl<'a> Widget for DragValue<'a> {
                     let precise_value = precise_value.unwrap_or(value);
                     let precise_value = precise_value + delta_value;
 
-                    let aim_delta = aim_rad * speed;
-                    let value = emath::smart_aim::best_in_range_f64(
-                        (precise_value - aim_delta) as f64,
-                        (precise_value + aim_delta) as f64,
-                    ) as f32;
-
-                    *reference = snap_fn(range.clamp(value));
+                    let mut value = range.clamp(precise_value);
+                    if !shift {
+                        value = display.snap(value);
+                    }
+                    *reference = value;
 
                     ui.data_mut(|data| data.insert_temp::<f32>(id, precise_value));
                 }
@@ -226,7 +239,8 @@ impl<'a> Widget for DragValue<'a> {
             {
                 painter.rect(rect, visuals.rounding, visuals.bg_fill, visuals.bg_stroke);
 
-                let portion_filled = inverse_lerp(range.into(), *reference).unwrap_or(range.min);
+                let portion_filled =
+                    inverse_lerp(display_range.into(), *reference).unwrap_or(display_range.min);
                 painter.rect_filled(
                     rect.shrink(visuals.bg_stroke.width * 0.5)
                         .intersect(Rect::everything_left_of(lerp(
@@ -278,24 +292,5 @@ impl<'a> Widget for DragValue<'a> {
         };
 
         response
-    }
-}
-
-pub trait DragValueDisplay {
-    fn to_display(&self, val: f32) -> String;
-    fn to_input(&self, val: f32) -> String {
-        self.to_display(val)
-    }
-    // TODO implement expression evaluator based off of https://crates.io/crates/meval or the like
-    fn parse_input(&self, str: String) -> Option<f32>;
-}
-
-pub struct DefaultDragValueDisplay;
-impl DragValueDisplay for DefaultDragValueDisplay {
-    fn to_display(&self, val: f32) -> String {
-        format!("{val:.2}")
-    }
-    fn parse_input(&self, str: String) -> Option<f32> {
-        str.parse().ok()
     }
 }

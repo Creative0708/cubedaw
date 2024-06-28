@@ -18,9 +18,12 @@ unsafe_op_in_unsafe_fn = "forbid"
 # TODO uncomment this when i have time for this
 # pedantic = { level = "warn", priority = -1 }
 needless_question_mark = "allow" # makes code harder to read in long question mark chains
+unusual_byte_groupings = "allow" # misunderstands floating-point binary representation
 
 [workspace.dependencies]
-egui = { version = "0.27.2", features = [] }
+# some features are in the repo but not released yet
+# TODO change this to stable after the features/fixes get merged in
+egui = { git = "https://github.com/emilk/egui.git", rev = "db8db50bf31ddff42d35a96410afc856ddb3fd27", default-features = false }
 ahash = "0.8.11"
 smallvec = "1.13.2"
 bytemuck = "1.15.0"

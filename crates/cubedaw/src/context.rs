@@ -164,6 +164,7 @@ impl UiStateTracker {
         self.add_weak(command)
     }
     pub fn add_weak(&mut self, command: impl UiStateCommand) {
+        // dbg!(std::any::type_name_of_val(&command));
         if let Some(last) = self.commands.last_mut() {
             if last.try_merge(&command) {
                 return;
@@ -183,6 +184,9 @@ impl UiStateTracker {
             commands: self.commands,
             strong: self.strong,
         }
+    }
+    pub fn len(&self) -> usize {
+        self.commands.len()
     }
 }
 

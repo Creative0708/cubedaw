@@ -1,7 +1,9 @@
-use cubedaw_command::node::NodeUiUpdate;
-use cubedaw_lib::{Id, NodeData, NodeInputUiOptions, NodeStateWrapper, Track};
+use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
+use cubedaw_lib::{
+    Cable, CableTag, Id, IdMap, NodeData, NodeInput, NodeInputUiOptions, NodeStateWrapper, Track,
+};
 use cubedaw_node::Node;
-use egui::{emath::TSTransform, pos2, Rect, Vec2};
+use egui::{emath::TSTransform, pos2, Pos2, Rect, Vec2};
 
 use crate::{
     command::node::{UiNodeAddOrRemove, UiNodeMove, UiNodeSelect},
@@ -19,6 +21,7 @@ pub struct PatchTab {
     transform: TSTransform,
 
     currently_held_node: Option<NodeData>,
+    currently_drawn_cable: Option<NodeSlotDescriptor>,
 
     drag_handler: DragHandler,
 }
@@ -43,6 +46,7 @@ impl crate::Screen for PatchTab {
             transform: TSTransform::IDENTITY,
 
             currently_held_node: None,
+            currently_drawn_cable: None,
 
             drag_handler: DragHandler::new(),
         }
@@ -59,47 +63,53 @@ impl crate::Screen for PatchTab {
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             if self.track_id.is_some() {
-                // TODO there doesn't seem to be a way to make a layer consistently display on top of another layer
-                // so we use another order as a workaround.
-                let layer_id = egui::LayerId::new(egui::Order::Middle, self.id.into());
-
+                let parent_layer_id = ui.layer_id();
                 let screen_viewport = ui.max_rect();
                 let transform = transform_viewport(self.transform, screen_viewport);
+                egui::Area::new(parent_layer_id.id.with((parent_layer_id.order, self.id)))
+                    .movable(false)
+                    .constrain_to(screen_viewport)
+                    .order(parent_layer_id.order)
+                    .show(ui.ctx(), |ui| {
+                        // ui.push_id(id_source, add_contents)
+                        let layer_id = ui.layer_id();
 
-                ui.with_layer_id(layer_id, |ui| {
-                    let viewport = transform.inverse() * screen_viewport;
-                    ui.set_clip_rect(viewport);
-                    let viewport_interaction = ui.interact(
-                        viewport,
-                        layer_id.id.with("patch_move"),
-                        egui::Sense::click_and_drag(),
-                    );
-                    if let Some(hover_pos) = viewport_interaction.hover_pos() {
-                        let (scroll_delta, zoom) =
-                            ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
-                        if scroll_delta != Vec2::ZERO {
-                            self.transform.translation += scroll_delta;
+                        let viewport = transform.inverse() * screen_viewport;
+                        ui.set_clip_rect(viewport);
+                        let viewport_interaction = ui.interact(
+                            viewport,
+                            layer_id.id.with("patch_move"),
+                            egui::Sense::click_and_drag(),
+                        );
+                        if viewport_interaction.contains_pointer() {
+                            let (scroll_delta, zoom) =
+                                ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
+                            if scroll_delta != Vec2::ZERO {
+                                self.transform.translation += scroll_delta;
+                            }
+                            if zoom != 1.0 {
+                                if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                                    let hover_pos = transform.inverse() * hover_pos;
+
+                                    // the zoom center should stay at the same location after the transform
+                                    // pos * scale + t = pos * (scale * zoom) + new_t
+                                    // new_t = pos * scale + t - pos * scale * zoom
+                                    // new_t = t + pos * scale * (1 - zoom)
+                                    self.transform.translation +=
+                                        hover_pos.to_vec2() * self.transform.scaling * (1.0 - zoom);
+                                }
+                                self.transform.scaling *= zoom;
+                            }
                         }
-                        if zoom != 1.0 {
-                            let zoom_center = hover_pos - viewport.center();
+                        let transform = transform_viewport(self.transform, screen_viewport);
+                        let viewport = transform.inverse() * screen_viewport;
 
-                            // the zoom center should stay at the same location after the transform
-                            // pos * scale + t = pos * (scale * zoom) + new_t
-                            // new_t = pos * scale + t - pos * scale * zoom
-                            // new_t = t + pos * scale * (1 - zoom)
-                            self.transform.translation +=
-                                zoom_center * self.transform.scaling * (1.0 - zoom);
-                            self.transform.scaling *= zoom;
-                        }
-                    }
-                    let transform = transform_viewport(self.transform, screen_viewport);
-                    let viewport = transform.inverse() * screen_viewport;
+                        ui.ctx().set_transform_layer(layer_id, transform);
+                        ui.ctx().set_sublayer(parent_layer_id, layer_id);
 
-                    ui.ctx().set_transform_layer(layer_id, transform);
-
-                    ui.set_clip_rect(viewport);
-                    self.node_view(ctx, ui, viewport, viewport_interaction);
-                });
+                        ui.set_clip_rect(viewport);
+                        self.node_view(ctx, ui, viewport, viewport_interaction);
+                    });
             } else {
                 ui.with_layout(
                     egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
@@ -109,6 +119,11 @@ impl crate::Screen for PatchTab {
                 );
             }
         });
+    }
+
+    fn drop(self: Box<Self>, egui_ctx: &egui::Context) {
+        // TODO how do we delete an area from egui memory
+        // egui_ctx.memory_mut(|m| m.areas_mut().)
     }
 }
 
@@ -120,6 +135,7 @@ impl PatchTab {
         viewport: Rect,
         viewport_interaction: egui::Response,
     ) {
+        // setup
         let Some(track_id) = self.track_id else {
             unreachable!()
         };
@@ -150,6 +166,11 @@ impl PatchTab {
                         Default::default(),
                     )));
                 }
+                if ui.button("Oscillator").clicked() {
+                    node_added = Some(Box::new(
+                        crate::node::oscillator::OscillatorNode::new_state(Default::default()),
+                    ));
+                }
                 if ui.button("Note Output").clicked() {
                     node_added = Some(Box::new(
                         cubedaw_workerlib::nodes::NoteOutputNode::new_state(Default::default()),
@@ -172,6 +193,30 @@ impl PatchTab {
             self.currently_held_node = None;
         }
 
+        let (primary_clicked, secondary_clicked, screen_hover_pos) = ui.input(|i| {
+            (
+                i.pointer.primary_clicked(),
+                i.pointer.secondary_clicked(),
+                i.pointer.hover_pos(),
+            )
+        });
+
+        let pointer_pos = if viewport_interaction.contains_pointer() {
+            screen_hover_pos.map(|mut pos| {
+                if let Some(transform) = ui
+                    .ctx()
+                    .memory(|m| m.layer_transforms.get(&ui.layer_id()).copied())
+                {
+                    pos = transform.inverse() * pos;
+                }
+                pos
+            })
+        } else {
+            None
+        };
+
+        // background
+
         const DOT_SPACING: f32 = 16.0;
         const DOT_RADIUS: f32 = 1.5;
 
@@ -189,13 +234,38 @@ impl PatchTab {
                     painter.circle_filled(
                         pos2(x as f32 * DOT_SPACING, y as f32 * DOT_SPACING),
                         DOT_RADIUS,
-                        ui.visuals().faint_bg_color.gamma_multiply(3.0),
+                        ui.visuals().faint_bg_color,
                     );
                 }
             }
         }
 
+        let cable_shapeidx = ui.painter().add(egui::Shape::Noop);
+
+        let mut hovered_node_slot = None;
+        let mut cable_drag_stopped = false;
+
         let result = self.drag_handler.handle(|prepared| {
+            // nodes
+
+            struct NodeSlotData {
+                selected: bool,
+                left: f32,
+                right: f32,
+                inputs: Box<[f32]>,
+                outputs: Box<[f32]>,
+            }
+            impl NodeSlotData {
+                fn get_input_pos(&self, input_index: u32) -> Pos2 {
+                    Pos2::new(self.left, self.inputs[input_index as usize])
+                }
+                fn get_output_pos(&self, output_index: u32) -> Pos2 {
+                    Pos2::new(self.right, self.outputs[output_index as usize])
+                }
+            }
+
+            let currently_held_node_is_some = self.currently_held_node.is_some();
+            let mut node_slot_data: IdMap<NodeData, NodeSlotData> = IdMap::new();
             // what the heck is rustfmt doing
             let mut handle_node = |prepared: &mut crate::util::Prepared<
                 (Id<Track>, Id<NodeData>),
@@ -206,8 +276,6 @@ impl PatchTab {
                                    node_id: Option<Id<NodeData>>,
                                    node_ui: &NodeUiState,
                                    tracker: &mut UiStateTracker| {
-                const NODE_MARGIN: f32 = 8.0;
-
                 let real_node_data =
                     node_id.map(|node_id| (node_id, track_ephemeral.nodes.force_get_mut(node_id)));
 
@@ -219,37 +287,68 @@ impl PatchTab {
                     node_ui.pos
                 };
 
-                let mut child_ui = ui.child_ui_with_id_source(
-                    Rect::from_x_y_ranges(pos.x..=pos.x + node_ui.width, pos.y..=f32::INFINITY),
-                    egui::Layout::top_down(egui::Align::Min),
-                    node_id.unwrap_or(Id::new("currently_held_node")),
+                let node_max_rect = Rect::from_x_y_ranges(
+                    pos.x..=pos.x + node_ui.width,
+                    pos.y..=if let Some((_, ref node_ephemeral)) = real_node_data {
+                        pos.y + node_ephemeral.size.y
+                    } else {
+                        // would be f32::INFINITY but egui needs a finite rect
+                        viewport.bottom() + 128.0
+                    },
                 );
 
-                let mut frame = egui::Frame::window(ui.style());
+                let mut frame_ui = ui.child_ui_with_id_source(
+                    node_max_rect,
+                    egui::Layout::top_down(egui::Align::Min),
+                    node_id.unwrap_or(Id::new("currently_held_node")),
+                    None,
+                );
+                if currently_held_node_is_some {
+                    // TODO make ui uninteractable without setting fade out color
+                    // frame_ui.disable()
+                }
+                if node_id.is_some()
+                    && !node_max_rect.intersects(viewport)
+                    && !prepared
+                        .dragged_id()
+                        .is_some_and(|id| Some(id.cast()) == node_id)
+                {
+                    frame_ui.set_invisible();
+                }
+                frame_ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
+
+                let mut frame = egui::Frame::window(ui.style()).inner_margin(8.0);
                 if node_ui.selected {
-                    // TODO actually implement selection colors
-                    frame.stroke = egui::Stroke::new(
-                        frame.stroke.width * 1.2,
-                        frame.stroke.color.gamma_multiply(3.0),
-                    );
-                    frame.fill = frame.fill.gamma_multiply(1.2);
+                    // TODO actually implement selection colors/strokes
+                    frame.stroke =
+                        egui::Stroke::new(frame.stroke.width * 1.2, egui::Color32::from_gray(96));
+                    frame.fill = egui::Color32::from_gray(32);
                 }
 
-                let mut frame_prepared = frame.begin(&mut child_ui);
+                let mut ui_ctx = CubedawNodeUiContext::new(node_id, track_id, node_data);
+
+                let frame_rect;
+
+                // node frame
+                let mut frame_prepared = frame.begin(&mut frame_ui);
+                frame_prepared
+                    .content_ui
+                    .style_mut()
+                    .interaction
+                    .selectable_labels = false;
                 {
                     if let Some((node_id, ref node_ephemeral)) = real_node_data {
-                        let drag_response = child_ui.allocate_rect(
+                        let drag_response = frame_ui.allocate_rect(
                             Rect::from_min_size(node_ui.pos, node_ephemeral.size),
                             egui::Sense::click_and_drag(),
                         );
                         prepared.process_interaction(
+                            node_id.cast(),
                             drag_response,
                             (track_id, node_id),
                             node_ui.selected,
                         );
                     }
-                    let mut ui_ctx = CubedawNodeUiContext::new(node_id, track_id, node_data);
-
                     let node_state = node_data.inner.as_ref();
                     let mut inner_node_ui = node_state.clone();
 
@@ -261,26 +360,115 @@ impl PatchTab {
                     if *inner_node_ui != *node_state
                         && let Some(node_id) = node_id
                     {
-                        tracker.add(NodeUiUpdate::new(track_id, node_id, inner_node_ui))
+                        tracker.add(NodeStateUpdate::new(
+                            node_id,
+                            track_id,
+                            inner_node_ui,
+                            ui_ctx.inputs.iter().map(|i| i.value).collect(),
+                            node_data.inputs.iter().map(|i| i.value).collect(),
+                            ui_ctx.outputs.len() as u32,
+                            node_data.outputs.len() as u32,
+                        ));
                     }
 
-                    ui_ctx.finish(tracker);
+                    frame_rect = frame_prepared.content_ui.min_rect() + frame.total_margin();
+                    if let Some((_node_id, node_ephemeral)) = real_node_data {
+                        frame_prepared.allocate_space(&mut frame_ui);
 
-                    if let Some((node_id, node_ephemeral)) = real_node_data {
-                        let response = frame_prepared.allocate_space(&mut child_ui);
-                        prepared.process_interaction(
-                            response,
-                            (track_id, node_id),
-                            node_ui.selected,
-                        );
-
-                        node_ephemeral.size = frame
-                            .total_margin()
-                            .expand_rect(frame_prepared.content_ui.min_rect())
-                            .size();
+                        node_ephemeral.size = frame_rect.size();
                     }
                 }
-                frame_prepared.paint(&child_ui);
+                frame_prepared.paint(&frame_ui);
+
+                // node inputs
+                for ((index, y_pos), is_output) in ui_ctx
+                    .inputs
+                    .iter()
+                    .map(|i| i.y_pos)
+                    .enumerate()
+                    .zip(std::iter::repeat(false))
+                    .chain(
+                        ui_ctx
+                            .outputs
+                            .iter()
+                            .map(|o| o.y_pos)
+                            .enumerate()
+                            .zip(std::iter::repeat(true)),
+                    )
+                {
+                    let pos = egui::pos2(
+                        if is_output {
+                            node_max_rect.right()
+                        } else {
+                            node_max_rect.left()
+                        },
+                        y_pos,
+                    );
+
+                    // TODO add configurable styles for this
+                    let slot_radius = 4.0;
+
+                    let mut hovered = false;
+                    if let Some(node_id) = node_id {
+                        let response = frame_ui
+                            .allocate_rect(
+                                Rect::from_min_size(pos, Vec2::ZERO)
+                                    .expand(slot_radius + ui.input(|i| i.aim_radius())),
+                                egui::Sense::drag(),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                        let slot_descriptor = if is_output {
+                            NodeSlotDescriptor::Output {
+                                node: node_id,
+                                output_index: index as u32,
+                            }
+                        } else {
+                            NodeSlotDescriptor::Input {
+                                node: node_id,
+                                input_index: index as u32,
+                            }
+                        };
+
+                        if response.drag_started() {
+                            self.currently_drawn_cable = Some(slot_descriptor);
+                        } else if response.drag_stopped() {
+                            cable_drag_stopped = true;
+                        }
+                        if response.contains_pointer() {
+                            hovered = true;
+                            hovered_node_slot = Some(slot_descriptor);
+                        }
+                    }
+                    let visuals = if hovered {
+                        frame_ui.visuals().widgets.hovered
+                    } else {
+                        frame_ui.visuals().widgets.noninteractive
+                    };
+                    let slot_fill = visuals.bg_fill;
+                    let slot_stroke = visuals.bg_stroke;
+
+                    frame_ui
+                        .painter()
+                        .circle(pos, slot_radius, slot_fill, slot_stroke);
+                }
+
+                ui_ctx.apply(tracker);
+
+                if let Some(node_id) = node_id {
+                    node_slot_data.insert(
+                        node_id,
+                        NodeSlotData {
+                            selected: node_ui.selected,
+                            left: frame_rect.left(),
+                            right: frame_rect.right(),
+                            inputs: ui_ctx.inputs.iter().map(|x| x.y_pos).collect(),
+                            outputs: ui_ctx.outputs.iter().map(|x| x.y_pos).collect(),
+                        },
+                    );
+                }
+
+                ui_ctx.finish()
             };
             for (node_id, node_data) in patch.nodes() {
                 let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
@@ -298,67 +486,62 @@ impl PatchTab {
             // .take() is used to avoid doing an obvious unwrap when checking if the node should be placed.
             // if the node isn't placed, the node is put back into currently_held_node at the end.
             if let Some(node_data) = self.currently_held_node.take() {
-                if let Some(hover_pos) = {
-                    // TODO hover_pos is broken. https://github.com/emilk/egui/pull/4679
-                    // replace this when the version is updated to include that PR
-
-                    // viewport_interaction.hover_pos()
-
-                    if viewport_interaction.hovered()
-                        && let Some(mut pos) =
-                            viewport_interaction.ctx.input(|i| i.pointer.hover_pos())
-                    {
-                        if let Some(transform) = viewport_interaction.ctx.memory(|m| {
-                            m.layer_transforms
-                                .get(&viewport_interaction.layer_id)
-                                .cloned()
-                        }) {
-                            pos = transform.inverse() * pos;
-                        }
-                        Some(pos)
-                    } else {
-                        None
-                    }
-                } {
+                if let Some(pointer_pos) = pointer_pos {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
-                    handle_node(
+                    let result = handle_node(
                         prepared,
                         ui,
                         &node_data,
                         None,
                         &NodeUiState {
                             selected: true,
-                            pos: hover_pos,
+                            pos: pointer_pos,
                             width: 128.0,
                         },
                         &mut ctx.tracker,
                     );
-                }
-                if viewport_interaction.clicked()
-                    && let Some(interact_pos) = viewport_interaction.interact_pointer_pos()
-                {
-                    // place the node
-                    ctx.tracker.add(UiNodeAddOrRemove::addition(
-                        Id::arbitrary(),
-                        NodeData::new_disconnected(node_data.key, node_data.inner),
-                        track_id,
-                        NodeUiState {
-                            selected: true,
-                            pos: interact_pos,
-                            width: 128.0, // TODO impl node widths
-                        },
-                    ))
+                    if primary_clicked {
+                        // place the node
+                        ctx.tracker.add(UiNodeAddOrRemove::addition(
+                            Id::arbitrary(),
+                            {
+                                let mut data =
+                                    NodeData::new_disconnected(node_data.key, node_data.inner);
+
+                                data.inputs.reserve(result.inputs.len());
+                                for input in &result.inputs {
+                                    data.inputs.push(NodeInput {
+                                        value: input.value,
+                                        ..Default::default()
+                                    });
+                                }
+
+                                data.outputs
+                                    .resize(result.outputs.len(), Default::default());
+
+                                data
+                            },
+                            track_id,
+                            NodeUiState {
+                                selected: true,
+                                pos: pointer_pos,
+                                width: 128.0, // TODO impl node widths
+                            },
+                        ))
+                    } else if !secondary_clicked {
+                        self.currently_held_node = Some(node_data);
+                    }
                 } else {
-                    // otherwise, put it back
                     self.currently_held_node = Some(node_data);
                 }
             }
-        });
 
+            node_slot_data
+        });
         {
             let should_deselect_everything =
-                result.should_deselect_everything() || viewport_interaction.clicked();
-            let selection_changes = result.selection_changes();
+                result.should_deselect_everything || viewport_interaction.clicked();
+            let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
                 for (&node_id2, node_ui) in &track_ui.patch.nodes {
@@ -369,7 +552,7 @@ impl PatchTab {
                             .add(UiNodeSelect::new(track_id, node_id2, false));
                     }
                 }
-                for (&(track_id, node_id), &selected) in selection_changes {
+                for (&(track_id, node_id), &selected) in &selection_changes {
                     if selected
                         && !ctx
                             .ui_state
@@ -382,12 +565,12 @@ impl PatchTab {
                     }
                 }
             } else {
-                for (&(track_id, node_id), &selected) in selection_changes {
+                for (&(track_id, node_id), &selected) in &selection_changes {
                     ctx.tracker
                         .add(UiNodeSelect::new(track_id, node_id, selected));
                 }
             }
-            if let Some(finished_drag_offset) = result.movement() {
+            if let Some(finished_drag_offset) = result.movement {
                 for (&node_id, node_ui) in &track_ui.patch.nodes {
                     if node_ui.selected {
                         ctx.tracker
@@ -396,6 +579,137 @@ impl PatchTab {
                 }
             }
         }
+
+        let node_slots = result.inner;
+
+        // cables
+
+        let mut cable_shapes = Vec::new();
+        let mut draw_cable = |output_pos: Pos2, input_pos: Pos2, tag: CableTag| {
+            // TODO make this configurable
+            let cable_stroke = egui::Stroke::new(
+                4.0,
+                match tag {
+                    CableTag::Invalid => ui.visuals().error_fg_color,
+                    CableTag::Valid => egui::Color32::from_gray(128),
+                    CableTag::Disconnected => egui::Color32::from_gray(100),
+                },
+            );
+
+            if !viewport.intersects(Rect::from_points(&[output_pos, input_pos])) {
+                return;
+            }
+
+            let control_point_distance = (input_pos.x - output_pos.x).abs() * 0.5;
+
+            cable_shapes.push(
+                egui::epaint::CubicBezierShape {
+                    points: [
+                        output_pos,
+                        output_pos + Vec2::new(control_point_distance, 0.0),
+                        input_pos - Vec2::new(control_point_distance, 0.0),
+                        input_pos,
+                    ],
+                    closed: false,
+                    fill: egui::Color32::TRANSPARENT,
+                    stroke: cable_stroke.into(),
+                }
+                .into(),
+            );
+        };
+
+        for (_cable_id, cable) in patch.cables() {
+            draw_cable(
+                node_slots
+                    .force_get(cable.input_node)
+                    .get_output_pos(cable.input_output_index),
+                node_slots
+                    .force_get(cable.output_node)
+                    .get_input_pos(cable.output_input_index),
+                cable.tag,
+            );
+        }
+
+        if let Some(currently_drawn_cable) = self.currently_drawn_cable {
+            if let Some(pointer_pos) = pointer_pos {
+                // TODO refactor. we check that one slot is an input and another is an output ok
+                let mut viable_cable = match (hovered_node_slot, currently_drawn_cable) {
+                    (
+                        Some(NodeSlotDescriptor::Output {
+                            node: input_node,
+                            output_index,
+                        }),
+                        NodeSlotDescriptor::Input {
+                            node: output_node,
+                            input_index,
+                        },
+                    ) => Some(Cable {
+                        input_node,
+                        input_output_index: output_index,
+                        output_node,
+                        output_input_index: input_index,
+                        output_multiplier_fac: 1.0,
+                        tag: CableTag::Invalid,
+                    }),
+                    (
+                        Some(NodeSlotDescriptor::Input {
+                            node: output_node,
+                            input_index,
+                        }),
+                        NodeSlotDescriptor::Output {
+                            node: input_node,
+                            output_index,
+                        },
+                    ) => Some(Cable {
+                        input_node,
+                        input_output_index: output_index,
+                        output_node,
+                        output_input_index: input_index,
+                        output_multiplier_fac: 1.0,
+                        tag: CableTag::Invalid,
+                    }),
+                    _ => None,
+                };
+                if let Some(ref mut cable) = viable_cable {
+                    patch.set_cable_tag(cable);
+                    draw_cable(
+                        node_slots
+                            .force_get(cable.input_node)
+                            .get_output_pos(cable.input_output_index),
+                        node_slots
+                            .force_get(cable.output_node)
+                            .get_input_pos(cable.output_input_index),
+                        cable.tag,
+                    );
+                } else {
+                    match currently_drawn_cable {
+                        NodeSlotDescriptor::Input { node, input_index } => {
+                            let input_pos = node_slots.force_get(node).get_input_pos(input_index);
+                            draw_cable(pointer_pos, input_pos, CableTag::Disconnected)
+                        }
+                        NodeSlotDescriptor::Output { node, output_index } => {
+                            let output_pos =
+                                node_slots.force_get(node).get_output_pos(output_index);
+                            draw_cable(output_pos, pointer_pos, CableTag::Disconnected);
+                        }
+                    }
+                }
+                if cable_drag_stopped {
+                    if let Some(viable_cable) = viable_cable {
+                        ctx.tracker.add(CableAddOrRemove::addition(
+                            Id::arbitrary(),
+                            viable_cable,
+                            track_id,
+                        ));
+                    }
+
+                    self.currently_drawn_cable = None;
+                }
+            }
+        }
+
+        ui.painter()
+            .set(cable_shapeidx, egui::Shape::Vec(cable_shapes));
     }
 }
 
@@ -404,8 +718,8 @@ struct CubedawNodeUiContext<'a> {
     track_id: Id<Track>,
     node_data: &'a NodeData,
 
-    input_ypos: Vec<f32>,
-    output_ypos: Vec<f32>,
+    inputs: Vec<CubedawNodeUiContextInput>,
+    outputs: Vec<CubedawNodeUiContextOutput>,
 
     tracker: UiStateTracker,
 }
@@ -416,21 +730,19 @@ impl<'a> CubedawNodeUiContext<'a> {
             track_id,
             node_data,
 
-            input_ypos: Vec::new(),
-            output_ypos: Vec::new(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
 
             tracker: UiStateTracker::new(),
         }
     }
 
-    fn finish(self, tracker: &mut UiStateTracker) {
-        if let Some(id) = self.node_id {
+    fn apply(&mut self, tracker: &mut UiStateTracker) {
+        if self.node_id.is_some() {
             let old_num_inputs = self.node_data.inputs.len();
-            let num_inputs = self.input_ypos.len();
+            let num_inputs = self.inputs.len();
             if num_inputs < old_num_inputs {
-                for (input_index, deleted_input) in (num_inputs..old_num_inputs)
-                    .zip(&self.node_data.inputs[num_inputs..old_num_inputs])
-                {
+                for deleted_input in &self.node_data.inputs[num_inputs..old_num_inputs] {
                     // do in reverse order because removing elements one-by-one from the vec is faster if you remove from last to first
                     for &connection in deleted_input.connections.iter().rev() {
                         tracker.add_weak(cubedaw_command::patch::CableAddOrRemove::removal(
@@ -438,43 +750,39 @@ impl<'a> CubedawNodeUiContext<'a> {
                             self.track_id,
                         ));
                     }
-                    tracker.add_weak(cubedaw_command::node::NodeInputAddOrRemove::removal(
-                        id,
-                        self.track_id,
-                        input_index,
-                        deleted_input.value,
-                    ));
                 }
             }
         }
 
-        tracker.extend(self.tracker);
+        tracker.extend(self.tracker.take());
+    }
+
+    fn finish(self) -> CubedawNodeUiContextResult {
+        CubedawNodeUiContextResult {
+            inputs: self.inputs,
+            outputs: self.outputs,
+        }
     }
 }
 
 impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
     fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions) {
-        let num_inputs = self.input_ypos.len();
+        let num_inputs = self.inputs.len();
         let input = self.node_data.inputs.get(num_inputs);
 
         let previous_value = match input {
             Some(input) => input.value,
-            None => {
-                if let Some(node_id) = self.node_id {
-                    self.tracker
-                        .add_weak(cubedaw_command::node::NodeInputAddOrRemove::addition(
-                            node_id,
-                            self.track_id,
-                            num_inputs,
-                            options.default_value,
-                        ));
-                }
-                options.default_value
-            }
+            None => options.default_value,
         };
         let mut value = previous_value;
 
-        let response = ui.add(DragValue::new(&mut value).name(Some(name)));
+        let response = ui.add(
+            DragValue::new(&mut value)
+                .name(Some(name))
+                .display_range(options.display_range)
+                .range(options.range)
+                .display(options.display),
+        );
 
         if let Some(id) = self.node_id {
             let command = cubedaw_command::node::NodeInputChange::new(
@@ -491,28 +799,44 @@ impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
             }
         }
 
-        self.input_ypos.push(response.rect.center().y);
+        self.inputs.push(CubedawNodeUiContextInput {
+            y_pos: response.rect.center().y,
+            value,
+        });
     }
     fn output_ui(&mut self, ui: &mut egui::Ui, name: &str) {
-        let num_outputs = self.output_ypos.len();
-
         let response = ui
             .with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.add(egui::Label::new(name))
             })
             .inner;
 
-        if self.node_data.outputs.len() <= num_outputs {
-            if let Some(node_id) = self.node_id {
-                self.tracker
-                    .add_weak(cubedaw_command::node::NodeOutputAddOrRemove::addition(
-                        node_id,
-                        self.track_id,
-                        num_outputs,
-                    ));
-            }
-        }
-
-        self.output_ypos.push(response.rect.center().y);
+        self.outputs.push(CubedawNodeUiContextOutput {
+            y_pos: response.rect.center().y,
+        });
     }
+}
+struct CubedawNodeUiContextInput {
+    y_pos: f32,
+    value: f32,
+}
+struct CubedawNodeUiContextOutput {
+    y_pos: f32,
+}
+
+struct CubedawNodeUiContextResult {
+    inputs: Vec<CubedawNodeUiContextInput>,
+    outputs: Vec<CubedawNodeUiContextOutput>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeSlotDescriptor {
+    Output {
+        node: Id<NodeData>,
+        output_index: u32,
+    },
+    Input {
+        node: Id<NodeData>,
+        input_index: u32,
+    },
 }

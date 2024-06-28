@@ -266,7 +266,7 @@ impl PianoRollTab {
                         prepared.set_scale((1.0 / self.units_per_tick, 1.0 / self.units_per_pitch));
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
-                    prepared.process_interaction(note_interaction, (track_id, section_id, note_id), is_selected);
+                    prepared.process_interaction(note_id.cast(), note_interaction, (track_id, section_id, note_id), is_selected);
                 }
             };
 
@@ -324,8 +324,8 @@ impl PianoRollTab {
             }
         });
         {
-            let should_deselect_everything = result.should_deselect_everything() || response.clicked();
-            let selection_changes = result.selection_changes();
+            let should_deselect_everything = result.should_deselect_everything || response.clicked();
+            let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
                 for (&track_id2, track_ui) in &ctx.ui_state.tracks {
@@ -337,7 +337,7 @@ impl PianoRollTab {
                         }
                     }
                 }
-                for (&(track_id, section_id, note_id), &selected) in selection_changes {
+                for (&(track_id, section_id, note_id), &selected) in &selection_changes {
                     // only add a command when a note should be selected and isn't currently selected.
                     // the deselection is handled in the for loop before this one
                     if selected && !ctx.ui_state.tracks.get(track_id).and_then(|t| t.sections.get(section_id)).and_then(|s| s.notes.get(note_id)).is_some_and(|n| n.selected) {
@@ -345,11 +345,11 @@ impl PianoRollTab {
                     }
                 }
             } else {
-                for (&(track_id, section_id, note_id), &selected) in selection_changes {
+                for (&(track_id, section_id, note_id), &selected) in &selection_changes {
                     ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, selected));
                 }
             }
-            if let Some(finished_drag_offset) = result.movement() {
+            if let Some(finished_drag_offset) = result.movement {
                 let pos_offset = finished_drag_offset.x.round() as i64;
                 let pitch_offset = finished_drag_offset.y.round() as i32;
     
@@ -512,13 +512,13 @@ impl PianoRollTab {
                     if header_resp.dragged() {
                         prepared.set_scale((1.0 / self.units_per_tick, 0.0));
                     }
-                    prepared.process_interaction(header_resp, (track_id, section_id), section_ui.selected);
+                    prepared.process_interaction(section_id.cast(), header_resp, (track_id, section_id), section_ui.selected);
                 }
             },
         );
         {
-            let should_deselect_everything = result.should_deselect_everything() || response.clicked();
-            let selection_changes = result.selection_changes();
+            let should_deselect_everything = result.should_deselect_everything || response.clicked();
+            let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
                 for (&track_id2, track_ui) in &ctx.ui_state.tracks {
@@ -528,19 +528,19 @@ impl PianoRollTab {
                         }
                     }
                 }
-                for (&(track_id, section_id), &selected) in selection_changes {
+                for (&(track_id, section_id), &selected) in &selection_changes {
                     if selected && !ctx.ui_state.tracks.get(track_id).and_then(|t| t.sections.get(section_id)).is_some_and(|n| n.selected) {
                         ctx.tracker.add(UiSectionSelect::new(track_id, section_id, true));
                     }
                 }
             } else {
-                for (&(track_id, section_id), &selected) in selection_changes {
+                for (&(track_id, section_id), &selected) in &selection_changes {
                     ctx.tracker.add(UiSectionSelect::new(track_id, section_id, selected));
                 }
             }
         }
 
-        let finished_drag_offset = result.movement();
+        let finished_drag_offset = result.movement;
 
         if let Some(finished_drag_offset) = finished_drag_offset {
             let finished_drag_offset = finished_drag_offset.x.round() as i64;
