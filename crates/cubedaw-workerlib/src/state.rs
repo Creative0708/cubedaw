@@ -1,51 +1,38 @@
-use cubedaw_lib::{DynNode, Id, IdMap, NodeData, Note, Patch, Section, State, Track};
+use cubedaw_lib::{DynNode, Id, IdMap, NodeData, Note, Patch, ResourceKey, Section, State, Track};
 
-use crate::{NodeRegistry, SyncCumulativeBuffer, WorkerOptions};
+use crate::{node_graph::ProcessedNodeGraph, NodeRegistry, SyncBuffer, WorkerOptions};
 
+#[derive(Debug)]
 pub struct WorkerState {
-    track: IdMap<Track, WorkerSectionTrackState>,
-    track_results: IdMap<Track, SyncCumulativeBuffer>,
+    pub section_tracks: IdMap<Track, WorkerSectionTrackState>,
 }
 
 impl WorkerState {
     pub fn new(state: &State, options: &WorkerOptions) -> Self {
         let mut track_map = IdMap::new();
-        let mut track_results = IdMap::new();
         for (&track_id, track) in &state.tracks {
             let mut node_map = IdMap::new();
             for (node_id, node) in track.patch.nodes() {
-                node_map.insert(node_id, options.node_registry.create_node(node.key));
+                node_map.insert(node_id, options.registry.create_node(node.key));
             }
             track_map.insert(
                 track_id,
-                WorkerSectionTrackState::from_patch(&track.patch, &options.node_registry),
-            );
-            track_results.insert(
-                track_id,
-                SyncCumulativeBuffer::new(options.buffer_size as _),
+                WorkerSectionTrackState::from_patch(&track.patch, options),
             );
         }
         Self {
-            track: track_map,
-            track_results,
+            section_tracks: track_map,
         }
     }
 
-    pub fn return_finished_work(&mut self, work: WorkerJob) {
-        match work {
-            WorkerJob::NoteProcess {
+    pub fn return_finished_work(&mut self, result: WorkerJobResult) {
+        match result.inner {
+            WorkerJobResultInner::NoteProcess {
                 track_id,
                 note_descriptor,
-                is_done,
                 state,
             } => {
-                if is_done {
-                    // note is finished, no need to return it
-                    return;
-                }
-
-                let Some(track) = self.track.get_mut(track_id) else {
-                    // track is deleted, no need to return it
+                let Some(track) = self.section_tracks.get_mut(track_id) else {
                     return;
                 };
 
@@ -67,12 +54,14 @@ impl WorkerState {
 }
 
 pub enum WorkerJob {
+    /// Process a single note on a track.
+    /// The note can reference an existing note in a `State` or a "live" note not attached to a `State`. See [`NoteDescriptor`] for more details.
     NoteProcess {
         track_id: Id<Track>,
         note_descriptor: NoteDescriptor,
-        is_done: bool,
         state: WorkerNoteState,
     },
+    /// Process a track.
     TrackProcess {
         track_id: Id<Track>,
         state: WorkerSectionTrackState,
@@ -80,34 +69,50 @@ pub enum WorkerJob {
     TrackGroup {
         track_id: Id<Track>,
     },
+    /// Not actually a job. This is an indicator to the worker that they should drop all resources
+    Finalize,
 }
 impl WorkerJob {
-    pub fn process(&mut self, project_state: &State) {
-        match *self {
+    /// Processes the job.
+    pub fn process(self, project_state: &State) -> WorkerJobResult {
+        match self {
             Self::NoteProcess {
                 track_id,
-                ref note_descriptor,
-                ref mut is_done,
-                ref state,
+                note_descriptor,
+                state,
             } => {
-                let note = match *note_descriptor {
+                let possibly_deleted_note = match note_descriptor {
                     NoteDescriptor::State {
                         section_id,
                         note_id,
                     } => project_state
                         .tracks
                         .get(track_id)
-                        .and_then(|track| {
-                            track
-                                .inner
-                                .section()
-                                .expect("track isn't a section track???")
-                                .section(section_id)
-                        })
+                        .and_then(|track| track.inner.section())
+                        .and_then(|section_track| section_track.section(section_id))
                         .and_then(|section| section.note(note_id))
                         .map(|(_, note)| note),
                     NoteDescriptor::Live { ref note, .. } => Some(note),
                 };
+                let Some(note) = possibly_deleted_note else {
+                    return WorkerJobResult {
+                        is_done: true,
+                        inner: WorkerJobResultInner::NoteProcess {
+                            track_id,
+                            note_descriptor,
+                            state,
+                        },
+                    };
+                };
+
+                WorkerJobResult {
+                    is_done: false,
+                    inner: WorkerJobResultInner::NoteProcess {
+                        track_id,
+                        note_descriptor,
+                        state,
+                    },
+                }
             }
             _ => todo!(),
         }
@@ -121,37 +126,46 @@ impl WorkerJob {
     // }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct WorkerSectionTrackState {
-    pub track_nodes: IdMap<NodeData, DynNode>,
-    pub note_nodes: IdMap<NodeData, DynNode>,
+    pub track_nodes: ProcessedNodeGraph,
+    pub note_nodes: ProcessedNodeGraph,
 
     pub notes: IdMap<Note, WorkerNoteState>,
     pub live_notes: IdMap<Note, (Note, WorkerNoteState)>,
 }
 impl WorkerSectionTrackState {
-    pub fn from_patch(patch: &Patch, registry: &NodeRegistry) -> Self {
+    pub fn from_patch(patch: &Patch, options: &WorkerOptions) -> Self {
         patch.debug_assert_valid();
 
-        let mut track_nodes = IdMap::new();
-        let mut note_nodes = IdMap::new();
+        let mut track_output = None;
+        let mut note_output = None;
 
-        for (id, note) in patch.nodes() {
-            match note.tag {
-                cubedaw_lib::NodeTag::Disconnected => (),
-                cubedaw_lib::NodeTag::Note => {
-                    note_nodes.insert(id, registry.create_node(note.key));
+        for (id, node) in patch.nodes() {
+            if node.tag == cubedaw_lib::NodeTag::Special {
+                let res = options.registry.get_resource_key_of(&*node.inner);
+                if res == Id::new("builtin:track_output") {
+                    assert!(
+                        track_output.replace(id).is_none(),
+                        "TODO handle multiple track outputs"
+                    );
+                } else if res == Id::new("builtin:note_output") {
+                    assert!(
+                        note_output.replace(id).is_none(),
+                        "TODO handle multiple note outputs"
+                    );
                 }
-                cubedaw_lib::NodeTag::Track => {
-                    track_nodes.insert(id, registry.create_node(note.key));
-                }
-                cubedaw_lib::NodeTag::Special => (),
             }
         }
 
+        let (Some(track_output), Some(note_output)) = (track_output, note_output) else {
+            // give up
+            return Default::default();
+        };
+
         Self {
-            track_nodes,
-            note_nodes,
+            track_nodes: ProcessedNodeGraph::new(patch, options, Some(note_output), track_output),
+            note_nodes: ProcessedNodeGraph::new(patch, options, None, note_output),
 
             notes: IdMap::new(),
             live_notes: IdMap::new(),
@@ -159,14 +173,15 @@ impl WorkerSectionTrackState {
     }
 }
 
+#[derive(Debug)]
 pub struct WorkerNoteState {
-    pub nodes: IdMap<NodeData, DynNode>,
+    pub nodes: ProcessedNodeGraph,
 }
 
 /// A descriptor for a [`cubedaw_lib::Note`]. Either a path to a note in the State, or a "live"
 /// note not attached to the state.
-#[derive(Clone)]
-enum NoteDescriptor {
+#[derive(Clone, Debug)]
+pub enum NoteDescriptor {
     State {
         section_id: Id<Section>,
         note_id: Id<Note>,
@@ -175,4 +190,25 @@ enum NoteDescriptor {
         note_id: Id<Note>,
         note: Note,
     },
+}
+
+pub struct WorkerJobResult {
+    pub is_done: bool,
+    pub inner: WorkerJobResultInner,
+}
+
+pub enum WorkerJobResultInner {
+    NoteProcess {
+        track_id: Id<Track>,
+        note_descriptor: NoteDescriptor,
+        state: WorkerNoteState,
+    },
+    TrackProcess {
+        track_id: Id<Track>,
+        state: WorkerSectionTrackState,
+    },
+    TrackGroup {
+        track_id: Id<Track>,
+    },
+    Finalize,
 }

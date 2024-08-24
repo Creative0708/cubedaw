@@ -8,6 +8,9 @@ members = [
     "crates/cubedaw-workerlib",
     "crates/cubedaw-worker",
     "crates/cubedaw-command",
+    "crates/cubedaw-pluginlib",
+    "crates/cubedaw-plugin",
+    "crates/cubedaw-default-plugins",
 ]
 
 [workspace.lints.rust]
@@ -22,11 +25,14 @@ unusual_byte_groupings = "allow" # misunderstands floating-point binary represen
 [workspace.dependencies]
 # some features are in the repo but not released yet
 # TODO change this to stable after the features/fixes get merged in
-egui = { git = "https://github.com/emilk/egui.git", rev = "db8db50bf31ddff42d35a96410afc856ddb3fd27", default-features = false }
+egui = { git = "https://github.com/emilk/egui.git", rev = "d4e8966aac9347965f8d02310ecf2c9f23bb9bbc", default-features = false }
+log = "0.4.22"
 ahash = "0.8.11"
 smallvec = "1.13.2"
 bytemuck = "1.15.0"
 crossbeam = "0.8.4"
+crossbeam-channel = "0.5.13"
+replace_with = "0.1.7"
 # TODO meminterval works but it's missing some features (like iterating over an entire IntervalTree).
 # however there doesn't seem to be a viable alternative for a low-dependency mutable interval tree already on crates.io
 # possibly contribute back to meminterval if they're fine with it or fork it?

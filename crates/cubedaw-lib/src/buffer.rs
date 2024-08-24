@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -94,8 +95,8 @@ pub type BufferType = f32;
 #[derive(Clone)]
 pub struct Buffer(Box<[f32]>);
 impl Buffer {
-    pub fn new(length: usize) -> Self {
-        Self(boxed_slice(length))
+    pub fn new(length: u32) -> Self {
+        Self(boxed_slice(length as usize))
     }
     pub fn resize(&mut self, length: u32) {
         if self.0.len() != length as usize {
@@ -117,5 +118,10 @@ impl Deref for Buffer {
 impl DerefMut for Buffer {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+impl fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Buffer {{ [length {}] }}", self.0.len())
     }
 }

@@ -1,29 +1,20 @@
 use std::sync::Arc;
 
-use crossbeam::queue::SegQueue;
 use cubedaw_lib::State;
-use cubedaw_workerlib::{SamplePos, WorkerJob, WorkerOptions};
-
-pub(crate) type WorkerQueue = SegQueue<WorkerJob>;
+use cubedaw_workerlib::{PreciseSongPos, WorkerJob, WorkerJobResult};
 
 pub enum HostToWorkerEvent {
-    Options(WorkerOptions),
     StartProcessing {
         state: Arc<State>,
-        work: Arc<WorkerQueue>,
-        start_pos: SamplePos,
+        start_pos: PreciseSongPos,
     },
 }
 
 pub enum WorkerToHostEvent {
-    DoneProcessing {
-        finished_buf: Box<[f32]>,
-        finished_job: WorkerJob,
-    },
-    Idle,
+    DoneProcessing(WorkerJobResult),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WorkerStatus {
     Processing,
     Idle,

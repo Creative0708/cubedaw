@@ -44,6 +44,24 @@ pub trait NodeContext<'a> {
     fn buffer_size(&self) -> u32;
     fn input(&self, index: u32) -> DataSource<'a>;
     fn output(&self, index: u32) -> DataDrain<'a>;
+
+    fn property(&self, property: NoteProperty) -> f32;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NoteProperty(pub NonZeroU32);
+impl NoteProperty {
+    pub const fn new(val: u32) -> Option<Self> {
+        match NonZeroU32::new(val) {
+            None => None,
+            Some(val) => Some(Self(val)),
+        }
+    }
+    pub const unsafe fn new_unchecked(val: u32) -> Self {
+        Self(unsafe { NonZeroU32::new_unchecked(val) })
+    }
+
+    pub const PITCH: Self = unsafe { Self::new_unchecked(1) };
 }
 
 pub trait Node: 'static + Sized + Send + Clone {
@@ -81,6 +99,11 @@ impl<T: Node> NodeWrapper for T {
 impl Clone for Box<dyn NodeWrapper> {
     fn clone(&self) -> Self {
         NodeWrapper::clone(self.as_ref())
+    }
+}
+impl std::fmt::Debug for Box<dyn NodeWrapper> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("dyn NodeWrapper { .. }")
     }
 }
 
@@ -351,7 +374,7 @@ mod ui {
     impl Eq for dyn NodeStateWrapper {}
 }
 
-use std::borrow::Cow;
+use std::{borrow::Cow, num::NonZeroU32};
 
 #[cfg(feature = "egui")]
 pub use ui::{NodeInputUiOptions, NodeStateWrapper, NodeUiContext, ValueHandler};

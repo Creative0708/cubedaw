@@ -82,7 +82,7 @@ impl Default for DragHandler {
     }
 }
 
-pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> {
+pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2 = fn(Vec2) -> Vec2> {
     drag_handler: &'a mut DragHandler,
     // HashMap<changed path, whether it is selected>
     selection_changes: HashMap<T, bool>,

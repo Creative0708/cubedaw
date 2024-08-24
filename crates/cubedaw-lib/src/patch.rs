@@ -30,6 +30,12 @@ impl Patch {
     pub fn cables(&self) -> impl Iterator<Item = (Id<Cable>, &Cable)> {
         self.cables.iter().map(|(&id, data)| (id, data))
     }
+    pub fn cable(&self, id: Id<Cable>) -> Option<&Cable> {
+        self.cables.get(id)
+    }
+    pub fn cable_mut(&mut self, id: Id<Cable>) -> Option<&mut Cable> {
+        self.cables.get_mut(id)
+    }
 
     /// Convenience function.
     pub fn set_cable_tag(&self, cable: &mut Cable) {
@@ -137,11 +143,42 @@ pub struct NodeInput {
     // the connections are additive to the value
     pub connections: Vec<Id<Cable>>,
 }
+impl NodeInput {
+    pub fn get_connections<'a>(
+        &'a self,
+        patch: &'a Patch,
+    ) -> impl Iterator<Item = (Id<Cable>, &'a Cable)> {
+        self.connections.iter().map(move |&cable_id| {
+            (
+                cable_id,
+                patch
+                    .cable(cable_id)
+                    .expect("cable doesn't exist on patch??"),
+            )
+        })
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct NodeOutput {
     pub connections: Vec<Id<Cable>>,
 }
+impl NodeOutput {
+    pub fn get_connections<'a>(
+        &'a self,
+        patch: &'a Patch,
+    ) -> impl Iterator<Item = (Id<Cable>, &'a Cable)> {
+        self.connections.iter().map(move |&cable_id| {
+            (
+                cable_id,
+                patch
+                    .cable(cable_id)
+                    .expect("cable doesn't exist on patch??"),
+            )
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Cable {
     // fyi the "input node" is the node to which the _output_ is connected to this cable.

@@ -1,14 +1,47 @@
-use std::any::TypeId;
+use std::{any::TypeId, ops};
 
 use crate::{DynNode, DynNodeState, Id, IdMap, Node, NodeCreationContext, ResourceKey};
 use ahash::{HashMap, HashMapExt};
 
 use crate::builtin_nodes as nodes;
 
-pub type DynNodeFactory = Box<dyn Send + Sync + Fn() -> DynNode>;
+pub struct DynNodeFactory(pub Box<dyn Send + Sync + Fn() -> DynNode>);
+impl ops::Deref for DynNodeFactory {
+    type Target = dyn Send + Sync + Fn() -> DynNode;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl ops::DerefMut for DynNodeFactory {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl std::fmt::Debug for DynNodeFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DynNodeFactory {{ <{:?}> }}", &*self as *const _)
+    }
+}
 
-pub type NodeStateFactory = Box<dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState>;
+pub struct NodeStateFactory(pub Box<dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState>);
+impl ops::Deref for NodeStateFactory {
+    type Target = dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl ops::DerefMut for NodeStateFactory {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl std::fmt::Debug for NodeStateFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NodeStateFactory {{ <{:?}> }}", &*self as *const _)
+    }
+}
 
+#[derive(Debug)]
 pub struct NodeRegistry {
     type_id_to_resource_key: HashMap<TypeId, Id<ResourceKey>>,
     entries: IdMap<ResourceKey, NodeRegistryEntry>,
@@ -42,8 +75,8 @@ impl NodeRegistry {
             NodeRegistryEntry {
                 key,
                 name: name.clone(),
-                node_factory: Box::new(|| Box::new(N::new())),
-                node_state_factory: Box::new(|ctx| Box::new(N::new_state(ctx))),
+                node_factory: DynNodeFactory(Box::new(|| Box::new(N::new()))),
+                node_state_factory: NodeStateFactory(Box::new(|ctx| Box::new(N::new_state(ctx)))),
             },
         );
         self.name_entries.push(NameEntry {
@@ -110,6 +143,7 @@ impl Default for NodeRegistry {
     }
 }
 
+#[derive(Debug)]
 pub struct NodeRegistryEntry {
     pub key: ResourceKey,
     pub name: Box<str>,
@@ -117,12 +151,14 @@ pub struct NodeRegistryEntry {
     pub node_state_factory: NodeStateFactory,
 }
 
+#[derive(Debug)]
 pub struct NameEntry {
     pub name: Box<str>,
     pub node_key: Id<ResourceKey>,
     pub entry_type: NameEntryType,
 }
 
+#[derive(Debug)]
 pub enum NameEntryType {
     Name,
     Alias,

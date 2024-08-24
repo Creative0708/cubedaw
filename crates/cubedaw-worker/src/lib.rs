@@ -1,4 +1,4 @@
 mod common;
-mod host;
+pub mod host;
 mod worker;
 pub use host::WorkerHost;

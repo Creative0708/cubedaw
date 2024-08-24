@@ -1,14 +1,14 @@
 use super::UiStateCommand;
 
 pub struct UiSetPlayhead {
-    old_pos: f32,
-    new_pos: f32,
+    old_pos: i64,
+    new_pos: i64,
 }
 
 impl UiSetPlayhead {
-    pub fn new(pos: f32) -> Self {
+    pub fn new(pos: i64) -> Self {
         Self {
-            old_pos: f32::NAN,
+            old_pos: 0,
             new_pos: pos,
         }
     }

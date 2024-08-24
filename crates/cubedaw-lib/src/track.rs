@@ -139,6 +139,19 @@ impl SectionTrack {
             .and_then(|(&range, &id)| range.contains(pos).then_some((range, id)))
     }
 
+    pub fn sections_intersecting(
+        &self,
+        range: Range,
+    ) -> impl '_ + Iterator<Item = (Range, Id<Section>)> {
+        // there doesn't seem to be a way to step before the start of an iterator like in C++. so we just bite the extra range call
+        let possible_first_section = self.section_at(range.start);
+        let other_sections = self
+            .sections
+            .range(Range::unbounded_end(range.start)..Range::unbounded_end(range.end))
+            .map(|(&range, &id)| (range, id));
+        possible_first_section.into_iter().chain(other_sections)
+    }
+
     pub fn section(&self, id: Id<Section>) -> Option<&Section> {
         self.section_map.get(id)
     }

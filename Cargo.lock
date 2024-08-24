@@ -914,6 +914,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cubedaw-default-plugins"
+version = "0.1.0"
+
+[[package]]
 name = "cubedaw-lib"
 version = "0.1.0"
 dependencies = [
@@ -925,15 +929,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "cubedaw-plugin"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "bytemuck",
+ "log",
+ "smallvec",
+ "wasm-encoder",
+ "wasmparser",
+]
+
+[[package]]
+name = "cubedaw-pluginlib"
+version = "0.1.0"
+
+[[package]]
 name = "cubedaw-worker"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "crossbeam",
+ "crossbeam-channel",
  "cubedaw-command",
  "cubedaw-lib",
  "cubedaw-workerlib",
  "egui",
+ "log",
+ "replace_with",
  "smallvec",
 ]
 
@@ -946,6 +968,7 @@ dependencies = [
  "crossbeam",
  "cubedaw-lib",
  "egui",
+ "replace_with",
  "smallvec",
 ]
 
@@ -1019,7 +1042,7 @@ dependencies = [
 [[package]]
 name = "ecolor"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "bytemuck",
  "emath",
@@ -1028,7 +1051,7 @@ dependencies = [
 [[package]]
 name = "eframe"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1062,7 +1085,7 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "accesskit",
  "ahash",
@@ -1075,7 +1098,7 @@ dependencies = [
 [[package]]
 name = "egui-wgpu"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1093,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "accesskit_winit",
  "ahash",
@@ -1110,7 +1133,7 @@ dependencies = [
 [[package]]
 name = "egui_dock"
 version = "0.12.0"
-source = "git+https://github.com/Creative0708/egui_dock.git?rev=00464970708b7d93cc10489e0c4e7cd4fe6d4ccc#00464970708b7d93cc10489e0c4e7cd4fe6d4ccc"
+source = "git+https://github.com/Creative0708/egui_dock.git?rev=05e465c9cbb600e3d6f931829d42adef55b4c842#05e465c9cbb600e3d6f931829d42adef55b4c842"
 dependencies = [
  "duplicate",
  "egui",
@@ -1120,7 +1143,7 @@ dependencies = [
 [[package]]
 name = "egui_glow"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1136,7 +1159,7 @@ dependencies = [
 [[package]]
 name = "emath"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "bytemuck",
 ]
@@ -1188,7 +1211,7 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.27.2"
-source = "git+https://github.com/emilk/egui.git?rev=db8db50bf31ddff42d35a96410afc856ddb3fd27#db8db50bf31ddff42d35a96410afc856ddb3fd27"
+source = "git+https://github.com/emilk/egui.git?rev=d4e8966aac9347965f8d02310ecf2c9f23bb9bbc#d4e8966aac9347965f8d02310ecf2c9f23bb9bbc"
 dependencies = [
  "ab_glyph",
  "ahash",
@@ -1577,6 +1600,7 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash",
  "allocator-api2",
+ "serde",
 ]
 
 [[package]]
@@ -1680,6 +1704,7 @@ checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "serde",
 ]
 
 [[package]]
@@ -1766,6 +1791,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "leb128"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
+
+[[package]]
 name = "libc"
 version = "0.2.155"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1832,9 +1863,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.21"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
 name = "malloc_buf"
@@ -2503,6 +2534,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "replace_with"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a8614ee435691de62bcffcf4a66d91b3594bf1428a5722e79103249a095690"
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2568,6 +2605,12 @@ dependencies = [
  "smithay-client-toolkit",
  "tiny-skia",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
 
 [[package]]
 name = "serde"
@@ -3069,6 +3112,30 @@ name = "wasm-bindgen-shared"
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af190c94f2773fdb3729c55b007a722abb5384da03bc0986df4c289bf5567e96"
+
+[[package]]
+name = "wasm-encoder"
+version = "0.215.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fb56df3e06b8e6b77e37d2969a50ba51281029a9aeb3855e76b7f49b6418847"
+dependencies = [
+ "leb128",
+ "wasmparser",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.215.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53fbde0881f24199b81cf49b6ff8f9c145ac8eb1b7fc439adb5c099734f7d90e"
+dependencies = [
+ "ahash",
+ "bitflags 2.5.0",
+ "hashbrown",
+ "indexmap",
+ "semver",
+ "serde",
+]
 
 [[package]]
 name = "wayland-backend"

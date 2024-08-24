@@ -1,101 +1,163 @@
 use std::{collections::VecDeque, sync::mpsc, thread};
 
 use cubedaw_command::StateCommandWrapper;
-use cubedaw_workerlib::{SamplePos, WorkerOptions};
+use cubedaw_workerlib::{PreciseSongPos, WorkerOptions};
 
 pub struct WorkerHostHandle {
-    tx: mpsc::Sender<WorkerHostHandleEvent>,
+    tx: mpsc::Sender<AppToWorkerHostEvent>,
+    rx: mpsc::Receiver<WorkerHostToAppEvent>,
     join_handle: thread::JoinHandle<()>,
+
+    is_playing: bool,
+    last_playhead_update: Option<(PreciseSongPos, std::time::Instant)>,
 }
 
 impl WorkerHostHandle {
-    pub fn new(state: cubedaw_lib::State, options: WorkerOptions) -> Self {
-        let (tx, rx) = mpsc::channel();
+    pub fn new() -> Self {
+        let (app_tx, worker_rx) = mpsc::channel();
+        let (worker_tx, app_rx) = mpsc::channel();
         WorkerHostHandle {
-            tx,
+            tx: app_tx,
+            rx: app_rx,
             join_handle: thread::Builder::new()
                 .name("Audio Worker Host".into())
-                .spawn(move || worker_host(rx, state, options))
+                .spawn(move || worker_host(worker_rx, worker_tx))
                 .expect("failed to spawn thread"),
+
+            is_playing: false,
+            last_playhead_update: None,
         }
     }
 
-    pub fn init_workers(&mut self, num_workers: usize) {
+    pub fn init(
+        &mut self,
+        num_workers: usize,
+        state: cubedaw_lib::State,
+        worker_options: WorkerOptions,
+    ) {
         self.tx
-            .send(WorkerHostHandleEvent::InitWorkers { num_workers })
+            .send(AppToWorkerHostEvent::Init {
+                num_workers,
+                state,
+                options: worker_options,
+            })
             .expect("channel closed???");
     }
     pub fn start_processing(&mut self, from: i64) {
         self.tx
-            .send(WorkerHostHandleEvent::StartProcessing { from })
+            .send(AppToWorkerHostEvent::StartProcessing { from })
             .expect("channel closed???");
+        self.is_playing = true;
+    }
+    pub fn stop_processing(&mut self) {
+        self.tx
+            .send(AppToWorkerHostEvent::StopProcessing)
+            .expect("channel closed???");
+        self.is_playing = false;
+        self.last_playhead_update = None;
+    }
+    pub fn is_playing(&self) -> bool {
+        self.is_playing
+    }
+
+    fn try_recv(&self) -> Option<WorkerHostToAppEvent> {
+        match self.rx.try_recv() {
+            Ok(event) => Some(event),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => panic!("channel closed???"),
+        }
+    }
+    fn recv(&self) -> WorkerHostToAppEvent {
+        self.rx.recv().expect("channel closed???")
+    }
+
+    pub fn last_playhead_update(&self) -> Option<(PreciseSongPos, std::time::Instant)> {
+        self.last_playhead_update
     }
 }
 
-enum WorkerHostHandleEvent {
-    InitWorkers { num_workers: usize },
-    Options(WorkerOptions),
-    StartProcessing { from: i64 },
+#[derive(Debug)]
+enum AppToWorkerHostEvent {
+    Init {
+        num_workers: usize,
+        state: cubedaw_lib::State,
+        options: WorkerOptions,
+    },
+    StartProcessing {
+        from: i64,
+    },
     StopProcessing,
-    QueueCommands(Box<[Box<dyn StateCommandWrapper>]>),
+    Commands(Box<[Box<dyn StateCommandWrapper>]>),
 }
 
-fn worker_host(
-    rx: mpsc::Receiver<WorkerHostHandleEvent>,
-    state: cubedaw_lib::State,
-    mut options: WorkerOptions,
-) {
-    let mut host = cubedaw_worker::WorkerHost::new(state, options.clone());
+#[derive(Debug)]
+enum WorkerHostToAppEvent {
+    PlayheadUpdate {
+        pos: PreciseSongPos,
+        timestamp: std::time::Instant,
+    },
+}
 
-    let mut processing = false;
+fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<WorkerHostToAppEvent>) {
+    use cubedaw_worker::WorkerHost;
 
-    let mut queued_commands = VecDeque::new();
+    let Ok(first_event) = rx.recv() else { return };
+    let AppToWorkerHostEvent::Init {
+        num_workers,
+        state,
+        options,
+    } = first_event
+    else {
+        panic!("other event sent to worker_host before Init: {first_event:?}");
+    };
 
-    let mut playhead_pos = SamplePos::new(i64::MIN, 0.0);
+    let mut idle_host = cubedaw_worker::WorkerHost::new(num_workers, state, options);
+    let mut is_playing = false;
 
-    'out: loop {
-        while let Some(event) = if processing {
-            match rx.try_recv() {
-                Ok(event) => Some(event),
-                Err(mpsc::TryRecvError::Empty) => None,
-                Err(mpsc::TryRecvError::Disconnected) => break 'out,
-            }
-        } else {
-            match rx.recv() {
-                Ok(event) => Some(event),
-                Err(mpsc::RecvError) => break 'out,
-            }
-        } {
+    let mut playhead_pos = Default::default();
+
+    'outer: loop {
+        // process events first
+        loop {
+            let event = if is_playing {
+                match rx.try_recv() {
+                    Ok(event) => event,
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => break 'outer,
+                }
+            } else {
+                match rx.recv() {
+                    Ok(event) => event,
+                    Err(mpsc::RecvError) => break 'outer,
+                }
+            };
+
             match event {
-                WorkerHostHandleEvent::InitWorkers { num_workers } => {
-                    host.init_workers(num_workers);
+                AppToWorkerHostEvent::Init {
+                    num_workers,
+                    state,
+                    options,
+                } => {
+                    idle_host.join();
+                    idle_host = cubedaw_worker::WorkerHost::new(num_workers, state, options);
                 }
-                WorkerHostHandleEvent::StartProcessing { from } => {
-                    processing = true;
-                    playhead_pos = SamplePos::from_song_pos(from);
+                AppToWorkerHostEvent::StartProcessing { from } => {
+                    playhead_pos = PreciseSongPos::from_song_pos(from);
+                    is_playing = true;
                 }
-                WorkerHostHandleEvent::StopProcessing => {
-                    processing = false;
+                AppToWorkerHostEvent::StopProcessing => {
+                    is_playing = false;
                 }
-                WorkerHostHandleEvent::QueueCommands(commands) => {
-                    for event in commands.into_vec() {
-                        queued_commands.push_back(event);
+                AppToWorkerHostEvent::Commands(commands) => {
+                    for mut command in commands.into_vec() {
+                        command.execute(idle_host.state_mut());
                     }
                 }
-                WorkerHostHandleEvent::Options(new_options) => {
-                    options.clone_from(&new_options);
-                    host.set_options(new_options);
-                }
             }
         }
-        if processing {
-            let state = host.collect();
-            for command in queued_commands.iter_mut() {
-                command.execute(state);
-            }
-            host.queue(playhead_pos);
-        }
+        // Process audio
+        playhead_pos = idle_host.process(playhead_pos);
     }
 
-    host.join();
+    idle_host;
 }

@@ -12,7 +12,9 @@ cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-command = { path = "../cubedaw-command" }
 cubedaw-workerlib = { path = "../cubedaw-workerlib" }
 egui = { workspace = true, optional = true }
-crossbeam = { workspace = true }
+crossbeam-channel = { workspace = true }
+replace_with = { workspace = true }
+log = { workspace = true }
 
 [features]
 egui = ["dep:egui"]

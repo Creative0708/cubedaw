@@ -6,7 +6,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct State {
-    // TODO bpm can vary over time, implement that
+    // TODO implement bpm automation (after non-bpm automation is done ofc)
     pub bpm: f32,
 
     pub tracks: IdMap<Track>,

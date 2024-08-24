@@ -42,7 +42,11 @@ impl ResourceKey {
                 }
                 divider = Some(i);
             } else {
-                assert!(matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.'))
+                assert!(
+                    matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.'),
+                    "invalid byte: {:?}",
+                    b as char,
+                );
             }
         }
 
@@ -68,6 +72,12 @@ impl ResourceKey {
 
     pub fn id(&self) -> Id<Self> {
         Id::new(self)
+    }
+}
+
+impl std::fmt::Debug for ResourceKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.str, f)
     }
 }
 

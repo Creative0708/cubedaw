@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use cubedaw_lib::{Id, IdMap, State};
-use cubedaw_workerlib::NodeRegistry;
+use cubedaw_workerlib::{NodeRegistry, PreciseSongPos};
 
 use crate::{
     app::Tab,
@@ -37,6 +37,8 @@ pub struct Context<'a> {
     focused_tab: Option<Id<Tab>>,
 
     time_since_last_frame: f32,
+
+    currently_playing_playhead_pos: Option<PreciseSongPos>,
 }
 
 impl<'a> Context<'a> {
@@ -46,8 +48,9 @@ impl<'a> Context<'a> {
         ephemeral_state: &'a mut EphemeralState,
         tabs: &'a mut Tabs,
         node_registry: &'a NodeRegistry,
-        focused_track: Option<Id<Tab>>,
+        focused_tab: Option<Id<Tab>>,
         time_since_last_frame: f32,
+        currently_playing_playhead_pos: Option<PreciseSongPos>,
     ) -> Self {
         Self {
             state,
@@ -60,9 +63,11 @@ impl<'a> Context<'a> {
             tracker: UiStateTracker::new(),
             dock_events: Vec::new(),
 
-            focused_tab: focused_track,
+            focused_tab,
 
             time_since_last_frame,
+
+            currently_playing_playhead_pos,
         }
     }
 
@@ -97,6 +102,13 @@ impl<'a> Context<'a> {
 
     pub fn focused_tab(&self) -> Option<Id<Tab>> {
         self.focused_tab
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.currently_playing_playhead_pos.is_some()
+    }
+    pub fn currently_playing_playhead_pos(&self) -> Option<PreciseSongPos> {
+        self.currently_playing_playhead_pos
     }
 
     pub fn finish(self) -> ContextResult {

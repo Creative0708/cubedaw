@@ -1,4 +1,5 @@
 use cubedaw_lib::{Id, IdMap, NodeData, Note, Section, Track};
+use cubedaw_workerlib::PreciseSongPos;
 use egui::Pos2;
 
 #[derive(Debug)]
@@ -8,8 +9,7 @@ pub struct UiState {
     // An ordered track list. This is the order with which the tracks are displayed in the track tab.
     pub track_list: Vec<Id<Track>>,
 
-    // TODO is this precise enough?
-    pub playhead_pos: f32,
+    pub playhead_pos: i64,
 }
 
 impl UiState {
@@ -41,7 +41,7 @@ impl Default for UiState {
 
             track_list: Vec::new(),
 
-            playhead_pos: 0.0,
+            playhead_pos: 0,
         }
     }
 }

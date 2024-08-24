@@ -1,11 +1,16 @@
-use cubedaw_command::{
-    note::NoteMove,
-    section::SectionMove,
-};
+use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
 
-use crate::{app::Tab, command::{misc::UiSetPlayhead, note::{UiNoteAddOrRemove, UiNoteSelect}, section::{UiSectionAddOrRemove, UiSectionSelect}}, state::ui::SectionUiState};
+use crate::{
+    app::Tab,
+    command::{
+        misc::UiSetPlayhead,
+        note::{UiNoteAddOrRemove, UiNoteSelect},
+        section::{UiSectionAddOrRemove, UiSectionSelect},
+    },
+    state::ui::SectionUiState,
+};
 
 #[derive(Debug)]
 pub struct PianoRollTab {
@@ -62,7 +67,9 @@ impl crate::Screen for PianoRollTab {
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::both().show_viewport(ui, |ui, viewport| {
-                if let Some(track_id) = self.track && ctx.state.tracks.has(track_id){
+                if let Some(track_id) = self.track
+                    && ctx.state.tracks.has(track_id)
+                {
                     self.pianoroll(ctx, ui, viewport);
                 } else {
                     self.pianoroll_empty(ui);
@@ -77,7 +84,7 @@ impl PianoRollTab {
         let Some(track_id) = self.track else {
             unreachable!()
         };
-        let Some(outer_track) =  ctx.state.tracks.get(track_id) else {
+        let Some(outer_track) = ctx.state.tracks.get(track_id) else {
             unreachable!()
         };
         let Some(track) = outer_track.inner.section() else {
@@ -105,13 +112,13 @@ impl PianoRollTab {
                 ((screen_pos.y - top_left.y) / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
             )
         };
-        let note_x_to_screen_x = |pos: f32| -> f32 {
-            (pos - (ctx.state.song_boundary.start - SONG_PADDING) as f32) * self.units_per_tick
+        let note_x_to_screen_x = |pos: i64| -> f32 {
+            (pos - (ctx.state.song_boundary.start - SONG_PADDING)) as f32 * self.units_per_tick
                 + top_left.x
         };
         let note_pos_to_screen_pos = |(pos, pitch): (i64, i32)| -> Pos2 {
             pos2(
-                note_x_to_screen_x(pos as _),
+                note_x_to_screen_x(pos),
                 (pitch - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch + top_left.y,
             )
         };
@@ -145,7 +152,6 @@ impl PianoRollTab {
             let (pos, pitch) = screen_pos_to_note_pos(pos2);
             (snap_pos(pos, self.units_per_tick), pitch)
         });
-
 
         // The horizontal "note lines"
         for row in min_pitch..=max_pitch {
@@ -252,10 +258,10 @@ impl PianoRollTab {
                 }
                 if ctx.ephemeral_state.selection_rect.released_rect(self.id).is_some_and(|rect| rect.intersects(note_rect)) {
                     if let Some((section_id, note_id)) = section_and_note_id {
-                        ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, true));   
+                        ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, true));
                     }
                 }
-                
+
                 // if the note actually exists (it's not the currently drawn note)
                 if let Some((section_id, note_id)) = section_and_note_id {
                     // let ui_data = ctx.ui_state.notes.get(note_id);
@@ -324,15 +330,26 @@ impl PianoRollTab {
             }
         });
         {
-            let should_deselect_everything = result.should_deselect_everything || response.clicked();
+            let should_deselect_everything =
+                result.should_deselect_everything || response.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
                 for (&track_id2, track_ui) in &ctx.ui_state.tracks {
                     for (&section_id2, section_ui) in &track_ui.sections {
                         for (&note_id2, note_ui) in &section_ui.notes {
-                            if note_ui.selected && selection_changes.get(&(track_id2, section_id2, note_id2)).copied() != Some(true) {
-                                ctx.tracker.add(UiNoteSelect::new(track_id2, section_id2, note_id2, false));
+                            if note_ui.selected
+                                && selection_changes
+                                    .get(&(track_id2, section_id2, note_id2))
+                                    .copied()
+                                    != Some(true)
+                            {
+                                ctx.tracker.add(UiNoteSelect::new(
+                                    track_id2,
+                                    section_id2,
+                                    note_id2,
+                                    false,
+                                ));
                             }
                         }
                     }
@@ -340,19 +357,29 @@ impl PianoRollTab {
                 for (&(track_id, section_id, note_id), &selected) in &selection_changes {
                     // only add a command when a note should be selected and isn't currently selected.
                     // the deselection is handled in the for loop before this one
-                    if selected && !ctx.ui_state.tracks.get(track_id).and_then(|t| t.sections.get(section_id)).and_then(|s| s.notes.get(note_id)).is_some_and(|n| n.selected) {
-                        ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, true));
+                    if selected
+                        && !ctx
+                            .ui_state
+                            .tracks
+                            .get(track_id)
+                            .and_then(|t| t.sections.get(section_id))
+                            .and_then(|s| s.notes.get(note_id))
+                            .is_some_and(|n| n.selected)
+                    {
+                        ctx.tracker
+                            .add(UiNoteSelect::new(track_id, section_id, note_id, true));
                     }
                 }
             } else {
                 for (&(track_id, section_id, note_id), &selected) in &selection_changes {
-                    ctx.tracker.add(UiNoteSelect::new(track_id, section_id, note_id, selected));
+                    ctx.tracker
+                        .add(UiNoteSelect::new(track_id, section_id, note_id, selected));
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
                 let pos_offset = finished_drag_offset.x.round() as i64;
                 let pitch_offset = finished_drag_offset.y.round() as i32;
-    
+
                 for (&section_id, section_ui) in &track_ui.sections {
                     for (&note_id, note_ui) in &section_ui.notes {
                         if note_ui.selected {
@@ -371,7 +398,9 @@ impl PianoRollTab {
 
         if response.hovered() && ui.input(|i| i.modifiers.ctrl) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::None);
-            if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) && let Some((pos, pitch)) = snapped_hover_pos{
+            if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
+                && let Some((pos, pitch)) = snapped_hover_pos
+            {
                 self.currently_drawn_note = Some((pos, Note::new(0, pitch)));
             }
             if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
@@ -381,10 +410,8 @@ impl PianoRollTab {
                         None => {
                             let section_id = Id::arbitrary();
                             let section_range = Range::surrounding_pos(start_pos);
-                            let section = Section::empty(
-                                "New Section".into(),
-                                section_range.length() as _,
-                            );
+                            let section =
+                                Section::empty("New Section".into(), section_range.length() as _);
                             track.check_overlap_with(section_range);
                             ctx.tracker.add(UiSectionAddOrRemove::addition(
                                 section_id,
@@ -403,7 +430,9 @@ impl PianoRollTab {
                         note,
                     ));
                 }
-            }else if let Some((starting_pos, ref mut note)) = self.currently_drawn_note && let Some((pos, _)) = snapped_hover_pos {
+            } else if let Some((starting_pos, ref mut note)) = self.currently_drawn_note
+                && let Some((pos, _)) = snapped_hover_pos
+            {
                 note.length = (pos - starting_pos).max(0) as _;
             }
 
@@ -424,7 +453,7 @@ impl PianoRollTab {
                     .fg_stroke,
                 );
             }
-        }else {
+        } else {
             self.currently_drawn_note = None;
         }
 
@@ -517,25 +546,39 @@ impl PianoRollTab {
             },
         );
         {
-            let should_deselect_everything = result.should_deselect_everything || response.clicked();
+            let should_deselect_everything =
+                result.should_deselect_everything || response.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
                 for (&track_id2, track_ui) in &ctx.ui_state.tracks {
                     for (&section_id2, section_ui) in &track_ui.sections {
-                        if section_ui.selected && selection_changes.get(&(track_id2, section_id2)).copied() != Some(true) {
-                            ctx.tracker.add(UiSectionSelect::new(track_id2, section_id2, false));
+                        if section_ui.selected
+                            && selection_changes.get(&(track_id2, section_id2)).copied()
+                                != Some(true)
+                        {
+                            ctx.tracker
+                                .add(UiSectionSelect::new(track_id2, section_id2, false));
                         }
                     }
                 }
                 for (&(track_id, section_id), &selected) in &selection_changes {
-                    if selected && !ctx.ui_state.tracks.get(track_id).and_then(|t| t.sections.get(section_id)).is_some_and(|n| n.selected) {
-                        ctx.tracker.add(UiSectionSelect::new(track_id, section_id, true));
+                    if selected
+                        && !ctx
+                            .ui_state
+                            .tracks
+                            .get(track_id)
+                            .and_then(|t| t.sections.get(section_id))
+                            .is_some_and(|n| n.selected)
+                    {
+                        ctx.tracker
+                            .add(UiSectionSelect::new(track_id, section_id, true));
                     }
                 }
             } else {
                 for (&(track_id, section_id), &selected) in &selection_changes {
-                    ctx.tracker.add(UiSectionSelect::new(track_id, section_id, selected));
+                    ctx.tracker
+                        .add(UiSectionSelect::new(track_id, section_id, selected));
                 }
             }
         }
@@ -574,7 +617,9 @@ impl PianoRollTab {
         //     single_thing_clicked = Some(None);
         // }
         if self.currently_drawn_note.is_none() || response.drag_stopped() {
-            ctx.ephemeral_state.selection_rect.process_interaction(&response, self.id);
+            ctx.ephemeral_state
+                .selection_rect
+                .process_interaction(&response, self.id);
         }
 
         // if let Some(single_thing_clicked) = single_thing_clicked {
@@ -617,17 +662,28 @@ impl PianoRollTab {
             ));
         }
         if let Some(pointer_pos) = top_bar_interaction.interact_pointer_pos() {
-            ctx.tracker.add_weak(UiSetPlayhead::new(snap_pos(screen_x_to_note_x(pointer_pos.x), self.units_per_tick) as _));
+            ctx.tracker.add_weak(UiSetPlayhead::new(snap_pos(
+                screen_x_to_note_x(pointer_pos.x),
+                self.units_per_tick,
+            ) as _));
         }
-        
-        if ctx.focused_tab() == Some(self.id) && ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::default(), egui::Key::Delete)) {
+
+        if ctx.focused_tab() == Some(self.id)
+            && ui
+                .ctx()
+                .input_mut(|i| i.consume_key(egui::Modifiers::default(), egui::Key::Delete))
+        {
             // we should really store the selected sections/notes/whatever
             // so we don't have to iterate over _every_ note in order to find the selected ones
             for (&track_id2, track_ui) in &ctx.ui_state.tracks {
                 for (&section_id2, section_ui) in &track_ui.sections {
                     for (&note_id2, note_ui) in &section_ui.notes {
                         if note_ui.selected {
-                            ctx.tracker.add(UiNoteAddOrRemove::removal(track_id2, section_id2, note_id2));
+                            ctx.tracker.add(UiNoteAddOrRemove::removal(
+                                track_id2,
+                                section_id2,
+                                note_id2,
+                            ));
                         }
                     }
                 }

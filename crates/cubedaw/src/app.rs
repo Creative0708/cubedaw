@@ -5,7 +5,7 @@ use egui_dock::{DockArea, DockState};
 
 use crate::{
     command::{UiStateCommand, UiStateCommandWrapper},
-    context::DockEvent,
+    context::{self, DockEvent},
     node,
     tab::{patch::PatchTab, pianoroll::PianoRollTab, track::TrackTab},
     Context, Screen,
@@ -79,18 +79,7 @@ impl CubedawApp {
             );
 
             Self {
-                worker_host: {
-                    let mut worker_host = crate::workerhost::WorkerHostHandle::new(
-                        state.clone(),
-                        cubedaw_workerlib::WorkerOptions {
-                            node_registry: node_registry.clone(),
-
-                            sample_rate: 44100,
-                            buffer_size: 256,
-                        },
-                    );
-                    worker_host
-                },
+                worker_host: crate::workerhost::WorkerHostHandle::new(),
 
                 state,
                 ui_state,
@@ -116,6 +105,7 @@ impl CubedawApp {
             &app.node_registry,
             None,
             0.0,
+            None,
         );
 
         ctx.create_tab::<PianoRollTab>();
@@ -144,49 +134,56 @@ impl CubedawApp {
                     }
                 }
                 DockEvent::RemoveTabFromMap(tab_id) => {
-                    let tab = self.tabs.map.remove(tab_id).expect("tried to remove nonexistent tab");
+                    let tab = self
+                        .tabs
+                        .map
+                        .remove(tab_id)
+                        .expect("tried to remove nonexistent tab");
                     tab.drop(egui_ctx);
                 }
             }
         }
 
-        let mut tracker_result = result.tracker;
-        for event in &mut tracker_result.commands {
-            event.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
-            if let Some(inner) = event.inner() {
-                inner.execute(&mut self.state);
-            }
-        }
-        if !tracker_result.commands.is_empty() {
-            if self.undo_index < self.undo_stack.len() {
-                self.undo_stack
-                    .resize_with(self.undo_index, || unreachable!());
-            }
-            if !tracker_result.strong
-                && let Some(last) = self.undo_stack.last_mut()
-            {
-                let mut starting_index = 0;
-                if let (Some(last_command), Some(first_command)) =
-                    (last.first_mut(), tracker_result.commands.first_mut())
-                {
-                    if last_command.try_merge(first_command.as_ref()) {
-                        starting_index = 1;
-                    }
+        {
+            let crate::context::UiStateTrackerResult {
+                mut commands,
+                strong,
+            } = result.tracker;
+            for event in &mut commands {
+                event.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
+                if let Some(inner) = event.inner() {
+                    inner.execute(&mut self.state);
                 }
-                last.extend(tracker_result.commands.drain(starting_index..));
-            } else {
-                // if let (Some(last), Some(first)) = (
-                //     self.undo_stack.last_mut().and_then(|x| x.last_mut()),
-                //     tracker_result.commands.first(),
-                // ) {
-                //     if last.try_merge(first.as_ref()) {
-                //         tracker_result.commands.remove(0);
-                //     }
-                // }
-                if !tracker_result.commands.is_empty() {
-                    tracker_result.commands.shrink_to_fit();
-                    self.undo_stack.push(tracker_result.commands);
-                    self.undo_index += 1;
+            }
+            if !commands.is_empty() {
+                if self.undo_index < self.undo_stack.len() {
+                    self.undo_stack
+                        .resize_with(self.undo_index, || unreachable!());
+                }
+                if !strong && let Some(last) = self.undo_stack.last_mut() {
+                    let mut starting_index = 0;
+                    if let (Some(last_command), Some(first_command)) =
+                        (last.first_mut(), commands.first_mut())
+                    {
+                        if last_command.try_merge(first_command.as_ref()) {
+                            starting_index = 1;
+                        }
+                    }
+                    last.extend(commands.drain(starting_index..));
+                } else {
+                    // if let (Some(last), Some(first)) = (
+                    //     self.undo_stack.last_mut().and_then(|x| x.last_mut()),
+                    //     commands.first(),
+                    // ) {
+                    //     if last.try_merge(first.as_ref()) {
+                    //         commands.remove(0);
+                    //     }
+                    // }
+                    if !commands.is_empty() {
+                        commands.shrink_to_fit();
+                        self.undo_stack.push(commands);
+                        self.undo_index += 1;
+                    }
                 }
             }
         }
@@ -207,6 +204,12 @@ impl eframe::App for CubedawApp {
             &self.node_registry,
             self.dock_state.find_active_focused().map(|(_, &mut id)| id),
             frame_duration,
+            if self.worker_host.is_playing() {
+                // Some(self.worker_host.)
+                todo!()
+            } else {
+                None
+            },
         );
 
         egui::TopBottomPanel::top("top_panel").show(egui_ctx, |ui| {
@@ -259,20 +262,12 @@ impl eframe::App for CubedawApp {
         }
         self.ctx_finished(result, egui_ctx);
 
-        if self.ephemeral_state.is_playing {
-            // time * bpm * 60.0 = # of beats
-            self.ui_state.playhead_pos += (frame_duration
-                * (cubedaw_lib::Range::UNITS_PER_BEAT * 60) as f32)
-                / (self.state.bpm * 1_000_000f32);
-            egui_ctx.request_repaint();
-        }
-
         // global key commands
 
         // TODO implement configurable keymaps
-        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
-            self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
-        }
+        // if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
+        //     self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
+        // }
         if let Some(is_redo) = egui_ctx.input(|i| {
             (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
         }) {
@@ -324,7 +319,7 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
     fn ui(&mut self, ui: &mut egui::Ui, &mut id: &mut Self::Tab) {
         let mut tab = self.ctx.tabs.map.remove(id).unwrap();
         tab.update(&mut self.ctx, ui);
-        self.ctx.ephemeral_state.selection_rect.draw( ui, id);
+        self.ctx.ephemeral_state.selection_rect.draw(ui, id);
         self.ctx.tabs.map.insert(tab.id(), tab);
     }
 

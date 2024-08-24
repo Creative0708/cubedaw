@@ -103,6 +103,12 @@ impl Clone for Box<dyn StateCommandWrapper> {
     }
 }
 
+impl std::fmt::Debug for dyn StateCommandWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("StateCommandWrapper { .. }")
+    }
+}
+
 mod sealed {
     pub trait Sealed {}
 }

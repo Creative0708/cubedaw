@@ -11,8 +11,6 @@ pub struct EphemeralState {
 
     pub selection_rect: SelectionRect,
 
-    pub is_playing: bool,
-
     pub node_search: NodeSearch,
 }
 
@@ -24,8 +22,6 @@ impl Default for EphemeralState {
             tracks: IdMap::new(),
 
             selection_rect: SelectionRect::new(),
-
-            is_playing: false,
 
             node_search: NodeSearch::default(),
         }

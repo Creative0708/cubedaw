@@ -16,6 +16,7 @@ mod state;
 pub mod tab;
 pub mod util;
 pub use state::{ephemeral::EphemeralState, ui::UiState};
+mod audio;
 mod command;
 mod node;
 mod widget;

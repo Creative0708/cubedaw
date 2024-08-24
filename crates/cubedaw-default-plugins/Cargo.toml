@@ -1,0 +1,11 @@
+[package]
+authors = ["Colin Cai <therealcreative0708@gmail.com>"]
+edition.workspace = true
+name = "cubedaw-default-plugins"
+rust-version.workspace = true
+version = "0.1.0"
+
+[dependencies]
+
+[lints]
+workspace = true

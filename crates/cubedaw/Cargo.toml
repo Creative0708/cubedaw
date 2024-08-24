@@ -1,14 +1,14 @@
 [package]
+name = "cubedaw"
 authors = ["Colin Cai <therealcreative0708@gmail.com>"]
 edition.workspace = true
-name = "cubedaw"
 version = "0.1.0"
 
 [dependencies]
 cubedaw-command = { path = "../cubedaw-command" }
 egui = { workspace = true }
-eframe = { git = "https://github.com/emilk/egui.git", rev = "db8db50bf31ddff42d35a96410afc856ddb3fd27" }
-egui_dock = { git = "https://github.com/Creative0708/egui_dock.git", rev = "00464970708b7d93cc10489e0c4e7cd4fe6d4ccc" }
+eframe = { git = "https://github.com/emilk/egui.git", rev = "d4e8966aac9347965f8d02310ecf2c9f23bb9bbc" }
+egui_dock = { git = "https://github.com/Creative0708/egui_dock.git", rev = "05e465c9cbb600e3d6f931829d42adef55b4c842" }
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
 cubedaw-workerlib = { path = "../cubedaw-workerlib", features = ["egui"] }
@@ -16,6 +16,8 @@ cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }
+# TODO implement jit compilation of patches (see notes.md)
+# wasmtime-cranelift = "22.0.0"
 
 [lints]
 workspace = true
