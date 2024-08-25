@@ -15,6 +15,7 @@ egui = { workspace = true, optional = true }
 crossbeam-channel = { workspace = true }
 replace_with = { workspace = true }
 log = { workspace = true }
+bumpalo = "3.16.0"
 
 [features]
 egui = ["dep:egui"]

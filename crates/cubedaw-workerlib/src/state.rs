@@ -1,6 +1,6 @@
-use cubedaw_lib::{DynNode, Id, IdMap, NodeData, Note, Patch, ResourceKey, Section, State, Track};
+use cubedaw_lib::{Id, IdMap, Note, Patch, Section, State, Track};
 
-use crate::{node_graph::ProcessedNodeGraph, NodeRegistry, SyncBuffer, WorkerOptions};
+use crate::{node_graph::ProcessedNodeGraph, WorkerOptions};
 
 #[derive(Debug)]
 pub struct WorkerState {
@@ -24,33 +24,6 @@ impl WorkerState {
             section_tracks: track_map,
         }
     }
-
-    pub fn return_finished_work(&mut self, result: WorkerJobResult) {
-        match result.inner {
-            WorkerJobResultInner::NoteProcess {
-                track_id,
-                note_descriptor,
-                state,
-            } => {
-                let Some(track) = self.section_tracks.get_mut(track_id) else {
-                    return;
-                };
-
-                match note_descriptor {
-                    NoteDescriptor::State {
-                        section_id: _section_id,
-                        note_id,
-                    } => {
-                        track.notes.insert(note_id, state);
-                    }
-                    NoteDescriptor::Live { note_id, note } => {
-                        track.live_notes.insert(note_id, (note, state));
-                    }
-                }
-            }
-            _ => todo!(),
-        }
-    }
 }
 
 pub enum WorkerJob {
@@ -59,12 +32,12 @@ pub enum WorkerJob {
     NoteProcess {
         track_id: Id<Track>,
         note_descriptor: NoteDescriptor,
-        state: WorkerNoteState,
+        state: &'static mut WorkerNoteState,
     },
     /// Process a track.
     TrackProcess {
         track_id: Id<Track>,
-        state: WorkerSectionTrackState,
+        state: &'static mut WorkerSectionTrackState,
     },
     TrackGroup {
         track_id: Id<Track>,
@@ -74,7 +47,7 @@ pub enum WorkerJob {
 }
 impl WorkerJob {
     /// Processes the job.
-    pub fn process(self, project_state: &State) -> WorkerJobResult {
+    pub fn process(self, project_state: &State) -> bool {
         match self {
             Self::NoteProcess {
                 track_id,
@@ -92,27 +65,13 @@ impl WorkerJob {
                         .and_then(|section_track| section_track.section(section_id))
                         .and_then(|section| section.note(note_id))
                         .map(|(_, note)| note),
-                    NoteDescriptor::Live { ref note, .. } => Some(note),
+                    NoteDescriptor::Live { note, .. } => Some(note),
                 };
                 let Some(note) = possibly_deleted_note else {
-                    return WorkerJobResult {
-                        is_done: true,
-                        inner: WorkerJobResultInner::NoteProcess {
-                            track_id,
-                            note_descriptor,
-                            state,
-                        },
-                    };
+                    return true;
                 };
 
-                WorkerJobResult {
-                    is_done: false,
-                    inner: WorkerJobResultInner::NoteProcess {
-                        track_id,
-                        note_descriptor,
-                        state,
-                    },
-                }
+                true
             }
             _ => todo!(),
         }
@@ -180,7 +139,7 @@ pub struct WorkerNoteState {
 
 /// A descriptor for a [`cubedaw_lib::Note`]. Either a path to a note in the State, or a "live"
 /// note not attached to the state.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum NoteDescriptor {
     State {
         section_id: Id<Section>,
@@ -188,27 +147,6 @@ pub enum NoteDescriptor {
     },
     Live {
         note_id: Id<Note>,
-        note: Note,
+        note: &'static Note,
     },
-}
-
-pub struct WorkerJobResult {
-    pub is_done: bool,
-    pub inner: WorkerJobResultInner,
-}
-
-pub enum WorkerJobResultInner {
-    NoteProcess {
-        track_id: Id<Track>,
-        note_descriptor: NoteDescriptor,
-        state: WorkerNoteState,
-    },
-    TrackProcess {
-        track_id: Id<Track>,
-        state: WorkerSectionTrackState,
-    },
-    TrackGroup {
-        track_id: Id<Track>,
-    },
-    Finalize,
 }

@@ -19,7 +19,7 @@ impl ops::DerefMut for DynNodeFactory {
 }
 impl std::fmt::Debug for DynNodeFactory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DynNodeFactory {{ <{:?}> }}", &*self as *const _)
+        write!(f, "DynNodeFactory {{ <{:?}> }}", self as *const _)
     }
 }
 

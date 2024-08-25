@@ -45,13 +45,13 @@ impl WorkerHostHandle {
     }
     pub fn start_processing(&mut self, from: i64) {
         self.tx
-            .send(AppToWorkerHostEvent::StartProcessing { from })
+            .send(AppToWorkerHostEvent::StartPlaying { from })
             .expect("channel closed???");
         self.is_playing = true;
     }
     pub fn stop_processing(&mut self) {
         self.tx
-            .send(AppToWorkerHostEvent::StopProcessing)
+            .send(AppToWorkerHostEvent::StopPlaying)
             .expect("channel closed???");
         self.is_playing = false;
         self.last_playhead_update = None;
@@ -83,10 +83,10 @@ enum AppToWorkerHostEvent {
         state: cubedaw_lib::State,
         options: WorkerOptions,
     },
-    StartProcessing {
+    StartPlaying {
         from: i64,
     },
-    StopProcessing,
+    StopPlaying,
     Commands(Box<[Box<dyn StateCommandWrapper>]>),
 }
 
@@ -119,17 +119,10 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
     'outer: loop {
         // process events first
         loop {
-            let event = if is_playing {
-                match rx.try_recv() {
-                    Ok(event) => event,
-                    Err(mpsc::TryRecvError::Empty) => break,
-                    Err(mpsc::TryRecvError::Disconnected) => break 'outer,
-                }
-            } else {
-                match rx.recv() {
-                    Ok(event) => event,
-                    Err(mpsc::RecvError) => break 'outer,
-                }
+            let event = match rx.try_recv() {
+                Ok(event) => event,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => break 'outer,
             };
 
             match event {
@@ -141,11 +134,11 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                     idle_host.join();
                     idle_host = cubedaw_worker::WorkerHost::new(num_workers, state, options);
                 }
-                AppToWorkerHostEvent::StartProcessing { from } => {
+                AppToWorkerHostEvent::StartPlaying { from } => {
                     playhead_pos = PreciseSongPos::from_song_pos(from);
                     is_playing = true;
                 }
-                AppToWorkerHostEvent::StopProcessing => {
+                AppToWorkerHostEvent::StopPlaying => {
                     is_playing = false;
                 }
                 AppToWorkerHostEvent::Commands(commands) => {
@@ -156,7 +149,11 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             }
         }
         // Process audio
-        playhead_pos = idle_host.process(playhead_pos);
+        idle_host = idle_host.process(if is_playing {
+            Some(&mut playhead_pos)
+        } else {
+            None
+        });
     }
 
     idle_host;

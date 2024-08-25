@@ -19,16 +19,34 @@ pub fn run_forever(
                     match work_rx.recv() {
                         Ok(WorkerJob::Finalize) => break,
                         Ok(job) => {
-                            let result = job.process(&state);
-                            tx.send(WorkerToHostEvent::DoneProcessing(result))
-                                .expect("channel closed during processing");
+                            if let job @ WorkerJob::NoteProcess {
+                                track_id,
+                                note_descriptor,
+                                ..
+                            } = job
+                            {
+                                let is_done = job.process(&state);
+                                if is_done {
+                                    tx.send(WorkerToHostEvent::DeleteNoteProcessJob {
+                                        track_id,
+                                        note_descriptor,
+                                    })
+                                    .expect("channel closed during processing");
+                                }
+                            } else {
+                                // TODO: handle other events
+                                job.process(&state);
+                            }
                         }
                         Err(crossbeam_channel::RecvError) => {
                             panic!("channel closed during processing");
                         }
                     }
                 }
-                drop(state);
+                // Note: as per the documentation of `WorkerToHostEvent::Idle`, workers must send exactly 1 of this event
+                // and must have dropped all references given from work_rx. Not doing this will cause UB.
+                // Just, like, don't be stupid with how the worker is implemented.
+                tx.send(WorkerToHostEvent::Idle);
             }
         }
     }

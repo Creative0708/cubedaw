@@ -4,7 +4,7 @@ pub(crate) use sync::SyncBuffer;
 
 pub use cubedaw_lib::{DynNodeFactory, NodeRegistry};
 mod state;
-pub use state::{WorkerJob, WorkerJobResult, WorkerSectionTrackState, WorkerState};
+pub use state::{NoteDescriptor, WorkerJob, WorkerSectionTrackState, WorkerState};
 
 mod node_graph;
 
