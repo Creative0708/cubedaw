@@ -1,5 +1,5 @@
 use cubedaw_command::{note::NoteMove, section::SectionMove};
-use cubedaw_lib::{Id, Note, Range, Section, Track};
+use cubedaw_lib::{Id, Note, PreciseSongPos, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
 
 use crate::{
@@ -29,7 +29,7 @@ pub struct PianoRollTab {
 }
 
 // Number of empty ticks to display on either side of the song
-const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT;
+const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
 const MIN_NOTE_SHOWN: i32 = -39;
 const MAX_NOTE_SHOWN: i32 = 47;
 
@@ -112,6 +112,12 @@ impl PianoRollTab {
                 ((screen_pos.y - top_left.y) / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
             )
         };
+        let precise_x_to_screen_x = |pos: PreciseSongPos| -> f32 {
+            (pos - PreciseSongPos::from_song_pos(ctx.state.song_boundary.start - SONG_PADDING))
+                .to_song_pos_f32()
+                * self.units_per_tick
+                + top_left.x
+        };
         let note_x_to_screen_x = |pos: i64| -> f32 {
             (pos - (ctx.state.song_boundary.start - SONG_PADDING)) as f32 * self.units_per_tick
                 + top_left.x
@@ -179,7 +185,7 @@ impl PianoRollTab {
 
         for i in min_pos.div_ceil(vbar_step)..=max_pos.div_floor(vbar_step) {
             let pos = i * vbar_step;
-            let stroke = if pos % (BEATS_PER_BAR * Range::UNITS_PER_BEAT) == 0 {
+            let stroke = if pos % (BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64) == 0 {
                 ui.visuals().widgets.hovered.bg_stroke
             } else {
                 let division = pos
@@ -473,10 +479,10 @@ impl PianoRollTab {
         );
 
         // Bar indicators
-        for bar in min_pos.div_floor(BEATS_PER_BAR * Range::UNITS_PER_BEAT)
-            ..=max_pos.div_ceil(BEATS_PER_BAR * Range::UNITS_PER_BEAT)
+        for bar in min_pos.div_floor(BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64)
+            ..=max_pos.div_ceil(BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64)
         {
-            let pos = bar * (BEATS_PER_BAR * Range::UNITS_PER_BEAT);
+            let pos = bar * (BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64);
             painter.text(
                 pos2(note_x_to_screen_x(pos as _), top_bar_rect.center().y),
                 egui::Align2::CENTER_CENTER,
@@ -637,7 +643,10 @@ impl PianoRollTab {
 
         // playhead
         let playhead_screen_x =
-            painter.round_to_pixel(note_x_to_screen_x(ctx.ui_state.playhead_pos));
+            painter.round_to_pixel(ctx.currently_playing_playhead_pos().map_or_else(
+                || note_x_to_screen_x(ctx.ui_state.playhead_pos),
+                precise_x_to_screen_x,
+            ));
         if screen_rect
             .x_range()
             .expand(8.0)

@@ -6,24 +6,85 @@ use crate::{Id, IdMap, IdSet, NodeStateWrapper, ResourceKey};
 
 #[derive(Debug, Default, Clone)]
 pub struct Patch {
-    nodes: IdMap<NodeData>,
+    nodes: IdMap<NodeEntry>,
     cables: IdMap<Cable>,
 }
 
 impl Patch {
-    pub fn insert_node(&mut self, node_id: Id<NodeData>, node: NodeData) {
-        self.nodes.insert(node_id, node);
+    pub fn new() -> Self {
+        Self::default()
     }
-    pub fn take_node(&mut self, node_id: Id<NodeData>) -> NodeData {
-        self.nodes.take(node_id)
+
+    /// If the provided node was added, what would its tag be?
+    pub fn get_node_tag_if_added(&self, node: &NodeData) -> NodeTag {
+        // nodes have no tag on their own but certain special nodes have their own NodeTag
+        static SPECIAL_NODES: std::sync::LazyLock<IdSet<ResourceKey>> =
+            std::sync::LazyLock::new(|| {
+                let mut map = IdSet::new();
+                map.insert(Id::new("builtin:note_output"));
+                map.insert(Id::new("builtin:track_input"));
+                map.insert(Id::new("builtin:track_output"));
+                map
+            });
+
+        if SPECIAL_NODES.contains(&node.key_id) {
+            NodeTag::Special
+        } else {
+            NodeTag::Disconnected
+        }
     }
-    pub fn nodes(&self) -> impl Iterator<Item = (Id<NodeData>, &NodeData)> {
+
+    pub fn insert_node(
+        &mut self,
+        node_id: Id<NodeEntry>,
+        node: NodeData,
+        num_inputs: u32,
+        num_outputs: u32,
+    ) {
+        self.nodes.insert(
+            node_id,
+            NodeEntry {
+                tag: self.get_node_tag_if_added(&node),
+
+                data: node,
+                inputs: vec![
+                    NodeInput {
+                        bias: 1.0,
+                        connections: Vec::new(),
+                    };
+                    num_inputs as usize
+                ],
+                outputs: vec![
+                    NodeOutput {
+                        connections: Vec::new(),
+                    };
+                    num_outputs as usize
+                ],
+            },
+        );
+    }
+    pub fn take_node(&mut self, node_id: Id<NodeEntry>) -> NodeData {
+        let entry = self.nodes.take(node_id);
+        // TODO what do we do in this scenario
+        assert!(
+            entry.inputs.is_empty() && entry.outputs.is_empty(),
+            "unimplemented :("
+        );
+        entry.data
+    }
+    pub fn nodes(&self) -> impl Iterator<Item = (Id<NodeEntry>, &NodeEntry)> {
         self.nodes.iter().map(|(&id, data)| (id, data))
     }
-    pub fn node(&self, id: Id<NodeData>) -> Option<&NodeData> {
+    pub fn node(&self, id: Id<NodeEntry>) -> Option<&NodeData> {
+        self.nodes.get(id).map(|entry| &entry.data)
+    }
+    pub fn node_mut(&mut self, id: Id<NodeEntry>) -> Option<&mut NodeData> {
+        self.nodes.get_mut(id).map(|entry| &mut entry.data)
+    }
+    pub fn node_entry(&self, id: Id<NodeEntry>) -> Option<&NodeEntry> {
         self.nodes.get(id)
     }
-    pub fn node_mut(&mut self, id: Id<NodeData>) -> Option<&mut NodeData> {
+    pub fn node_entry_mut(&mut self, id: Id<NodeEntry>) -> Option<&mut NodeEntry> {
         self.nodes.get_mut(id)
     }
 
@@ -37,10 +98,7 @@ impl Patch {
         self.cables.get_mut(id)
     }
 
-    /// Convenience function.
-    pub fn set_cable_tag(&self, cable: &mut Cable) {
-        cable.tag = self.get_cable_tag_if_added(cable);
-    }
+    /// If the provided cable was added, what would its tag be?
     pub fn get_cable_tag_if_added(&self, cable: &Cable) -> CableTag {
         let input_node = self.nodes.force_get(cable.input_node);
         let output_node = self.nodes.force_get(cable.output_node);
@@ -80,7 +138,7 @@ impl Patch {
         }
     }
     pub fn insert_cable(&mut self, cable_id: Id<Cable>, mut cable: Cable) {
-        self.set_cable_tag(&mut cable);
+        cable.tag = self.get_cable_tag_if_added(&cable);
 
         let input_node = self.nodes.force_get_mut(cable.input_node);
         let input_output = &mut input_node.outputs[cable.input_output_index as usize];
@@ -139,7 +197,7 @@ impl Patch {
 
 #[derive(Debug, Clone, Default)]
 pub struct NodeInput {
-    pub value: f32,
+    pub bias: f32,
     // the connections are additive to the value
     pub connections: Vec<Id<Cable>>,
 }
@@ -182,13 +240,12 @@ impl NodeOutput {
 #[derive(Debug, Clone)]
 pub struct Cable {
     // fyi the "input node" is the node to which the _output_ is connected to this cable.
-    // it's called this way bc it makes more sense (it's the node which is the input to
-    // this cable). confusing
-    pub input_node: Id<NodeData>,
+    // it's called this way because it's the node which is the input to this cable. confusing
+    pub input_node: Id<NodeEntry>,
     // TODO rename
     pub input_output_index: u32,
 
-    pub output_node: Id<NodeData>,
+    pub output_node: Id<NodeEntry>,
     pub output_input_index: u32,
 
     pub output_multiplier_fac: f32,
@@ -196,18 +253,38 @@ pub struct Cable {
     pub tag: CableTag,
 }
 impl Cable {
+    pub fn new(
+        input_node: Id<NodeEntry>,
+        input_output_index: u32,
+        output_node: Id<NodeEntry>,
+        output_input_index: u32,
+    ) -> Self {
+        Self {
+            input_node,
+            input_output_index,
+
+            output_node,
+            output_input_index,
+
+            output_multiplier_fac: 1.0,
+
+            tag: CableTag::Disconnected,
+        }
+    }
     pub fn assert_valid(&self, patch: &Patch) {
         let (input_node, output_node) = (
-            patch.node(self.input_node).expect("nonexistent input node"),
             patch
-                .node(self.output_node)
+                .node_entry(self.input_node)
+                .expect("nonexistent input node"),
+            patch
+                .node_entry(self.output_node)
                 .expect("nonexistent output node"),
         );
 
         if self.tag.is_valid() {
             assert_eq!(
                 input_node.tag, output_node.tag,
-                "node tags connected to the same valid cable should be equal"
+                "node tags connected to the same valid cable should be equal\nleft: {input_node:#?}\nright: {output_node:#?}"
             );
         }
     }
@@ -235,30 +312,59 @@ impl CableTag {
 
 #[derive(Debug, Clone)]
 pub struct NodeData {
-    pub key: Id<ResourceKey>,
-    pub inputs: Vec<NodeInput>,
-    pub outputs: Vec<NodeOutput>,
-    pub tag: NodeTag,
-
+    pub key_id: Id<ResourceKey>,
     pub inner: Box<dyn NodeStateWrapper>,
 }
 
 impl NodeData {
     pub fn new_disconnected(node_type: Id<ResourceKey>, inner: Box<dyn NodeStateWrapper>) -> Self {
         Self {
-            key: node_type,
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            tag: NodeTag::Disconnected,
-
+            key_id: node_type,
             inner,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeEntry {
+    pub data: NodeData,
+
+    inputs: Vec<NodeInput>,
+    outputs: Vec<NodeOutput>,
+    tag: NodeTag,
+}
+
+impl NodeEntry {
+    pub fn new(data: NodeData, num_inputs: u32, num_outputs: u32) -> Self {
+        Self {
+            data,
+            inputs: {
+                let mut vec = Vec::with_capacity(num_inputs as usize);
+                for _ in 0..num_inputs {
+                    vec.push(NodeInput {
+                        bias: 1.0,
+                        connections: Vec::new(),
+                    });
+                }
+                vec
+            },
+            outputs: {
+                let mut vec = Vec::with_capacity(num_outputs as usize);
+                for _ in 0..num_outputs {
+                    vec.push(NodeOutput {
+                        connections: Vec::new(),
+                    });
+                }
+                vec
+            },
+            tag: NodeTag::Disconnected,
         }
     }
 
     pub fn assert_valid(&self, patch: &Patch) {
         for input in &self.inputs {
             assert!(
-                input.value.is_finite(),
+                input.bias.is_finite(),
                 "i'm impressed you got this panic tbh. (node input value is infinite or NaN)"
             );
             for &cable_id in &input.connections {
@@ -276,6 +382,63 @@ impl NodeData {
                 );
             }
         }
+    }
+
+    pub fn inputs(&self) -> &[NodeInput] {
+        &self.inputs
+    }
+    pub fn inputs_mut(&mut self) -> &mut [NodeInput] {
+        &mut self.inputs
+    }
+    pub fn pop_input(&mut self) -> Option<NodeInput> {
+        let last = self.inputs.pop()?;
+        if !last.connections.is_empty() {
+            // can't delete node or bad desyncs will happen
+            self.inputs.push(last);
+            return None;
+        }
+        Some(last)
+    }
+    pub fn push_input(&mut self, bias: f32) {
+        self.inputs.push(NodeInput {
+            bias,
+            connections: Vec::new(),
+        });
+
+        assert!(
+            self.inputs.len() <= u32::MAX as usize,
+            "you got 4 billion inputs on your node there"
+        );
+    }
+
+    pub fn outputs(&self) -> &[NodeOutput] {
+        &self.outputs
+    }
+    pub fn outputs_mut(&mut self) -> &mut [NodeOutput] {
+        &mut self.outputs
+    }
+    pub fn pop_output(&mut self) -> Option<NodeOutput> {
+        let last = self.outputs.pop()?;
+        if !last.connections.is_empty() {
+            // can't delete node or bad desyncs will happen
+            self.outputs.push(last);
+            return None;
+        }
+        Some(last)
+    }
+    pub fn push_output(&mut self) {
+        self.outputs.push(NodeOutput {
+            connections: Vec::new(),
+        });
+
+        assert!(
+            self.outputs.len() <= u32::MAX as usize,
+            "you got 4 billion outputs on your node there"
+        );
+    }
+
+    pub fn tag(&self) -> NodeTag {
+        self.tag
     }
 }
 

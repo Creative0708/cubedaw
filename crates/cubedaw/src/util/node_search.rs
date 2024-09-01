@@ -1,4 +1,4 @@
-use cubedaw_workerlib::NodeRegistry;
+use cubedaw_lib::NodeRegistry;
 
 #[derive(Debug, Default)]
 pub struct NodeSearch {

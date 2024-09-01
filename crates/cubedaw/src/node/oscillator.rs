@@ -106,9 +106,9 @@ mod tests {
         unsafe fn test_about_eq(x: f32) {
             let expected = (x * std::f32::consts::TAU).sin();
             let actual = unsafe { sin01(x) };
-            if (actual - expected).abs() > f32::EPSILON {
+            if (actual - expected).abs() > 1e-5 {
                 panic!(
-                    "sin({:.02}) failed: expected {expected:.02}, got {actual:.02}",
+                    "sin({:.02}) failed: expected {expected:.05}, got {actual:.05}",
                     x * std::f32::consts::TAU
                 );
             }

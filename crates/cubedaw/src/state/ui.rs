@@ -1,5 +1,4 @@
-use cubedaw_lib::{Id, IdMap, NodeData, Note, Section, Track};
-use cubedaw_workerlib::PreciseSongPos;
+use cubedaw_lib::{Id, IdMap, NodeData, NodeEntry, Note, PreciseSongPos, Section, Track};
 use egui::Pos2;
 
 #[derive(Debug)]
@@ -67,7 +66,7 @@ impl Default for TrackUiState {
 
 #[derive(Debug, Default)]
 pub struct PatchUiState {
-    pub nodes: IdMap<NodeData, NodeUiState>,
+    pub nodes: IdMap<NodeEntry, NodeUiState>,
 }
 
 #[derive(Debug)]

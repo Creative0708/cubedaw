@@ -1,7 +1,6 @@
 use std::any::Any;
 
-use cubedaw_lib::{Id, IdMap, State};
-use cubedaw_workerlib::{NodeRegistry, PreciseSongPos};
+use cubedaw_lib::{Id, IdMap, PreciseSongPos, State};
 
 use crate::{
     app::Tab,
@@ -26,8 +25,8 @@ pub struct Context<'a> {
     // Also mutable directly and not tracked.
     pub tabs: &'a mut Tabs,
 
-    // App-associated node registry. See [`cubedaw_workerlib::NodeRegistry`] for more information.
-    pub node_registry: &'a NodeRegistry,
+    // App-associated node registry. See [`cubedaw_lib::NodeRegistry`] for more information.
+    pub node_registry: &'a cubedaw_lib::NodeRegistry,
 
     // State tracker to track events that mutate state or ui_state.
     pub tracker: UiStateTracker,
@@ -42,12 +41,13 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         state: &'a State,
         ui_state: &'a UiState,
         ephemeral_state: &'a mut EphemeralState,
         tabs: &'a mut Tabs,
-        node_registry: &'a NodeRegistry,
+        node_registry: &'a cubedaw_lib::NodeRegistry,
         focused_tab: Option<Id<Tab>>,
         time_since_last_frame: f32,
         currently_playing_playhead_pos: Option<PreciseSongPos>,

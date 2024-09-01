@@ -37,7 +37,7 @@ impl ops::DerefMut for NodeStateFactory {
 }
 impl std::fmt::Debug for NodeStateFactory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NodeStateFactory {{ <{:?}> }}", &*self as *const _)
+        write!(f, "NodeStateFactory {{ <{:?}> }}", self as *const _)
     }
 }
 

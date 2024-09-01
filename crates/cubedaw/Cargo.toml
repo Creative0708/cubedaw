@@ -11,7 +11,6 @@ eframe = { git = "https://github.com/emilk/egui.git", rev = "d4e8966aac9347965f8
 egui_dock = { git = "https://github.com/Creative0708/egui_dock.git", rev = "05e465c9cbb600e3d6f931829d42adef55b4c842" }
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
-cubedaw-workerlib = { path = "../cubedaw-workerlib", features = ["egui"] }
 cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }

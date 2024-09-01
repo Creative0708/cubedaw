@@ -12,10 +12,14 @@ impl Track {
     pub fn new_empty(patch: Patch) -> Self {
         Self {
             patch,
-            inner: TrackInner::Section(SectionTrack {
-                section_map: IdMap::new(),
-                sections: Default::default(),
-            }),
+            inner: TrackInner::Section(SectionTrack::new()),
+        }
+    }
+
+    pub fn new_group(patch: Patch) -> Self {
+        Self {
+            patch,
+            inner: TrackInner::Group(GroupTrack::new()),
         }
     }
 }
@@ -53,13 +57,17 @@ impl TrackInner {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SectionTrack {
     section_map: IdMap<Section>,
     sections: BTreeMap<Range, Id<Section>>,
 }
 
 impl SectionTrack {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     pub fn check_overlap(&self) {
         // TODO change to map_windows when it's stabilized
 

@@ -1,8 +1,4 @@
-use std::{
-    fmt,
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
-};
+use std::{borrow, fmt, ops, ptr::NonNull};
 
 use bytemuck::Zeroable;
 
@@ -51,6 +47,147 @@ fn boxed_slice<T: Zeroable>(length: usize) -> Box<[T]> {
 //     }
 // }
 
+// the internal buffer representation. possibly subject to change in the future
+// (i.e. f32 is too imprecise and is changed to an f64)
+pub type BufferType = f32;
+
+pub struct Buffer<'a>(&'a mut [BufferType]);
+impl<'a> Buffer<'a> {
+    pub fn new(inner: &'a mut [BufferType]) -> Self {
+        assert!(
+            inner.len() <= u32::MAX as usize,
+            "buffer length must fit in a u32"
+        );
+        Self(inner)
+    }
+    pub fn len(&self) -> u32 {
+        self.0.len() as u32
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn as_slice(&self) -> &[BufferType] {
+        self.0
+    }
+    pub fn as_slice_mut(&mut self) -> &mut [BufferType] {
+        self.0
+    }
+
+    pub fn reborrow(&mut self) -> Buffer<'_> {
+        Buffer(self.0)
+    }
+
+    pub fn accumulate(&mut self, that: &Buffer) {
+        // TODO accelerate with like simd or something
+        debug_assert!(self.len() == that.len(), "buffer length mismatch");
+
+        for (this, that) in self.0.iter_mut().zip(that.0.iter()) {
+            *this += that;
+        }
+    }
+}
+impl<'a> Default for Buffer<'a> {
+    fn default() -> Self {
+        Self::new(&mut [])
+    }
+}
+impl<'a> ops::Index<u32> for Buffer<'a> {
+    type Output = BufferType;
+    fn index(&self, index: u32) -> &Self::Output {
+        &self.0[index as usize]
+    }
+}
+impl<'a> ops::IndexMut<u32> for Buffer<'a> {
+    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
+        &mut self.0[index as usize]
+    }
+}
+impl<'a> fmt::Debug for Buffer<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.len() <= 4 {
+            write!(f, "Buffer {{ {:?} }}", &self.0)
+        } else {
+            write!(
+                f,
+                "Buffer {{ [{:?}, {:?}, {:?}, ... length {}] }}",
+                self.0[0],
+                self.0[1],
+                self.0[2],
+                self.0.len()
+            )
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BufferOwned(Box<[BufferType]>);
+impl BufferOwned {
+    pub fn new(inner: Box<[BufferType]>) -> Self {
+        assert!(
+            inner.len() <= u32::MAX as usize,
+            "buffer length must fit in a u32"
+        );
+        Self(inner)
+    }
+    pub fn zeroed(len: u32) -> Self {
+        Self(boxed_slice(len as usize))
+    }
+
+    pub fn len(&self) -> u32 {
+        self.0.len() as u32
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn as_slice(&self) -> &[BufferType] {
+        &self.0
+    }
+    pub fn as_slice_mut(&mut self) -> &mut [BufferType] {
+        &mut self.0
+    }
+
+    pub fn borrow_mut(&mut self) -> Buffer {
+        Buffer::new(&mut self.0)
+    }
+
+    pub fn accumulate(&mut self, that: &Self) {
+        // TODO accelerate with like simd or something
+        debug_assert!(self.len() == that.len(), "buffer length mismatch")
+    }
+}
+impl<'a> Default for BufferOwned {
+    fn default() -> Self {
+        Self::new(Box::new([]))
+    }
+}
+impl ops::Index<u32> for BufferOwned {
+    type Output = BufferType;
+    fn index(&self, index: u32) -> &Self::Output {
+        &self.0[index as usize]
+    }
+}
+impl ops::IndexMut<u32> for BufferOwned {
+    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
+        &mut self.0[index as usize]
+    }
+}
+impl fmt::Debug for BufferOwned {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.len() <= 4 {
+            write!(f, "BufferOwned {{ {:?} }}", &self.0)
+        } else {
+            write!(
+                f,
+                "BufferOwned {{ [{:?}, {:?}, {:?}, ... length {}] }}",
+                self.0[0],
+                self.0[1],
+                self.0[2],
+                self.0.len()
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::boxed_slice;
@@ -85,43 +222,5 @@ mod tests {
         let mut x: Box<[u32]> = boxed_slice(1_000_000_000_000_000);
         x[0] = 1;
         black_box(x);
-    }
-}
-
-// the internal buffer representation. possibly subject to change in the future
-// (i.e. f32 is too imprecise and is changed to an f64)
-pub type BufferType = f32;
-
-#[derive(Clone)]
-pub struct Buffer(Box<[f32]>);
-impl Buffer {
-    pub fn new(length: u32) -> Self {
-        Self(boxed_slice(length as usize))
-    }
-    pub fn resize(&mut self, length: u32) {
-        if self.0.len() != length as usize {
-            self.0 = boxed_slice(length as usize);
-        }
-    }
-}
-impl Default for Buffer {
-    fn default() -> Self {
-        Self::new(0)
-    }
-}
-impl Deref for Buffer {
-    type Target = [BufferType];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for Buffer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl fmt::Debug for Buffer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Buffer {{ [length {}] }}", self.0.len())
     }
 }

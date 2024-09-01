@@ -1,5 +1,5 @@
 use cubedaw_command::node::NodeAddOrRemove;
-use cubedaw_lib::{Id, IdMap, NodeData, Track};
+use cubedaw_lib::{Id, IdMap, NodeData, NodeEntry, Track};
 use egui::Vec2;
 
 use crate::state::ui::NodeUiState;
@@ -9,28 +9,38 @@ use super::UiStateCommand;
 pub struct UiNodeAddOrRemove {
     inner: NodeAddOrRemove,
     ui_data: Option<NodeUiState>,
+    num_inputs: u32,
+    num_outputs: u32,
 }
 
 impl UiNodeAddOrRemove {
     pub fn addition(
-        id: Id<NodeData>,
+        id: Id<NodeEntry>,
         data: NodeData,
+        inputs: Vec<f32>,
+        num_outputs: u32,
         track_id: Id<Track>,
         ui_state: NodeUiState,
     ) -> Self {
         Self {
-            inner: NodeAddOrRemove::addition(id, data, track_id),
+            num_inputs: inputs.len() as u32,
+            num_outputs,
+
+            inner: NodeAddOrRemove::addition(id, data, inputs, num_outputs, track_id),
             ui_data: Some(ui_state),
         }
     }
-    pub fn removal(id: Id<NodeData>, track_id: Id<Track>) -> Self {
+    pub fn removal(id: Id<NodeEntry>, track_id: Id<Track>) -> Self {
         Self {
             inner: NodeAddOrRemove::removal(id, track_id),
             ui_data: None,
+
+            num_inputs: 0,
+            num_outputs: 0,
         }
     }
 
-    fn nodes<'a>(&self, ui_state: &'a mut crate::UiState) -> &'a mut IdMap<NodeData, NodeUiState> {
+    fn nodes<'a>(&self, ui_state: &'a mut crate::UiState) -> &'a mut IdMap<NodeEntry, NodeUiState> {
         &mut ui_state
             .tracks
             .get_mut(self.inner.track_id())
@@ -98,12 +108,12 @@ impl UiStateCommand for UiNodeAddOrRemove {
 
 pub struct UiNodeSelect {
     track_id: Id<Track>,
-    id: Id<NodeData>,
+    id: Id<NodeEntry>,
     selected: bool,
 }
 
 impl UiNodeSelect {
-    pub fn new(track_id: Id<Track>, id: Id<NodeData>, selected: bool) -> Self {
+    pub fn new(track_id: Id<Track>, id: Id<NodeEntry>, selected: bool) -> Self {
         Self {
             track_id,
             id,
@@ -143,13 +153,13 @@ impl UiStateCommand for UiNodeSelect {
 }
 
 pub struct UiNodeMove {
-    id: Id<NodeData>,
+    id: Id<NodeEntry>,
     track_id: Id<Track>,
     offset: Vec2,
 }
 
 impl UiNodeMove {
-    pub fn new(id: Id<NodeData>, track_id: Id<Track>, offset: Vec2) -> Self {
+    pub fn new(id: Id<NodeEntry>, track_id: Id<Track>, offset: Vec2) -> Self {
         Self {
             id,
             track_id,

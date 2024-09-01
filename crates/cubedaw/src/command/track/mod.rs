@@ -16,17 +16,18 @@ impl UiTrackAddOrRemove {
         id: Id<Track>,
         data: Track,
         ui_data: Option<TrackUiState>,
+        parent_track: Option<Id<Track>>,
         insertion_pos: u32,
     ) -> Self {
         Self {
-            inner: TrackAddOrRemove::addition(id, data),
+            inner: TrackAddOrRemove::addition(id, data, parent_track),
             ui_data,
             insertion_pos,
         }
     }
-    pub fn removal(id: Id<Track>) -> Self {
+    pub fn removal(id: Id<Track>, parent_track: Option<Id<Track>>) -> Self {
         Self {
-            inner: TrackAddOrRemove::removal(id),
+            inner: TrackAddOrRemove::removal(id, parent_track),
             ui_data: None,
             insertion_pos: 0,
         }

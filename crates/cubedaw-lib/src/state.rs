@@ -21,11 +21,15 @@ const _: () = {
 };
 
 impl State {
-    // pub fn clear_events(&mut self) {
-    //     self.tracks.clear_events();
-    //     self.sections.clear_events();
-    //     self.notes.clear_events();
-    // }
+    pub fn add_time_to_position(
+        &self,
+        pos: crate::PreciseSongPos,
+        duration: std::time::Duration,
+    ) -> crate::PreciseSongPos {
+        // when bpm automation exists this will have to be changed
+        let units = duration.as_secs_f64() / 60.0 * self.bpm as f64 * Range::UNITS_PER_BEAT as f64;
+        pos + crate::PreciseSongPos::from_song_pos_f64(units)
+    }
 }
 
 impl Default for State {
@@ -35,7 +39,7 @@ impl Default for State {
 
             tracks: IdMap::new(),
             root_track: GroupTrack::new(),
-            song_boundary: Range::new(0, 16 * Range::UNITS_PER_BEAT * 4),
+            song_boundary: Range::new(0, 16 * Range::UNITS_PER_BEAT as i64 * 4),
         }
     }
 }

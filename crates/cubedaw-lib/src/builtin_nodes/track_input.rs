@@ -1,15 +1,15 @@
-pub struct TrackOutputNode {
-    buffer: Option<crate::BufferOwned>,
+pub struct TrackInputNode {
+    buffer: Option<&'static [crate::BufferType]>,
 }
 
-impl crate::Node for TrackOutputNode {
-    type State = TrackOutputNodeState;
+impl crate::Node for TrackInputNode {
+    type State = TrackInputNodeState;
 
     fn new() -> Self {
         Self { buffer: None }
     }
     fn new_state(_creation_ctx: crate::NodeCreationContext<'_>) -> Self::State {
-        TrackOutputNodeState
+        TrackInputNodeState
     }
 
     fn process(&mut self, _state: &Self::State, ctx: &mut dyn crate::NodeContext<'_>) {
@@ -17,35 +17,35 @@ impl crate::Node for TrackOutputNode {
             panic!("self.buffer is None. WHO FORGOT TO SET THE FIELD RAAAAAHHHHHHH");
         };
         let buffer_size = ctx.buffer_size();
-        debug_assert_eq!(buffer.len(), buffer_size, "buffer size mismatch");
+        debug_assert!(buffer.len() == buffer_size as usize);
 
-        let input = ctx.input(0);
+        let output = ctx.output(0);
 
         for i in 0..buffer_size {
-            buffer[i] = input[i];
+            output.set(i, buffer[i as usize]);
         }
     }
 }
 
-impl TrackOutputNode {
-    pub fn start(&mut self, buffer: crate::BufferOwned) {
+impl TrackInputNode {
+    pub fn set_buffer(&mut self, buffer: &'static [crate::BufferType]) {
         let old = self.buffer.replace(buffer);
         #[cfg(debug_assertions)]
         if old.is_some() {
-            panic!("set_buffer() called on TrackOutputNode with a buffer")
+            panic!("set_buffer() called on TrackInputNode with a buffer")
         }
     }
-    pub fn end(&mut self) -> crate::BufferOwned {
+    pub fn take_buffer(&mut self) -> &'static [crate::BufferType] {
         self.buffer
             .take()
-            .expect("take_buffer() called on TrackOutputNode without a buffer")
+            .expect("take_buffer() called on TrackInputNode without a buffer")
     }
 }
 
-impl Clone for TrackOutputNode {
+impl Clone for TrackInputNode {
     fn clone(&self) -> Self {
         if self.buffer.is_some() {
-            panic!("clone() called on live TrackOutputNode");
+            panic!("clone() called on live TrackInputNode");
         }
 
         Self { buffer: None }
@@ -53,15 +53,15 @@ impl Clone for TrackOutputNode {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct TrackOutputNodeState;
+pub struct TrackInputNodeState;
 
-impl crate::NodeState for TrackOutputNodeState {
+impl crate::NodeState for TrackInputNodeState {
     fn title(&self) -> std::borrow::Cow<'static, str> {
-        "Track Output".into()
+        "Track Input".into()
     }
 
     #[cfg(feature = "egui")]
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut dyn crate::NodeUiContext) {
-        ctx.input_ui(ui, "Output", crate::NodeInputUiOptions::uninteractable());
+        ctx.input_ui(ui, "Input", crate::NodeInputUiOptions::uninteractable());
     }
 }

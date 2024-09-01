@@ -14,7 +14,8 @@ pub enum Attribute {
 }
 
 extern "C" {
-    pub static SAMPLE_RATE: u32;
+    // can't use a static global here. https://github.com/rust-lang/rust/issues/65987#issuecomment-566271861
+    pub fn sample_rate() -> u32;
     pub fn input(index: u32) -> f32;
     pub fn output(index: u32, sample: f32);
     pub fn attribute(attr: Attribute) -> f32;

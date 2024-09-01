@@ -3,7 +3,6 @@
 use std::any::TypeId;
 
 use cubedaw_lib::State;
-use cubedaw_workerlib::{NodeRegistry, WorkerState};
 
 pub mod misc;
 pub mod node;
@@ -24,10 +23,6 @@ pub trait StateCommand: 'static + Send + Clone {
     fn try_merge(&mut self, _other: &Self) -> bool {
         false
     }
-
-    // TODO should these _really_ be in a shared cubedaw-command?
-    fn worker_execute(&mut self, _worker_state: &mut WorkerState, _node_registry: &NodeRegistry) {}
-    fn worker_rollback(&mut self, _worker_state: &mut WorkerState, _node_registry: &NodeRegistry) {}
 }
 
 pub trait StateCommandWrapper: 'static + Sealed + Send {
@@ -35,9 +30,6 @@ pub trait StateCommandWrapper: 'static + Sealed + Send {
     fn rollback(&mut self, state: &mut State);
 
     fn try_merge(&mut self, other: &dyn StateCommandWrapper) -> bool;
-
-    fn worker_execute(&mut self, worker_state: &mut WorkerState, node_registry: &NodeRegistry);
-    fn worker_rollback(&mut self, worker_state: &mut WorkerState, node_registry: &NodeRegistry);
 
     fn clone(&self) -> Box<dyn StateCommandWrapper>;
 
@@ -60,13 +52,6 @@ impl<T: StateCommand> StateCommandWrapper for T {
         } else {
             false
         }
-    }
-
-    fn worker_execute(&mut self, worker_state: &mut WorkerState, node_registry: &NodeRegistry) {
-        StateCommand::worker_execute(self, worker_state, node_registry)
-    }
-    fn worker_rollback(&mut self, worker_state: &mut WorkerState, node_registry: &NodeRegistry) {
-        StateCommand::worker_rollback(self, worker_state, node_registry)
     }
 
     fn clone(&self) -> Box<dyn StateCommandWrapper> {

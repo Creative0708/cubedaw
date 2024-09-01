@@ -10,30 +10,31 @@ pub type DynNodeState = Box<dyn NodeStateWrapper>;
 
 pub type DynNode = Box<dyn NodeWrapper>;
 
+#[derive(Clone, Copy)]
 pub enum DataSource<'a> {
-    Const(f32),
-    NodeOutput(&'a [f32]),
+    Const(BufferType),
+    Buffer(&'a [BufferType]),
 }
 impl std::ops::Index<u32> for DataSource<'_> {
-    type Output = f32;
+    type Output = BufferType;
     fn index(&self, index: u32) -> &Self::Output {
         match self {
             Self::Const(val) => val,
-            Self::NodeOutput(buf) => &buf[index as usize],
+            Self::Buffer(buf) => &buf[index as usize],
         }
     }
 }
 
 pub enum DataDrain<'a> {
     Disconnected,
-    NodeInput(&'a mut [f32]),
+    NodeInput(&'a [std::cell::Cell<BufferType>]),
 }
-impl<'a> DataDrain<'a> {
-    pub fn set(&mut self, i: u32, val: f32) {
+impl DataDrain<'_> {
+    pub fn set(&self, i: u32, val: BufferType) {
         match self {
             Self::Disconnected => (),
             Self::NodeInput(buf) => {
-                buf[i as usize] = val;
+                buf[i as usize].set(val);
             }
         }
     }
@@ -42,13 +43,13 @@ impl<'a> DataDrain<'a> {
 pub trait NodeContext<'a> {
     fn sample_rate(&self) -> u32;
     fn buffer_size(&self) -> u32;
-    fn input(&self, index: u32) -> DataSource<'a>;
-    fn output(&self, index: u32) -> DataDrain<'a>;
+    fn input(&self, index: u32) -> DataSource<'_>;
+    fn output(&self, index: u32) -> DataDrain<'_>;
 
     fn property(&self, property: NoteProperty) -> f32;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NoteProperty(pub NonZeroU32);
 impl NoteProperty {
     pub const fn new(val: u32) -> Option<Self> {
@@ -57,10 +58,13 @@ impl NoteProperty {
             Some(val) => Some(Self(val)),
         }
     }
+    /// # Safety
+    /// `val != 0` otherwise it's UB. You know the drill.
     pub const unsafe fn new_unchecked(val: u32) -> Self {
         Self(unsafe { NonZeroU32::new_unchecked(val) })
     }
 
+    // SAFETY: duh
     pub const PITCH: Self = unsafe { Self::new_unchecked(1) };
 }
 
@@ -80,7 +84,7 @@ mod sealed {
     pub trait Sealed {}
 }
 /// Object-safe wrapper for `Node`. See [`Node`] for the actual functionality.
-pub trait NodeWrapper: 'static + Send + sealed::Sealed {
+pub trait NodeWrapper: 'static + Send + sealed::Sealed + std::any::Any {
     fn process(&mut self, state: &dyn NodeStateWrapper, ctx: &mut dyn NodeContext<'_>);
 
     fn clone(&self) -> Box<dyn NodeWrapper>;
@@ -101,9 +105,26 @@ impl Clone for Box<dyn NodeWrapper> {
         NodeWrapper::clone(self.as_ref())
     }
 }
-impl std::fmt::Debug for Box<dyn NodeWrapper> {
+impl std::fmt::Debug for dyn NodeWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("dyn NodeWrapper { .. }")
+    }
+}
+
+impl dyn NodeWrapper {
+    pub fn downcast_ref<T: NodeWrapper + Sized>(&self) -> Option<&T> {
+        if std::any::Any::type_id(self) == std::any::TypeId::of::<T>() {
+            Some(unsafe { &*(self as *const dyn NodeWrapper as *const T) })
+        } else {
+            None
+        }
+    }
+    pub fn downcast_mut<T: NodeWrapper + Sized>(&mut self) -> Option<&mut T> {
+        if std::any::Any::type_id(self) == std::any::TypeId::of::<T>() {
+            Some(unsafe { &mut *(self as *mut dyn NodeWrapper as *mut T) })
+        } else {
+            None
+        }
     }
 }
 
@@ -378,3 +399,5 @@ use std::{borrow::Cow, num::NonZeroU32};
 
 #[cfg(feature = "egui")]
 pub use ui::{NodeInputUiOptions, NodeStateWrapper, NodeUiContext, ValueHandler};
+
+use crate::BufferType;

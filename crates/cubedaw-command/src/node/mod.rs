@@ -1,10 +1,10 @@
-use cubedaw_lib::{Id, NodeData, NodeStateWrapper, Track};
+use cubedaw_lib::{Id, NodeData, NodeEntry, NodeStateWrapper, Track};
 
 use crate::StateCommand;
 
 #[derive(Clone)]
 pub struct NodeStateUpdate {
-    id: Id<NodeData>,
+    id: Id<NodeEntry>,
     track_id: Id<Track>,
     data: Box<dyn NodeStateWrapper>,
     input_values: Vec<f32>,
@@ -15,7 +15,7 @@ pub struct NodeStateUpdate {
 
 impl NodeStateUpdate {
     pub fn new(
-        id: Id<NodeData>,
+        id: Id<NodeEntry>,
         track_id: Id<Track>,
         data: Box<dyn NodeStateWrapper>,
         input_values: Vec<f32>,
@@ -39,20 +39,17 @@ impl NodeStateUpdate {
     pub fn track_id(&self) -> Id<Track> {
         self.track_id
     }
-    pub fn id(&self) -> Id<NodeData> {
+    pub fn id(&self) -> Id<NodeEntry> {
         self.id
     }
 
-    fn node<'a>(
-        &mut self,
-        state: &'a mut cubedaw_lib::State,
-    ) -> Option<&'a mut cubedaw_lib::NodeData> {
+    fn node<'a>(&mut self, state: &'a mut cubedaw_lib::State) -> Option<&'a mut NodeEntry> {
         Some(
             state
                 .tracks
                 .get_mut(self.track_id)?
                 .patch
-                .node_mut(self.id)?,
+                .node_entry_mut(self.id)?,
         )
     }
 
@@ -64,20 +61,39 @@ impl NodeStateUpdate {
                 (&mut self.input_values, self.num_outputs)
             };
 
-            node.inputs.resize(input_values.len(), Default::default());
-            for (input, &value) in node.inputs.iter_mut().zip(input_values.iter()) {
-                input.value = value;
+            {
+                while node.inputs().len() > input_values.len() {
+                    assert!(
+                        node.pop_input().is_some(),
+                        "NodeStateUpdate tried to remove connected input"
+                    );
+                }
+                for (input, &value) in node.inputs_mut().iter_mut().zip(input_values.iter()) {
+                    input.bias = value;
+                }
+                while node.inputs().len() < input_values.len() {
+                    node.push_input(input_values[node.inputs().len()]);
+                }
             }
 
-            node.outputs
-                .resize(num_outputs as usize, Default::default());
+            {
+                while node.outputs().len() > num_outputs as usize {
+                    assert!(
+                        node.pop_output().is_some(),
+                        "NodeStateUpdate tried to remove connected output"
+                    );
+                }
+                while node.outputs().len() < num_outputs as usize {
+                    node.push_output();
+                }
+            }
 
             if NodeStateWrapper::type_id(self.data.as_ref())
-                != NodeStateWrapper::type_id(node.inner.as_ref())
+                != NodeStateWrapper::type_id(node.data.inner.as_ref())
             {
                 panic!("tried to replace NodeData with NodeData of different type")
             }
-            core::mem::swap(&mut self.data, &mut node.inner);
+            core::mem::swap(&mut self.data, &mut node.data.inner);
         }
     }
 }
@@ -93,31 +109,43 @@ impl StateCommand for NodeStateUpdate {
 
 #[derive(Clone)]
 pub struct NodeAddOrRemove {
-    id: Id<NodeData>,
+    id: Id<NodeEntry>,
     track_id: Id<Track>,
     data: Option<NodeData>,
+    inputs: Vec<f32>,
+    num_outputs: u32,
     is_removal: bool,
 }
 
 impl NodeAddOrRemove {
-    pub fn addition(id: Id<NodeData>, data: NodeData, track_id: Id<Track>) -> Self {
+    pub fn addition(
+        id: Id<NodeEntry>,
+        data: NodeData,
+        inputs: Vec<f32>,
+        num_outputs: u32,
+        track_id: Id<Track>,
+    ) -> Self {
         Self {
             id,
             track_id,
             data: Some(data),
+            inputs,
+            num_outputs,
             is_removal: false,
         }
     }
-    pub fn removal(id: Id<NodeData>, track_id: Id<Track>) -> Self {
+    pub fn removal(id: Id<NodeEntry>, track_id: Id<Track>) -> Self {
         Self {
             id,
             track_id,
             data: None,
+            inputs: Vec::new(),
+            num_outputs: 0,
             is_removal: true,
         }
     }
 
-    pub fn id(&self) -> Id<NodeData> {
+    pub fn id(&self) -> Id<NodeEntry> {
         self.id
     }
     pub fn track_id(&self) -> Id<Track> {
@@ -141,7 +169,7 @@ impl NodeAddOrRemove {
             .take()
             .expect("called execute_add on empty NodeAddOrRemove");
 
-        self.get_patch(state).insert_node(self.id, node_data);
+        self.get_patch(state).insert_node(self.id, node_data, 0, 0);
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
         let node_data = self.get_patch(state).take_node(self.id);
@@ -171,7 +199,7 @@ impl StateCommand for NodeAddOrRemove {
 
 #[derive(Clone)]
 pub struct NodeInputChange {
-    id: Id<NodeData>,
+    id: Id<NodeEntry>,
     track_id: Id<Track>,
     input_index: usize,
     old_value: f32,
@@ -180,7 +208,7 @@ pub struct NodeInputChange {
 
 impl NodeInputChange {
     pub fn new(
-        id: Id<NodeData>,
+        id: Id<NodeEntry>,
         track_id: Id<Track>,
         input_index: usize,
         old_value: f32,
@@ -204,8 +232,8 @@ impl NodeInputChange {
                 .tracks
                 .get_mut(self.track_id)?
                 .patch
-                .node_mut(self.id)?
-                .inputs
+                .node_entry_mut(self.id)?
+                .inputs_mut()
                 .get_mut(self.input_index)?,
         )
     }
@@ -216,13 +244,13 @@ impl StateCommand for NodeInputChange {
         let Some(input) = self.get_input(state) else {
             return;
         };
-        input.value = self.new_value;
+        input.bias = self.new_value;
     }
     fn rollback(&mut self, state: &mut cubedaw_lib::State) {
         let Some(input) = self.get_input(state) else {
             return;
         };
-        input.value = self.old_value;
+        input.bias = self.old_value;
     }
 
     fn try_merge(&mut self, other: &Self) -> bool {

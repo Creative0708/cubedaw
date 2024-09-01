@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use cubedaw_lib::State;
-use cubedaw_workerlib::{NoteDescriptor, PreciseSongPos};
+use cubedaw_lib::{Id, PreciseSongPos, State};
 
 pub enum HostToWorkerEvent {
     StartProcessing {
@@ -11,14 +10,23 @@ pub enum HostToWorkerEvent {
 }
 
 pub enum WorkerToHostEvent {
-    /// A note has ended producing audio and is no longer needed.
-    DeleteNoteProcessJob {
-        track_id: cubedaw_lib::Id<cubedaw_lib::Track>,
-        note_descriptor: NoteDescriptor,
-    },
+    /// A job has ended producing audio and is no longer needed.
+    FinishJob(JobDescriptor),
     /// Used for synchronization purposes.
     /// Workers must guarantee that they have dropped all references to the state/worker state before sending `WorkerToHostEvent::Idle`.
     Idle,
+}
+pub enum JobDescriptor {
+    NoteProcess {
+        track_id: Id<cubedaw_lib::Track>,
+        note_descriptor: crate::NoteDescriptor,
+    },
+    TrackProcess {
+        track_id: Id<cubedaw_lib::Track>,
+    },
+    TrackGroup {
+        track_id: Id<cubedaw_lib::Track>,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

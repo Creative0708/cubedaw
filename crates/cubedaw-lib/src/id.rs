@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     collections::hash_map,
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
@@ -28,7 +27,7 @@ type IdInner = NonZeroU64;
 // This is definitely _not_ what generics are meant to be used for, but it's convenient soooo......
 // Also this may result in unneeded generic impls for stuff like IdMap. :shrug:
 #[repr(transparent)]
-pub struct Id<T = ()>(IdInner, PhantomData<T>);
+pub struct Id<T: 'static = ()>(IdInner, PhantomData<T>);
 
 fn new_impl(source: impl Hash) -> IdInner {
     let mut hasher = new_hasher();
@@ -44,17 +43,11 @@ fn with_impl(source: IdInner, child: impl Hash) -> IdInner {
 }
 
 fn arbitrary_impl() -> IdInner {
-    std::thread_local! {
-        static COUNTER: RefCell<IdInner> = RefCell::new(NonZeroU64::new(1).unwrap());
-    }
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    let x = COUNTER.with(|x| {
-        let mut x = x.borrow_mut();
-        *x = x.checked_add(1).expect("u64 overflow");
-        *x
-    });
-
-    new_impl(x)
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    new_impl(counter)
 }
 
 impl<T> Id<T> {
@@ -89,11 +82,20 @@ impl<T> Id<T> {
 
 impl<T> Debug for Id<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "Id::<{}>({:#x})",
-            std::any::type_name::<T>(),
-            self.0
-        ))
+        // TODO: replace when impl specialization stabilizes
+        // https://rust-lang.github.io/rfcs/1210-impl-specialization.html
+        use std::any::Any;
+        if let Some(&key_id) = (self as &dyn Any).downcast_ref::<Id<crate::ResourceKey>>() {
+            static DEFAULT_REGISTRY: std::sync::LazyLock<crate::NodeRegistry> =
+                std::sync::LazyLock::new(crate::NodeRegistry::new);
+
+            return match DEFAULT_REGISTRY.get(key_id) {
+                None => f.write_str("Id(<invalid ResourceKey>)"),
+                Some(entry) => write!(f, "Id({:?})", entry.key),
+            };
+        }
+
+        write!(f, "Id::<{}>({:#x})", std::any::type_name::<T>(), self.0)
     }
 }
 
@@ -143,7 +145,7 @@ impl<T> Ord for Id<T> {
 
 // TODO if these are a performance bottleneck copy egui's id hasher implementation
 #[derive(Clone)]
-pub struct IdMap<T, V = T> {
+pub struct IdMap<T: 'static, V = T> {
     map: HashMap<Id<T>, V>,
 }
 
@@ -164,14 +166,14 @@ impl<T, V> IdMap<T, V> {
     pub fn get_mut(&mut self, id: Id<T>) -> Option<&mut V> {
         self.map.get_mut(&id)
     }
+    pub fn get_mut_or_insert(&mut self, id: Id<T>, f: impl FnOnce() -> V) -> &mut V {
+        self.map.entry(id).or_insert_with(f)
+    }
     pub fn get_mut_or_default(&mut self, id: Id<T>) -> &mut V
     where
         V: Default,
     {
-        self.map
-            .entry(id)
-            .and_modify(|_| panic!("hash collision in IdMap"))
-            .or_default()
+        self.map.entry(id).or_default()
     }
     pub fn force_get(&self, id: Id<T>) -> &V {
         match self.get(id) {
@@ -229,6 +231,9 @@ impl<T, V> IdMap<T, V> {
     pub fn keys(&self) -> hash_map::Keys<'_, Id<T>, V> {
         self.map.keys()
     }
+    pub fn values(&self) -> hash_map::Values<'_, Id<T>, V> {
+        self.map.values()
+    }
     pub fn iter(&self) -> hash_map::Iter<'_, Id<T>, V> {
         self.map.iter()
     }
@@ -236,29 +241,12 @@ impl<T, V> IdMap<T, V> {
         self.map.iter_mut()
     }
 
-    // pub fn track(&mut self, tracking: &IdMap<T>) {
-    //     for event in tracking
-    //         .events()
-    //         .expect("IdMap::track called with non-tracking map")
-    //     {
-    //         match event {
-    //             TrackingMapEvent::Delete(id) => {
-    //                 assert!(self.remove(*id).is_some());
-    //             }
-    //             _ => (),
-    //         }
-    //     }
-    // }
-
-    // pub fn events(&self) -> Option<&[TrackingMapEvent<T>]> {
-    //     self.events.as_deref()
-    // }
-    // pub fn clear_events(&mut self) {
-    //     let Some(ref mut events) = self.events else {
-    //         panic!("IdMap::clear_events called on non-tracking map");
-    //     };
-    //     events.clear();
-    // }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
 }
 
 impl<T, V> Default for IdMap<T, V> {

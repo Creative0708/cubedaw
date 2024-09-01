@@ -1,4 +1,3 @@
-
 use cubedaw_lib::{Id, Range, Track};
 use egui::vec2;
 
@@ -17,7 +16,7 @@ pub struct TrackTab {
     track_whose_name_is_being_edited: Option<(Id<Track>, String)>,
 }
 
-const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT;
+const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
 
 impl TrackTab {
     fn track_header(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui, track_id: Id<Track>) {

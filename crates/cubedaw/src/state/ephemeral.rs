@@ -1,4 +1,4 @@
-use cubedaw_lib::{IdMap, NodeData, Track};
+use cubedaw_lib::{IdMap, NodeData, NodeEntry, Track};
 use egui::Vec2;
 
 use crate::util::{DragHandler, NodeSearch, SelectionRect};
@@ -31,7 +31,7 @@ impl Default for EphemeralState {
 #[derive(Debug, Default)]
 pub struct TrackEphemeralState {
     pub node_drag: DragHandler,
-    pub nodes: IdMap<NodeData, NodeEphemeralState>,
+    pub nodes: IdMap<NodeEntry, NodeEphemeralState>,
 }
 
 #[derive(Debug, Default)]

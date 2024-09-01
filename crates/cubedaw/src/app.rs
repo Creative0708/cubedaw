@@ -19,9 +19,9 @@ pub struct CubedawApp {
     ephemeral_state: crate::EphemeralState,
     tabs: crate::context::Tabs,
 
-    node_registry: Arc<cubedaw_workerlib::NodeRegistry>,
+    node_registry: Arc<cubedaw_lib::NodeRegistry>,
 
-    last_frame_time: f64,
+    last_frame_time: std::time::Instant,
 
     dock_state: egui_dock::DockState<Id<Tab>>,
 
@@ -56,7 +56,7 @@ impl CubedawApp {
             }
 
             let node_registry = Arc::new({
-                let mut registry = cubedaw_workerlib::NodeRegistry::default();
+                let mut registry = cubedaw_lib::NodeRegistry::default();
                 node::register_cubedaw_nodes(&mut registry);
                 registry
             });
@@ -71,6 +71,7 @@ impl CubedawApp {
                         selected: true,
                         ..Default::default()
                     }),
+                    None,
                     0,
                 ),
                 &mut state,
@@ -90,7 +91,7 @@ impl CubedawApp {
 
                 dock_state: DockState::new(Vec::new()),
 
-                last_frame_time: f64::NEG_INFINITY,
+                last_frame_time: std::time::Instant::now(),
 
                 undo_stack: Vec::new(),
                 undo_index: 0,
@@ -192,25 +193,30 @@ impl CubedawApp {
 
 impl eframe::App for CubedawApp {
     fn update(&mut self, egui_ctx: &egui::Context, _egui_frame: &mut eframe::Frame) {
-        let time = egui_ctx.input(|i| i.time);
-        let frame_duration = ((time - self.last_frame_time) as f32).min(0.1);
+        let time = std::time::Instant::now();
+        let frame_duration = (time - self.last_frame_time).as_secs_f32().min(0.1);
         self.last_frame_time = time;
 
-        let mut ctx = Context::new(
-            &self.state,
-            &self.ui_state,
-            &mut self.ephemeral_state,
-            &mut self.tabs,
-            &self.node_registry,
-            self.dock_state.find_active_focused().map(|(_, &mut id)| id),
-            frame_duration,
-            if self.worker_host.is_playing() {
-                // Some(self.worker_host.)
-                todo!()
-            } else {
-                None
-            },
-        );
+        self.worker_host.handle_events();
+
+        let mut ctx =
+            Context::new(
+                &self.state,
+                &self.ui_state,
+                &mut self.ephemeral_state,
+                &mut self.tabs,
+                &self.node_registry,
+                self.dock_state.find_active_focused().map(|(_, &mut id)| id),
+                frame_duration,
+                if let Some(last_playhead_update) = self.worker_host.last_playhead_update() {
+                    Some(self.state.add_time_to_position(
+                        last_playhead_update.0,
+                        time - last_playhead_update.1,
+                    ))
+                } else {
+                    None
+                },
+            );
 
         egui::TopBottomPanel::top("top_panel").show(egui_ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -242,9 +248,7 @@ impl eframe::App for CubedawApp {
         });
         let dock_state_borrow = &mut self.dock_state;
 
-        // egui takes an owned `impl FnOnce() -> R`, so we're forced to either do these
-        // goofy moving-in-and-out shenanigans or have a compiler error because rust
-        // thinks that the provided FnOnce can outlive this function... aaaaaaahhhhhhhhhhhh
+        // this is where all the tab rendering actually happens!
         let ctx = egui::CentralPanel::default()
             // .frame(egui::Frame::central_panel(&style).fill(style.visuals.extreme_bg_color))
             .show(egui_ctx, move |ui| {
@@ -262,12 +266,29 @@ impl eframe::App for CubedawApp {
         }
         self.ctx_finished(result, egui_ctx);
 
+        let now = std::time::Instant::now();
+
         // global key commands
 
         // TODO implement configurable keymaps
-        // if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
-        //     self.ephemeral_state.is_playing = !self.ephemeral_state.is_playing;
-        // }
+        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
+            if !self.worker_host.is_init() {
+                // TODO change/make configurable/whatever
+                self.worker_host
+                    .init(self.state.clone(), cubedaw_worker::WorkerOptions::default());
+            }
+            if !self.worker_host.is_playing() {
+                self.worker_host.start_playing(self.ui_state.playhead_pos);
+            } else {
+                if let Some(last_playhead_update) = self.worker_host.last_playhead_update() {
+                    self.ui_state.playhead_pos = self
+                        .state
+                        .add_time_to_position(last_playhead_update.0, now - last_playhead_update.1)
+                        .round_to_song_pos();
+                }
+                self.worker_host.stop_processing();
+            }
+        }
         if let Some(is_redo) = egui_ctx.input(|i| {
             (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
         }) {
@@ -293,6 +314,11 @@ impl eframe::App for CubedawApp {
                 }
                 self.undo_index -= 1;
             }
+        }
+
+        // final stuff
+        if self.worker_host.is_playing() {
+            egui_ctx.request_repaint();
         }
     }
 }

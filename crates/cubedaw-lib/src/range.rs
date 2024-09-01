@@ -7,7 +7,7 @@ pub struct Range {
 }
 
 impl Range {
-    pub const UNITS_PER_BEAT: i64 = 256;
+    pub const UNITS_PER_BEAT: u64 = 256;
     pub const EMPTY: Self = Range { start: 0, end: 0 };
     pub const EVERYTHING: Self = Range {
         start: i64::MIN,
@@ -20,15 +20,19 @@ impl Range {
     pub fn start_length(start: i64, length: u64) -> Self {
         Self {
             start,
-            end: start
-                .checked_add_unsigned(length)
-                .expect("i64 + u64 overflow"),
+            end: if cfg!(debug_assertions) {
+                start
+                    .checked_add_unsigned(length)
+                    .expect("i64 + u64 overflow")
+            } else {
+                start + length as i64
+            },
         }
     }
     pub fn from_beats(start: i64, end: i64) -> Self {
         Self {
-            start: start * Self::UNITS_PER_BEAT,
-            end: end * Self::UNITS_PER_BEAT,
+            start: start * Self::UNITS_PER_BEAT as i64,
+            end: end * Self::UNITS_PER_BEAT as i64,
         }
     }
     pub fn from_range(range: std::ops::Range<i64>) -> Self {
@@ -54,10 +58,11 @@ impl Range {
                 d
             }
         }
-        let start = div_floor(pos, Self::UNITS_PER_BEAT * 4) * (Self::UNITS_PER_BEAT * 4);
+        let start =
+            div_floor(pos, Self::UNITS_PER_BEAT as i64 * 4) * (Self::UNITS_PER_BEAT as i64 * 4);
         Self {
             start,
-            end: start + Self::UNITS_PER_BEAT * 4,
+            end: start + Self::UNITS_PER_BEAT as i64 * 4,
         }
     }
     pub fn unbounded_start(end: i64) -> Self {

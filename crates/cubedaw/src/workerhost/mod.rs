@@ -1,7 +1,7 @@
-use std::{collections::VecDeque, sync::mpsc, thread};
+use std::{sync::mpsc, thread};
 
 use cubedaw_command::StateCommandWrapper;
-use cubedaw_workerlib::{PreciseSongPos, WorkerOptions};
+use cubedaw_worker::WorkerOptions;
 
 pub struct WorkerHostHandle {
     tx: mpsc::Sender<AppToWorkerHostEvent>,
@@ -9,7 +9,8 @@ pub struct WorkerHostHandle {
     join_handle: thread::JoinHandle<()>,
 
     is_playing: bool,
-    last_playhead_update: Option<(PreciseSongPos, std::time::Instant)>,
+    is_init: bool,
+    last_playhead_update: Option<(cubedaw_lib::PreciseSongPos, std::time::Instant)>,
 }
 
 impl WorkerHostHandle {
@@ -25,29 +26,30 @@ impl WorkerHostHandle {
                 .expect("failed to spawn thread"),
 
             is_playing: false,
+            is_init: false,
             last_playhead_update: None,
         }
     }
 
-    pub fn init(
-        &mut self,
-        num_workers: usize,
-        state: cubedaw_lib::State,
-        worker_options: WorkerOptions,
-    ) {
+    pub fn init(&mut self, state: cubedaw_lib::State, worker_options: WorkerOptions) {
         self.tx
             .send(AppToWorkerHostEvent::Init {
-                num_workers,
                 state,
                 options: worker_options,
             })
             .expect("channel closed???");
+
+        self.is_init = true;
     }
-    pub fn start_processing(&mut self, from: i64) {
+    pub fn start_playing(&mut self, from: i64) {
         self.tx
             .send(AppToWorkerHostEvent::StartPlaying { from })
             .expect("channel closed???");
         self.is_playing = true;
+        self.last_playhead_update = Some((
+            cubedaw_lib::PreciseSongPos::from_song_pos(from),
+            std::time::Instant::now(),
+        ));
     }
     pub fn stop_processing(&mut self) {
         self.tx
@@ -58,6 +60,9 @@ impl WorkerHostHandle {
     }
     pub fn is_playing(&self) -> bool {
         self.is_playing
+    }
+    pub fn is_init(&self) -> bool {
+        self.is_init
     }
 
     fn try_recv(&self) -> Option<WorkerHostToAppEvent> {
@@ -71,7 +76,20 @@ impl WorkerHostHandle {
         self.rx.recv().expect("channel closed???")
     }
 
-    pub fn last_playhead_update(&self) -> Option<(PreciseSongPos, std::time::Instant)> {
+    pub fn handle_events(&mut self) {
+        while let Some(event) = self.try_recv() {
+            match event {
+                WorkerHostToAppEvent::PlayheadUpdate { pos, timestamp } => {
+                    dbg!((pos, timestamp));
+                    self.last_playhead_update = Some((pos, timestamp));
+                }
+            }
+        }
+    }
+
+    pub fn last_playhead_update(
+        &self,
+    ) -> Option<(cubedaw_lib::PreciseSongPos, std::time::Instant)> {
         self.last_playhead_update
     }
 }
@@ -79,7 +97,6 @@ impl WorkerHostHandle {
 #[derive(Debug)]
 enum AppToWorkerHostEvent {
     Init {
-        num_workers: usize,
         state: cubedaw_lib::State,
         options: WorkerOptions,
     },
@@ -87,31 +104,25 @@ enum AppToWorkerHostEvent {
         from: i64,
     },
     StopPlaying,
+    UpdatePlayheadPos(i64),
     Commands(Box<[Box<dyn StateCommandWrapper>]>),
 }
 
 #[derive(Debug)]
 enum WorkerHostToAppEvent {
     PlayheadUpdate {
-        pos: PreciseSongPos,
+        pos: cubedaw_lib::PreciseSongPos,
         timestamp: std::time::Instant,
     },
 }
 
 fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<WorkerHostToAppEvent>) {
-    use cubedaw_worker::WorkerHost;
-
     let Ok(first_event) = rx.recv() else { return };
-    let AppToWorkerHostEvent::Init {
-        num_workers,
-        state,
-        options,
-    } = first_event
-    else {
+    let AppToWorkerHostEvent::Init { state, options } = first_event else {
         panic!("other event sent to worker_host before Init: {first_event:?}");
     };
 
-    let mut idle_host = cubedaw_worker::WorkerHost::new(num_workers, state, options);
+    let mut idle_host = cubedaw_worker::WorkerHost::new(state, options);
     let mut is_playing = false;
 
     let mut playhead_pos = Default::default();
@@ -126,20 +137,19 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             };
 
             match event {
-                AppToWorkerHostEvent::Init {
-                    num_workers,
-                    state,
-                    options,
-                } => {
+                AppToWorkerHostEvent::Init { state, options } => {
                     idle_host.join();
-                    idle_host = cubedaw_worker::WorkerHost::new(num_workers, state, options);
+                    idle_host = cubedaw_worker::WorkerHost::new(state, options);
                 }
                 AppToWorkerHostEvent::StartPlaying { from } => {
-                    playhead_pos = PreciseSongPos::from_song_pos(from);
+                    playhead_pos = cubedaw_lib::PreciseSongPos::from_song_pos(from);
                     is_playing = true;
                 }
                 AppToWorkerHostEvent::StopPlaying => {
                     is_playing = false;
+                }
+                AppToWorkerHostEvent::UpdatePlayheadPos(pos) => {
+                    playhead_pos = cubedaw_lib::PreciseSongPos::from_song_pos(pos);
                 }
                 AppToWorkerHostEvent::Commands(commands) => {
                     for mut command in commands.into_vec() {
@@ -148,13 +158,15 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 }
             }
         }
+        let live_playhead_pos = playhead_pos;
         // Process audio
-        idle_host = idle_host.process(if is_playing {
-            Some(&mut playhead_pos)
-        } else {
-            None
-        });
+        idle_host = idle_host.process(
+            if is_playing {
+                Some(&mut playhead_pos)
+            } else {
+                None
+            },
+            live_playhead_pos,
+        );
     }
-
-    idle_host;
 }

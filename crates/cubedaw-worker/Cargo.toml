@@ -10,12 +10,12 @@ ahash = { workspace = true }
 smallvec = { workspace = true }
 cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-command = { path = "../cubedaw-command" }
-cubedaw-workerlib = { path = "../cubedaw-workerlib" }
 egui = { workspace = true, optional = true }
 crossbeam-channel = { workspace = true }
 replace_with = { workspace = true }
 log = { workspace = true }
-bumpalo = "3.16.0"
+bumpalo = { workspace = true }
+work-queue = { workspace = true }
 
 [features]
 egui = ["dep:egui"]

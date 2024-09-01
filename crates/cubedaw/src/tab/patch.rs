@@ -1,6 +1,6 @@
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{
-    Cable, CableTag, Id, IdMap, Node as _, NodeData, NodeInput, NodeInputUiOptions,
+    Cable, CableTag, Id, IdMap, Node as _, NodeData, NodeEntry, NodeInput, NodeInputUiOptions,
     NodeStateWrapper, Track,
 };
 use egui::{emath::TSTransform, pos2, Pos2, Rect, Vec2};
@@ -267,13 +267,13 @@ impl PatchTab {
             }
 
             let currently_held_node_is_some = self.currently_held_node.is_some();
-            let mut node_slot_data: IdMap<NodeData, NodeSlotData> = IdMap::new();
+            let mut node_slot_data: IdMap<NodeEntry, NodeSlotData> = IdMap::new();
             // what the heck is rustfmt doing
             let mut handle_node =
-                |prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeData>)>,
+                |prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
                  ui: &mut egui::Ui,
-                 node_data: &NodeData,
-                 node_id: Option<Id<NodeData>>,
+                 node_data: &NodeEntry,
+                 node_id: Option<Id<NodeEntry>>,
                  node_ui: &NodeUiState,
                  tracker: &mut UiStateTracker| {
                     let real_node_data = node_id
@@ -351,7 +351,7 @@ impl PatchTab {
                                 node_ui.selected,
                             );
                         }
-                        let node_state = node_data.inner.as_ref();
+                        let node_state = node_data.data.inner.as_ref();
                         let mut inner_node_ui = node_state.clone();
 
                         // TODO add header colors
@@ -367,9 +367,9 @@ impl PatchTab {
                                 track_id,
                                 inner_node_ui,
                                 ui_ctx.inputs.iter().map(|i| i.value).collect(),
-                                node_data.inputs.iter().map(|i| i.value).collect(),
+                                node_data.inputs().iter().map(|i| i.bias).collect(),
                                 ui_ctx.outputs.len() as u32,
-                                node_data.outputs.len() as u32,
+                                node_data.outputs().len() as u32,
                             ));
                         }
 
@@ -487,13 +487,14 @@ impl PatchTab {
 
             // .take() is used to avoid doing an obvious unwrap when checking if the node should be placed.
             // if the node isn't placed, the node is put back into currently_held_node at the end.
-            if let Some(node_data) = self.currently_held_node.take() {
+            if let Some(mut node_data) = self.currently_held_node.take() {
                 if let Some(pointer_pos) = pointer_pos {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
+                    let fake_entry = NodeEntry::new(node_data, 0, 0);
                     let result = handle_node(
                         prepared,
                         ui,
-                        &node_data,
+                        &fake_entry,
                         None,
                         &NodeUiState {
                             selected: true,
@@ -502,27 +503,14 @@ impl PatchTab {
                         },
                         &mut ctx.tracker,
                     );
+                    let node_data = fake_entry.data;
                     if primary_clicked {
                         // place the node
                         ctx.tracker.add(UiNodeAddOrRemove::addition(
                             Id::arbitrary(),
-                            {
-                                let mut data =
-                                    NodeData::new_disconnected(node_data.key, node_data.inner);
-
-                                data.inputs.reserve(result.inputs.len());
-                                for input in &result.inputs {
-                                    data.inputs.push(NodeInput {
-                                        value: input.value,
-                                        ..Default::default()
-                                    });
-                                }
-
-                                data.outputs
-                                    .resize(result.outputs.len(), Default::default());
-
-                                data
-                            },
+                            node_data,
+                            result.inputs.into_iter().map(|input| input.value).collect(),
+                            result.outputs.len() as u32,
                             track_id,
                             NodeUiState {
                                 selected: true,
@@ -673,7 +661,6 @@ impl PatchTab {
                     _ => None,
                 };
                 if let Some(ref mut cable) = viable_cable {
-                    patch.set_cable_tag(cable);
                     draw_cable(
                         node_slots
                             .force_get(cable.input_node)
@@ -681,7 +668,7 @@ impl PatchTab {
                         node_slots
                             .force_get(cable.output_node)
                             .get_input_pos(cable.output_input_index),
-                        cable.tag,
+                        patch.get_cable_tag_if_added(cable),
                     );
                 } else {
                     match currently_drawn_cable {
@@ -716,9 +703,9 @@ impl PatchTab {
 }
 
 struct CubedawNodeUiContext<'a> {
-    node_id: Option<Id<NodeData>>,
+    node_id: Option<Id<NodeEntry>>,
     track_id: Id<Track>,
-    node_data: &'a NodeData,
+    node_data: &'a NodeEntry,
 
     inputs: Vec<CubedawNodeUiContextInput>,
     outputs: Vec<CubedawNodeUiContextOutput>,
@@ -726,7 +713,7 @@ struct CubedawNodeUiContext<'a> {
     tracker: UiStateTracker,
 }
 impl<'a> CubedawNodeUiContext<'a> {
-    pub fn new(id: Option<Id<NodeData>>, track_id: Id<Track>, node_data: &'a NodeData) -> Self {
+    pub fn new(id: Option<Id<NodeEntry>>, track_id: Id<Track>, node_data: &'a NodeEntry) -> Self {
         Self {
             node_id: id,
             track_id,
@@ -741,10 +728,10 @@ impl<'a> CubedawNodeUiContext<'a> {
 
     fn apply(&mut self, tracker: &mut UiStateTracker) {
         if self.node_id.is_some() {
-            let old_num_inputs = self.node_data.inputs.len();
+            let old_num_inputs = self.node_data.inputs().len();
             let num_inputs = self.inputs.len();
             if num_inputs < old_num_inputs {
-                for deleted_input in &self.node_data.inputs[num_inputs..old_num_inputs] {
+                for deleted_input in &self.node_data.inputs()[num_inputs..old_num_inputs] {
                     // do in reverse order because removing elements one-by-one from the vec is faster if you remove from last to first
                     for &connection in deleted_input.connections.iter().rev() {
                         tracker.add_weak(cubedaw_command::patch::CableAddOrRemove::removal(
@@ -770,10 +757,10 @@ impl<'a> CubedawNodeUiContext<'a> {
 impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
     fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions) {
         let num_inputs = self.inputs.len();
-        let input = self.node_data.inputs.get(num_inputs);
+        let input = self.node_data.inputs().get(num_inputs);
 
         let previous_value = match input {
-            Some(input) => input.value,
+            Some(input) => input.bias,
             None => options.default_value,
         };
         let mut value = previous_value;
@@ -834,11 +821,11 @@ struct CubedawNodeUiContextResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeSlotDescriptor {
     Output {
-        node: Id<NodeData>,
+        node: Id<NodeEntry>,
         output_index: u32,
     },
     Input {
-        node: Id<NodeData>,
+        node: Id<NodeEntry>,
         input_index: u32,
     },
 }

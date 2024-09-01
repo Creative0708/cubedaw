@@ -8,7 +8,6 @@ pub struct ResourceKey {
     divider: usize,
 }
 
-// yes this is stolen from minecraft. i like how the keys look ok
 impl ResourceKey {
     // TODO make this return Option<Self> or Result<Self, _>
     pub fn new_split(namespace: &str, key: &str) -> Self {
@@ -30,9 +29,11 @@ impl ResourceKey {
             divider: namespace.len(),
         }
     }
-    // TODO make this return Option<Self> or Result<Self, _>
-    pub fn new(str: &str) -> Self {
-        assert!(!str.is_empty() && str.is_ascii());
+    fn get_divider_from_str(str: &str) -> usize {
+        assert!(
+            !str.is_empty() && str.is_ascii(),
+            "ResourceKey has to be a non-empty ascii string"
+        );
 
         let mut divider = None;
         for (i, b) in str.bytes().enumerate() {
@@ -54,8 +55,13 @@ impl ResourceKey {
             panic!("no : in ResourceKey");
         };
 
+        divider
+    }
+
+    // TODO make this return Option<Self> or Result<Self, _>
+    pub fn new(str: &str) -> Self {
         Self {
-            divider,
+            divider: Self::get_divider_from_str(str),
             str: Arc::from(str),
         }
     }
