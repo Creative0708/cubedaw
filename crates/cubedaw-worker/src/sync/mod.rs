@@ -15,7 +15,9 @@ use std::{
 /// the readers can read to the inner T and use it for whatever.
 ///
 /// ```
-/// let buf: SyncBuffer<u8, String> = SyncBuffer::new();
+/// # use cubedaw_worker::sync::SyncBuffer;
+///
+/// let buf: SyncBuffer<u8, String> = SyncBuffer::new(0);
 ///
 /// std::thread::scope(|env| {
 ///     let read = buf.get_read_handle();
@@ -24,26 +26,27 @@ use std::{
 ///
 ///     buf.prime("🦀".into());
 ///
-///     env.spawn(|| {
-///         let waited: u8 = read.wait();
+///     env.spawn(move || {
+///         let waited: &u8 = read.wait();
 ///         println!("reader got {waited}");
+///         assert_eq!(*waited, 130);
 ///     });
 ///
 ///     env.spawn(|| {
 ///         let res = write1.lock(|u8: &mut u8| {
 ///             println!("write1 writing, got {}", *u8);
-///             u8 += 50;
+///             *u8 += 50;
 ///         });
 ///         println!("write1 done, got {res:?}");
 ///     });
 ///     env.spawn(|| {
 ///         std::thread::sleep(std::time::Duration::from_millis(100));
 ///
-///         let res = write1.lock_with_return(|u8: &mut u8| {
+///         let res = write2.lock_with_return(|u8: &mut u8| {
 ///             println!("write2 writing, got {}", *u8);
-///             u8 += 80;
+///             *u8 += 80;
 ///
-///             u8 + 30
+///             *u8 + 30
 ///         });
 ///         println!("write2 done, got {res:?}");
 ///     });

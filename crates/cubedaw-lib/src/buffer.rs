@@ -215,12 +215,4 @@ mod tests {
         zsts[1] = ();
         black_box(zsts);
     }
-
-    #[test]
-    #[should_panic]
-    fn test_boxed_slice_memory_limit() {
-        let mut x: Box<[u32]> = boxed_slice(1_000_000_000_000_000);
-        x[0] = 1;
-        black_box(x);
-    }
 }

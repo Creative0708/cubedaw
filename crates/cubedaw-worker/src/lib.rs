@@ -4,12 +4,11 @@ mod worker;
 pub use host::WorkerHost;
 pub use worker::WorkerOptions;
 
-mod sync;
+pub mod sync;
 
 mod state;
 pub(crate) use state::{
-    WorkerGroupTrackState, WorkerNoteState, WorkerSectionTrackState,
-    WorkerState,
+    WorkerGroupTrackState, WorkerNoteState, WorkerSectionTrackState, WorkerState,
 };
 mod job;
 pub(crate) use job::{NoteDescriptor, WorkerJob};
