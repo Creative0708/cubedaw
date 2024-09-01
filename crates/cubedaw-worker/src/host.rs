@@ -407,6 +407,7 @@ fn add_jobs(
                             for (_start_pos, note_id, _note) in section.note_start_positions_in(
                                 section_range.intersect(song_range_that_we_will_process),
                             ) {
+                                dbg!(note_id);
                                 worker_track_data.notes.insert(
                                     note_id,
                                     crate::WorkerNoteState {

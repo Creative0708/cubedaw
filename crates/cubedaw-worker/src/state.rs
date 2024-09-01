@@ -181,12 +181,13 @@ impl WorkerSectionTrackState {
             }
         }
 
-        let (Some(track_output), Some(track_input)) = (track_output, note_output) else {
+        let (Some(track_output), Some(note_output)) = (track_output, note_output) else {
             return false;
         };
 
         self.track_nodes
-            .sync_with(patch, options, Some(track_input), track_output);
+            .sync_with(patch, options, Some(note_output), track_output);
+        self.note_nodes.sync_with(patch, options, None, note_output);
 
         true
     }

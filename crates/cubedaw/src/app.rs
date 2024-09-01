@@ -167,12 +167,21 @@ impl CubedawApp {
                 mut commands,
                 strong,
             } = result.tracker;
+            let mut state_commands = Vec::new();
             for event in &mut commands {
                 event.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
                 if let Some(inner) = event.inner() {
+                    if self.worker_host.is_init() {
+                        state_commands.push(inner.clone());
+                    }
                     inner.execute(&mut self.state);
                 }
             }
+            if self.worker_host.is_init() && !state_commands.is_empty() {
+                self.worker_host
+                    .send_commands(state_commands.into_boxed_slice(), false);
+            }
+
             if !commands.is_empty() {
                 if self.undo_index < self.undo_stack.len() {
                     self.undo_stack
@@ -314,11 +323,15 @@ impl eframe::App for CubedawApp {
         if let Some(is_redo) = egui_ctx.input(|i| {
             (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
         }) {
+            let mut state_commands = Vec::new();
             if is_redo {
                 if let Some(actions_being_redone) = self.undo_stack.get_mut(self.undo_index) {
                     for action in actions_being_redone.iter_mut() {
                         action.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
                         if let Some(state_action) = action.inner() {
+                            if self.worker_host.is_init() {
+                                state_commands.push(state_action.clone());
+                            }
                             state_action.execute(&mut self.state);
                         }
                     }
@@ -331,10 +344,17 @@ impl eframe::App for CubedawApp {
                 for action in actions_being_undone.iter_mut().rev() {
                     action.ui_rollback(&mut self.ui_state, &mut self.ephemeral_state);
                     if let Some(state_action) = action.inner() {
+                        if self.worker_host.is_init() {
+                            state_commands.push(state_action.clone());
+                        }
                         state_action.rollback(&mut self.state);
                     }
                 }
                 self.undo_index -= 1;
+            }
+            if self.worker_host.is_init() {
+                self.worker_host
+                    .send_commands(state_commands.into_boxed_slice(), !is_redo);
             }
         }
 

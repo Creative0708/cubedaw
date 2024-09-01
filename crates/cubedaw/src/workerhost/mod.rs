@@ -58,6 +58,12 @@ impl WorkerHostHandle {
         self.is_playing = false;
         self.last_playhead_update = None;
     }
+    pub fn send_commands(&mut self, commands: Box<[Box<dyn StateCommandWrapper>]>, is_undo: bool) {
+        self.tx
+            .send(AppToWorkerHostEvent::Commands { commands, is_undo })
+            .unwrap();
+    }
+
     pub fn is_playing(&self) -> bool {
         self.is_playing
     }
@@ -106,7 +112,10 @@ enum AppToWorkerHostEvent {
     },
     StopPlaying,
     UpdatePlayheadPos(i64),
-    Commands(Box<[Box<dyn StateCommandWrapper>]>),
+    Commands {
+        commands: Box<[Box<dyn StateCommandWrapper>]>,
+        is_undo: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -164,9 +173,13 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 AppToWorkerHostEvent::UpdatePlayheadPos(pos) => {
                     playhead_pos = cubedaw_lib::PreciseSongPos::from_song_pos(pos);
                 }
-                AppToWorkerHostEvent::Commands(commands) => {
+                AppToWorkerHostEvent::Commands { commands, is_undo } => {
                     for mut command in commands.into_vec() {
-                        command.execute(idle_host.state_mut());
+                        if is_undo {
+                            command.rollback(idle_host.state_mut());
+                        } else {
+                            command.execute(idle_host.state_mut());
+                        }
                     }
                 }
             }

@@ -1,4 +1,4 @@
-use crate::BufferType;
+use crate::{BufferOwned, BufferType};
 
 pub struct NoteOutputNode {
     inner: Option<NoteOutputNodeInner>,
@@ -6,7 +6,7 @@ pub struct NoteOutputNode {
 
 pub enum NoteOutputNodeInner {
     Input(&'static [BufferType]),
-    Output(&'static mut [BufferType]),
+    Output(BufferOwned),
 }
 
 impl crate::Node for NoteOutputNode {
@@ -33,7 +33,7 @@ impl crate::Node for NoteOutputNode {
             Some(NoteOutputNodeInner::Output(ref mut buffer)) => {
                 let input = ctx.input(0);
                 for i in 0..buffer_size {
-                    buffer[i as usize] = input[i];
+                    buffer[i] = input[i];
                 }
             }
         }

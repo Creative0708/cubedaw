@@ -56,7 +56,12 @@ impl ProcessedNodeGraph {
                     .node_entry(node_id)
                     .expect("cable connected to nonexistent node???");
 
-                if node.inputs().is_empty() || Some(node_id) == input_node {
+                if node
+                    .inputs()
+                    .iter()
+                    .all(|input| input.connections.is_empty())
+                    || Some(node_id) == input_node
+                {
                     zero_indegree_node_stack.push(node_id);
                 } else {
                     indegrees.insert(node_id, node.inputs().len() as u32);
@@ -132,19 +137,22 @@ impl ProcessedNodeGraph {
                 node_id,
                 state: node.data.inner.clone(),
             });
-            // decrement outdegrees
-            for output in node.outputs() {
-                for (_cable_id, cable) in output
-                    .get_connections(patch)
-                    .filter(|(_, cable)| cable.tag.is_valid())
-                {
-                    let indegree = indegrees
-                        .get_mut(cable.output_node)
-                        .expect("cable connected to invalid node");
-                    *indegree -= 1;
-                    if *indegree == 0 {
-                        zero_indegree_node_stack.push(cable.output_node);
-                        indegrees.remove(cable.output_node);
+
+            if node_id != output_node {
+                // decrement outdegrees
+                for output in node.outputs() {
+                    for (_cable_id, cable) in output
+                        .get_connections(patch)
+                        .filter(|(_, cable)| cable.tag.is_valid())
+                    {
+                        let indegree = indegrees
+                            .get_mut(cable.output_node)
+                            .expect("cable connected to invalid node");
+                        *indegree -= 1;
+                        if *indegree == 0 {
+                            zero_indegree_node_stack.push(cable.output_node);
+                            indegrees.remove(cable.output_node);
+                        }
                     }
                 }
             }

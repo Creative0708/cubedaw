@@ -1,5 +1,7 @@
+use crate::BufferType;
+
 pub struct TrackInputNode {
-    buffer: Option<&'static [crate::BufferType]>,
+    buffer: Option<&'static [BufferType]>,
 }
 
 impl crate::Node for TrackInputNode {
@@ -28,14 +30,14 @@ impl crate::Node for TrackInputNode {
 }
 
 impl TrackInputNode {
-    pub fn start(&mut self, buffer: &'static [crate::BufferType]) {
+    pub fn start(&mut self, buffer: &'static [BufferType]) {
         let old = self.buffer.replace(buffer);
         #[cfg(debug_assertions)]
         if old.is_some() {
             panic!("start() called on TrackInputNode with a buffer")
         }
     }
-    pub fn end(&mut self) -> &'static [crate::BufferType] {
+    pub fn end(&mut self) -> &'static [BufferType] {
         self.buffer
             .take()
             .expect("end() called on TrackInputNode without a buffer")

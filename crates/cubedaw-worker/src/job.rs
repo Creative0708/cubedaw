@@ -49,11 +49,40 @@ impl WorkerJob {
                     NoteDescriptor::State { note, .. } => note,
                     NoteDescriptor::Live { note, .. } => note,
                 };
-                // state.nodes
+
+                replace_with::replace_with_or_default(scratch, |mut scratch| {
+                    let output_node: &mut builtin_nodes::NoteOutputNode = nodes
+                        .get_node_mut(nodes.output_node())
+                        .unwrap()
+                        .inner
+                        .downcast_mut()
+                        .unwrap();
+                    output_node.start(builtin_nodes::NoteOutputNodeInner::Output(scratch.0));
+
+                    nodes.process(worker_options);
+
+                    let output_node: &mut builtin_nodes::NoteOutputNode = nodes
+                        .get_node_mut(nodes.output_node())
+                        .unwrap()
+                        .inner
+                        .downcast_mut()
+                        .unwrap();
+
+                    scratch.0 = match output_node.end() {
+                        builtin_nodes::NoteOutputNodeInner::Input(_) => unreachable!(),
+                        builtin_nodes::NoteOutputNodeInner::Output(buf) => buf,
+                    };
+
+                    scratch
+                });
+
+                let job_to_add = output.lock(|output_buf| {
+                    output_buf.accumulate(&scratch.0.borrow_mut());
+                });
 
                 WorkerJobResult {
                     finished_job_descriptor: None,
-                    job_to_add: todo!(),
+                    job_to_add,
                 }
             }
             Self::TrackProcess {
