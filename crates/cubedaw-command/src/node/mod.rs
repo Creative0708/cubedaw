@@ -169,12 +169,24 @@ impl NodeAddOrRemove {
             .take()
             .expect("called execute_add on empty NodeAddOrRemove");
 
-        self.get_patch(state).insert_node(self.id, node_data, 0, 0);
+        self.get_patch(state).insert_node(
+            self.id,
+            node_data,
+            core::mem::replace(&mut self.inputs, Vec::new()),
+            self.num_outputs,
+        );
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
-        let node_data = self.get_patch(state).take_node(self.id);
+        let node_data = self
+            .get_patch(state)
+            .remove_entry(self.id)
+            .expect("tried to remove nonexistent node");
 
-        if self.data.replace(node_data).is_some() {
+        assert!(self.inputs.is_empty());
+        self.inputs
+            .extend(node_data.inputs().iter().map(|input| input.bias));
+
+        if self.data.replace(node_data.data).is_some() {
             panic!("called execute_remove on nonempty NodeAddOrRemove");
         }
     }

@@ -155,7 +155,7 @@ impl cubedaw_lib::Node for OscillatorNode {
     fn process(&mut self, state: &Self::State, ctx: &mut dyn cubedaw_lib::NodeContext<'_>) {
         let pitch = ctx.input(0);
         let volume = ctx.input(1);
-        let mut output = ctx.output(0);
+        let output = ctx.output(0);
         for i in 0..ctx.buffer_size() {
             let oscillator_cycle = self.oscillator_cycle;
             let val = match state.node_type {

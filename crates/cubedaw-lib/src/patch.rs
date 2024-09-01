@@ -38,22 +38,28 @@ impl Patch {
         &mut self,
         node_id: Id<NodeEntry>,
         node: NodeData,
-        num_inputs: u32,
+        inputs: Vec<f32>,
         num_outputs: u32,
     ) {
+        assert!(
+            inputs.len() <= u32::MAX as usize,
+            "# of inputs exceeds {}",
+            u32::MAX
+        );
+
         self.nodes.insert(
             node_id,
             NodeEntry {
                 tag: self.get_node_tag_if_added(&node),
 
                 data: node,
-                inputs: vec![
-                    NodeInput {
-                        bias: 1.0,
+                inputs: inputs
+                    .into_iter()
+                    .map(|bias| NodeInput {
+                        bias,
                         connections: Vec::new(),
-                    };
-                    num_inputs as usize
-                ],
+                    })
+                    .collect(),
                 outputs: vec![
                     NodeOutput {
                         connections: Vec::new(),
@@ -63,14 +69,17 @@ impl Patch {
             },
         );
     }
-    pub fn take_node(&mut self, node_id: Id<NodeEntry>) -> NodeData {
-        let entry = self.nodes.take(node_id);
+    pub fn remove_node(&mut self, node_id: Id<NodeEntry>) -> Option<NodeData> {
+        Some(self.remove_entry(node_id)?.data)
+    }
+    pub fn remove_entry(&mut self, node_id: Id<NodeEntry>) -> Option<NodeEntry> {
+        let entry = self.nodes.remove(node_id)?;
         // TODO what do we do in this scenario
         assert!(
             entry.inputs.is_empty() && entry.outputs.is_empty(),
             "unimplemented :("
         );
-        entry.data
+        Some(entry)
     }
     pub fn nodes(&self) -> impl Iterator<Item = (Id<NodeEntry>, &NodeEntry)> {
         self.nodes.iter().map(|(&id, data)| (id, data))

@@ -1,4 +1,4 @@
-use std::{borrow, fmt, ops, ptr::NonNull};
+use std::{fmt, ops, ptr::NonNull};
 
 use bytemuck::Zeroable;
 

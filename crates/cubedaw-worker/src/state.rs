@@ -1,9 +1,8 @@
 use cubedaw_lib::{
-    Buffer, GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track,
-    TrackInner,
+    GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track, TrackInner,
 };
 
-use crate::{node_graph::ProcessedNodeGraph, sync, WorkerOptions};
+use crate::{node_graph::ProcessedNodeGraph, WorkerOptions};
 
 #[derive(Debug)]
 pub struct WorkerState {
@@ -197,7 +196,7 @@ impl WorkerSectionTrackState {
                         key,
                         options.registry.create_state(key, Default::default()),
                     ),
-                    num_inputs,
+                    vec![1.0; num_inputs as usize],
                     num_outputs,
                 );
                 id
@@ -314,7 +313,7 @@ impl WorkerGroupTrackState {
                         key,
                         options.registry.create_state(key, Default::default()),
                     ),
-                    num_inputs,
+                    vec![1.0; num_inputs as usize],
                     num_outputs,
                 );
                 id

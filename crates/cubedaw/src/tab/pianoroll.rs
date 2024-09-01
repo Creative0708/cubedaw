@@ -9,7 +9,6 @@ use crate::{
         note::{UiNoteAddOrRemove, UiNoteSelect},
         section::{UiSectionAddOrRemove, UiSectionSelect},
     },
-    state::ui::SectionUiState,
 };
 
 #[derive(Debug)]

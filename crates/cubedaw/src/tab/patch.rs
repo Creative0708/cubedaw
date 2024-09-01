@@ -1,6 +1,6 @@
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{
-    Cable, CableTag, Id, IdMap, Node as _, NodeData, NodeEntry, NodeInput, NodeInputUiOptions,
+    Cable, CableTag, Id, IdMap, Node as _, NodeData, NodeEntry, NodeInputUiOptions,
     NodeStateWrapper, Track,
 };
 use egui::{emath::TSTransform, pos2, Pos2, Rect, Vec2};
@@ -487,7 +487,7 @@ impl PatchTab {
 
             // .take() is used to avoid doing an obvious unwrap when checking if the node should be placed.
             // if the node isn't placed, the node is put back into currently_held_node at the end.
-            if let Some(mut node_data) = self.currently_held_node.take() {
+            if let Some(node_data) = self.currently_held_node.take() {
                 if let Some(pointer_pos) = pointer_pos {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
                     let fake_entry = NodeEntry::new(node_data, 0, 0);

@@ -48,7 +48,7 @@ impl Node for MathNode {
     fn process(&mut self, state: &Self::State, ctx: &mut dyn NodeContext<'_>) {
         let a_in = ctx.input(0);
         let b_in = ctx.input(1);
-        let mut out = ctx.output(0);
+        let out = ctx.output(0);
 
         for i in 0..ctx.buffer_size() {
             let a = a_in[i];

@@ -55,7 +55,7 @@ impl WorkerHost {
 
     fn sync_with_state(&mut self) {
         let Self {
-            worker_state,
+            
             state,
             worker_options,
             ..
@@ -284,7 +284,7 @@ fn add_jobs(
     worker_options: &WorkerOptions,
     start_pos: Option<PreciseSongPos>,
 ) {
-    use crate::sync::{SyncAccessibleReadHandle, SyncAccessibleWriteHandle, SyncBuffer};
+    use crate::sync::SyncBuffer;
 
     type WorkerJobSyncBuffer = SyncBuffer<cubedaw_lib::Buffer<'static>, WorkerJob>;
 

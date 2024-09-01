@@ -5,7 +5,7 @@ use egui_dock::{DockArea, DockState};
 
 use crate::{
     command::{UiStateCommand, UiStateCommandWrapper},
-    context::{self, DockEvent},
+    context::{DockEvent},
     node,
     tab::{patch::PatchTab, pianoroll::PianoRollTab, track::TrackTab},
     Context, Screen,

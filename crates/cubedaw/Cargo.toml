@@ -15,6 +15,7 @@ cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }
+log = { workspace = true }
 # TODO implement jit compilation of patches (see notes.md)
 # wasmtime-cranelift = "22.0.0"
 

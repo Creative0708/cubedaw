@@ -1,9 +1,7 @@
 use std::cell::Cell;
 
 use ahash::HashSetExt;
-use cubedaw_lib::{
-    Buffer, DynNode, DynNodeState, Id, IdMap, IdSet, NodeData, NodeEntry, NodeStateWrapper, Patch,
-};
+use cubedaw_lib::{DynNode, DynNodeState, Id, IdMap, IdSet, NodeEntry, NodeStateWrapper, Patch};
 
 use crate::WorkerOptions;
 
@@ -54,7 +52,6 @@ impl ProcessedNodeGraph {
             let mut stack = vec![output_node];
             let mut visited = IdSet::new();
             while let Some(node_id) = stack.pop() {
-                dbg!(node_id);
                 let node = patch
                     .node_entry(node_id)
                     .expect("cable connected to nonexistent node???");
@@ -70,7 +67,6 @@ impl ProcessedNodeGraph {
                         {
                             let new_node_id = cable.input_node;
                             if visited.insert(new_node_id) {
-                                dbg!(new_node_id);
                                 stack.push(new_node_id);
                             }
                         }

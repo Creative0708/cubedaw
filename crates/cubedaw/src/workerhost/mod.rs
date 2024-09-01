@@ -117,10 +117,16 @@ enum WorkerHostToAppEvent {
 }
 
 fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<WorkerHostToAppEvent>) {
+    use std::time::{Duration, Instant};
+
     let Ok(first_event) = rx.recv() else { return };
     let AppToWorkerHostEvent::Init { state, options } = first_event else {
         panic!("other event sent to worker_host before Init: {first_event:?}");
     };
+
+    let mut time_to_wait_until = Instant::now();
+    let mut duration_per_frame =
+        Duration::from_secs_f64(options.buffer_size as f64 / options.sample_rate as f64);
 
     let mut idle_host = cubedaw_worker::WorkerHost::new(state, options);
     let mut is_playing = false;
@@ -139,6 +145,12 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             match event {
                 AppToWorkerHostEvent::Init { state, options } => {
                     idle_host.join();
+
+                    time_to_wait_until = Instant::now();
+                    duration_per_frame = Duration::from_secs_f64(
+                        options.buffer_size as f64 / options.sample_rate as f64,
+                    );
+
                     idle_host = cubedaw_worker::WorkerHost::new(state, options);
                 }
                 AppToWorkerHostEvent::StartPlaying { from } => {
@@ -168,5 +180,17 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             },
             live_playhead_pos,
         );
+        time_to_wait_until += duration_per_frame;
+
+        let now = Instant::now();
+        // dbg!(now);
+        if now < time_to_wait_until {
+            std::thread::sleep(time_to_wait_until - now);
+        } else {
+            log::warn!(
+                "audio workerhost underflow: behind by {:.02} ms",
+                (now - time_to_wait_until).as_secs_f64() * 1000.0
+            );
+        }
     }
 }

@@ -1,7 +1,7 @@
 use std::{
     cell::{Cell, UnsafeCell},
-    mem::{ManuallyDrop, MaybeUninit},
-    sync::{Arc, Condvar, Mutex},
+    mem::MaybeUninit,
+    sync::{Condvar, Mutex},
     usize,
 };
 

@@ -1,4 +1,4 @@
-use cubedaw_lib::{IdMap, NodeData, NodeEntry, Track};
+use cubedaw_lib::{IdMap, NodeEntry, Track};
 use egui::Vec2;
 
 use crate::util::{DragHandler, NodeSearch, SelectionRect};
