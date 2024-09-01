@@ -1,7 +1,7 @@
 use crate::{
     id::IdMap,
     track::{GroupTrack, Track},
-    Range,
+    Id, Range,
 };
 
 #[derive(Debug, Clone)]
@@ -10,7 +10,7 @@ pub struct State {
     pub bpm: f32,
 
     pub tracks: IdMap<Track>,
-    pub root_track: GroupTrack,
+    pub root_track: Id<Track>,
     pub song_boundary: Range,
 }
 
@@ -38,7 +38,7 @@ impl Default for State {
             bpm: 120.0,
 
             tracks: IdMap::new(),
-            root_track: GroupTrack::new(),
+            root_track: Id::invalid(),
             song_boundary: Range::new(0, 16 * Range::UNITS_PER_BEAT as i64 * 4),
         }
     }

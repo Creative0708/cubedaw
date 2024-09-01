@@ -5,10 +5,8 @@ use egui_dock::{DockArea, DockState};
 
 use crate::{
     command::{UiStateCommand, UiStateCommandWrapper},
-    context::{DockEvent},
-    node,
-    tab::{patch::PatchTab, pianoroll::PianoRollTab, track::TrackTab},
-    Context, Screen,
+    context::DockEvent,
+    node, Context, Screen,
 };
 
 pub struct CubedawApp {
@@ -65,10 +63,10 @@ impl CubedawApp {
 
             execute(
                 crate::command::track::UiTrackAddOrRemove::addition(
-                    track_id,
-                    cubedaw_lib::Track::new_empty(cubedaw_lib::Patch::default()),
+                    Id::arbitrary(),
+                    cubedaw_lib::Track::new_group(cubedaw_lib::Patch::default()),
                     Some(crate::state::ui::TrackUiState {
-                        selected: true,
+                        name: "Master".into(),
                         ..Default::default()
                     }),
                     None,
@@ -78,6 +76,25 @@ impl CubedawApp {
                 &mut ui_state,
                 &mut ephemeral_state,
             );
+
+            for i in 1..=6 {
+                execute(
+                    crate::command::track::UiTrackAddOrRemove::addition(
+                        if i == 1 { track_id } else { Id::arbitrary() },
+                        cubedaw_lib::Track::new_empty(cubedaw_lib::Patch::default()),
+                        Some(crate::state::ui::TrackUiState {
+                            selected: i == 1,
+                            name: format!("Unnamed Track #{i}"),
+                            ..Default::default()
+                        }),
+                        Some(state.root_track),
+                        0,
+                    ),
+                    &mut state,
+                    &mut ui_state,
+                    &mut ephemeral_state,
+                );
+            }
 
             Self {
                 worker_host: crate::workerhost::WorkerHostHandle::new(),
@@ -109,9 +126,9 @@ impl CubedawApp {
             None,
         );
 
-        ctx.create_tab::<PianoRollTab>();
-        // ctx.create_tab::<TrackTab>();
-        ctx.create_tab::<PatchTab>();
+        ctx.create_tab::<crate::tab::pianoroll::PianoRollTab>();
+        ctx.create_tab::<crate::tab::track::TrackTab>();
+        // ctx.create_tab::<PatchTab>();
 
         let result = ctx.finish();
         app.ctx_finished(result, &creation_context.egui_ctx);
@@ -232,11 +249,15 @@ impl eframe::App for CubedawApp {
                 });
                 ui.menu_button("Window", |ui| {
                     if ui.button("Tracks").clicked() {
-                        ctx.create_tab::<TrackTab>();
+                        ctx.create_tab::<crate::tab::track::TrackTab>();
+                        ui.close_menu();
+                    }
+                    if ui.button("Patch Editor").clicked() {
+                        ctx.create_tab::<crate::tab::patch::PatchTab>();
                         ui.close_menu();
                     }
                     if ui.button("Piano Roll").clicked() {
-                        ctx.create_tab::<PianoRollTab>();
+                        ctx.create_tab::<crate::tab::pianoroll::PianoRollTab>();
                         ui.close_menu();
                     }
                 });
@@ -278,7 +299,8 @@ impl eframe::App for CubedawApp {
                     .init(self.state.clone(), cubedaw_worker::WorkerOptions::default());
             }
             if !self.worker_host.is_playing() {
-                self.worker_host.start_playing(self.ui_state.playhead_pos);
+                self.worker_host
+                    .start_processing(self.ui_state.playhead_pos);
             } else {
                 if let Some(last_playhead_update) = self.worker_host.last_playhead_update() {
                     self.ui_state.playhead_pos = self

@@ -117,7 +117,51 @@ impl WorkerJob {
                 input,
                 output,
             } => {
-                todo!();
+                replace_with::replace_with_or_default(scratch, |mut scratch| {
+                    let input_node: &mut builtin_nodes::TrackInputNode = nodes
+                        .get_node_mut(nodes.input_node().unwrap())
+                        .unwrap()
+                        .inner
+                        .downcast_mut()
+                        .unwrap();
+                    input_node.start(input.wait().as_slice());
+                    let output_node: &mut builtin_nodes::TrackOutputNode = nodes
+                        .get_node_mut(nodes.output_node())
+                        .unwrap()
+                        .inner
+                        .downcast_mut()
+                        .unwrap();
+                    output_node.start(scratch.0);
+
+                    nodes.process(worker_options);
+
+                    let input_node: &mut builtin_nodes::TrackInputNode = nodes
+                        .get_node_mut(nodes.input_node().unwrap())
+                        .unwrap()
+                        .inner
+                        .downcast_mut()
+                        .unwrap();
+                    input_node.end();
+                    let output_node: &mut builtin_nodes::TrackOutputNode = nodes
+                        .get_node_mut(nodes.output_node())
+                        .unwrap()
+                        .inner
+                        .downcast_mut()
+                        .unwrap();
+
+                    scratch.0 = output_node.end();
+
+                    scratch
+                });
+
+                let job_to_add = output.lock(|output_buf| {
+                    output_buf.accumulate(&scratch.0.borrow_mut());
+                });
+
+                WorkerJobResult {
+                    finished_job_descriptor: None,
+                    job_to_add,
+                }
             }
             Self::Finalize => unimplemented!("can't call process() on WorkerJob::Finalize"),
         }

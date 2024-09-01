@@ -55,6 +55,10 @@ impl NodeRegistry {
             entries: IdMap::new(),
             name_entries: Vec::new(),
         };
+        this.register_node::<nodes::TrackInputNode>(
+            ResourceKey::new("builtin:track_input"),
+            "Track Input".into(),
+        );
         this.register_node::<nodes::TrackOutputNode>(
             ResourceKey::new("builtin:track_output"),
             "Track Output".into(),
@@ -111,7 +115,7 @@ impl NodeRegistry {
         creation_context: NodeCreationContext<'_>,
     ) -> DynNodeState {
         let Some(entry) = self.entries.get(key_id) else {
-            panic!("invalid key id passed to create_state");
+            panic!("invalid key id passed to create_state: {key_id:?}");
         };
         (entry.node_state_factory)(creation_context)
     }

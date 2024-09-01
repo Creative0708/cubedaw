@@ -95,6 +95,9 @@ impl<T> Debug for Id<T> {
             };
         }
 
+        if *self == Id::<T>::invalid() {
+            return write!(f, "Id::<{}>(<invalid>)", std::any::type_name::<T>());
+        }
         write!(f, "Id::<{}>({:#x})", std::any::type_name::<T>(), self.0)
     }
 }

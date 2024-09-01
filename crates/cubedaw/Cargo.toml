@@ -7,8 +7,8 @@ version = "0.1.0"
 [dependencies]
 cubedaw-command = { path = "../cubedaw-command" }
 egui = { workspace = true }
-eframe = { git = "https://github.com/emilk/egui.git", rev = "d4e8966aac9347965f8d02310ecf2c9f23bb9bbc" }
-egui_dock = { git = "https://github.com/Creative0708/egui_dock.git", rev = "05e465c9cbb600e3d6f931829d42adef55b4c842" }
+eframe = "0.28.1"
+egui_dock = "0.13.0"
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
 cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }

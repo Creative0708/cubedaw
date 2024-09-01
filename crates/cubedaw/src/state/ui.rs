@@ -4,9 +4,7 @@ use egui::Pos2;
 #[derive(Debug)]
 pub struct UiState {
     pub tracks: IdMap<Track, TrackUiState>,
-
-    // An ordered track list. This is the order with which the tracks are displayed in the track tab.
-    pub track_list: Vec<Id<Track>>,
+    pub show_root_track: bool,
 
     pub playhead_pos: i64,
 }
@@ -14,12 +12,8 @@ pub struct UiState {
 impl UiState {
     pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
         let mut single_selected_track = None;
-        for &track_id in &self.track_list {
-            let track = self
-                .tracks
-                .get(track_id)
-                .expect("ui_state.track_list not synchronized with ui_state.tracks");
-            if track.selected {
+        for (&track_id, track_ui_state) in &self.tracks {
+            if track_ui_state.selected {
                 if single_selected_track.is_some() {
                     // more than one selected track, give up
                     single_selected_track = None;
@@ -37,8 +31,7 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             tracks: IdMap::new(),
-
-            track_list: Vec::new(),
+            show_root_track: false,
 
             playhead_pos: 0,
         }
@@ -51,6 +44,9 @@ pub struct TrackUiState {
     pub selected: bool,
     pub patch: PatchUiState,
     pub sections: IdMap<Section, SectionUiState>,
+    /// Ordered track lists. This is the order of which the children of this track are displayed in the track tab.
+    /// Unused when the track is a section track.
+    pub track_list: Vec<Id<Track>>,
 }
 
 impl Default for TrackUiState {
@@ -58,8 +54,9 @@ impl Default for TrackUiState {
         Self {
             name: "Unnamed Track".into(),
             selected: false,
-            patch: PatchUiState::default(),
-            sections: IdMap::new(),
+            patch: Default::default(),
+            sections: Default::default(),
+            track_list: Default::default(),
         }
     }
 }

@@ -41,7 +41,7 @@ impl WorkerHostHandle {
 
         self.is_init = true;
     }
-    pub fn start_playing(&mut self, from: i64) {
+    pub fn start_processing(&mut self, from: i64) {
         self.tx
             .send(AppToWorkerHostEvent::StartPlaying { from })
             .expect("channel closed???");
@@ -80,8 +80,9 @@ impl WorkerHostHandle {
         while let Some(event) = self.try_recv() {
             match event {
                 WorkerHostToAppEvent::PlayheadUpdate { pos, timestamp } => {
-                    dbg!((pos, timestamp));
-                    self.last_playhead_update = Some((pos, timestamp));
+                    if self.is_playing {
+                        self.last_playhead_update = Some((pos, timestamp));
+                    }
                 }
             }
         }
@@ -183,7 +184,6 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
         time_to_wait_until += duration_per_frame;
 
         let now = Instant::now();
-        // dbg!(now);
         if now < time_to_wait_until {
             std::thread::sleep(time_to_wait_until - now);
         } else {
@@ -191,6 +191,15 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 "audio workerhost underflow: behind by {:.02} ms",
                 (now - time_to_wait_until).as_secs_f64() * 1000.0
             );
+        }
+        if is_playing {
+            let res = tx.send(WorkerHostToAppEvent::PlayheadUpdate {
+                pos: playhead_pos,
+                timestamp: time_to_wait_until,
+            });
+            if res.is_err() {
+                return;
+            }
         }
     }
 }

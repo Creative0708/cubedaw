@@ -33,39 +33,50 @@ impl TrackAddOrRemove {
     pub const fn is_removal(&self) -> bool {
         self.is_removal
     }
+    pub const fn parent_track(&self) -> Option<Id<Track>> {
+        self.parent_track
+    }
 
-    fn parent_track<'a>(
+    fn get_parent_track<'a>(
         &self,
         state: &'a mut cubedaw_lib::State,
-    ) -> &'a mut cubedaw_lib::GroupTrack {
-        match self.parent_track {
-            Some(parent_track) => state
+    ) -> Option<&'a mut cubedaw_lib::GroupTrack> {
+        Some(
+            state
                 .tracks
-                .force_get_mut(parent_track)
+                .force_get_mut(self.parent_track?)
                 .inner
                 .group_mut()
-                .unwrap(),
-            None => &mut state.root_track,
-        }
+                .expect("parent track isn't a group track"),
+        )
     }
 
     fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
-        assert!(
-            self.parent_track(state).children.insert(self.id),
-            "tried to add track as child twice"
-        );
         state.tracks.insert(
             self.id,
             self.data
                 .take()
                 .expect("execute() called on empty TrackAddOrRemove"),
         );
+        match self.get_parent_track(state) {
+            Some(track) => {
+                let did_insert = track.children.insert(self.id);
+                assert!(did_insert, "tried to add track as child twice");
+            }
+            None => {
+                assert!(
+                    !state.tracks.has(state.root_track),
+                    "tried to override root track"
+                );
+                state.root_track = self.id;
+            }
+        }
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
-        assert!(
-            !self.parent_track(state).children.remove(&self.id),
-            "tried to remove nonexistent child"
-        );
+        if let Some(track) = self.get_parent_track(state) {
+            let did_remove = track.children.remove(&self.id);
+            assert!(did_remove, "tried to remove nonexistent child");
+        }
         self.data = Some(
             state
                 .tracks

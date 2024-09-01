@@ -37,6 +37,9 @@ impl WorkerState {
                 }
             }
         }
+        if let Some(a) = group_tracks.iter().next() {
+            a.1.nodes.get_node(a.1.nodes.input_node().unwrap()).unwrap();
+        }
         Self {
             section_tracks,
             group_tracks,
@@ -90,6 +93,7 @@ impl WorkerState {
                         // TODO only do this when the patch is mutated
                         worker_track.sync_with(track, inner, worker_options);
                     } else {
+                        dbg!(&track.patch);
                         self.group_tracks.insert(
                             track_id,
                             crate::WorkerGroupTrackState::from_patch(track, inner, worker_options)
@@ -99,6 +103,7 @@ impl WorkerState {
                 }
                 cubedaw_lib::TrackInner::Section(inner) => {
                     if !self.section_tracks.has(track_id) {
+                        dbg!(&track.patch);
                         self.section_tracks.insert(
                             track_id,
                             crate::WorkerSectionTrackState::from_patch(
@@ -111,6 +116,9 @@ impl WorkerState {
                     }
                 }
             }
+        }
+        if let Some(a) = self.group_tracks.iter().next() {
+            a.1.nodes.get_node(a.1.nodes.input_node().unwrap()).unwrap();
         }
     }
 }
@@ -267,6 +275,10 @@ impl WorkerGroupTrackState {
     ) -> bool {
         let patch = &track.patch;
         patch.debug_assert_valid();
+
+        // if patch.cables().next().is_none() {
+        //     panic!();
+        // }
 
         let mut track_output = None;
         let mut track_input = None;

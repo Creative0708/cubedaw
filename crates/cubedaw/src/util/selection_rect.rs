@@ -54,7 +54,7 @@ impl SelectionRect {
         }
         if let Some(drag_start_pos) = self.drag_start_pos {
             if let Some(pointer_pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
-                const SELECTION_COLOR: egui::Color32 = egui::Color32::from_rgb(0, 32, 200);
+                const SELECTION_COLOR: egui::Color32 = egui::Color32::from_rgb(0, 64, 200);
                 let rect = egui::Rect::from_two_pos(drag_start_pos, pointer_pos);
                 ui.painter().rect(
                     rect,

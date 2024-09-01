@@ -28,17 +28,17 @@ impl crate::Node for TrackInputNode {
 }
 
 impl TrackInputNode {
-    pub fn set_buffer(&mut self, buffer: &'static [crate::BufferType]) {
+    pub fn start(&mut self, buffer: &'static [crate::BufferType]) {
         let old = self.buffer.replace(buffer);
         #[cfg(debug_assertions)]
         if old.is_some() {
-            panic!("set_buffer() called on TrackInputNode with a buffer")
+            panic!("start() called on TrackInputNode with a buffer")
         }
     }
-    pub fn take_buffer(&mut self) -> &'static [crate::BufferType] {
+    pub fn end(&mut self) -> &'static [crate::BufferType] {
         self.buffer
             .take()
-            .expect("take_buffer() called on TrackInputNode without a buffer")
+            .expect("end() called on TrackInputNode without a buffer")
     }
 }
 

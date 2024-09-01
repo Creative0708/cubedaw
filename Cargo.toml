@@ -22,9 +22,7 @@ needless_question_mark = "allow" # makes code harder to read in long question ma
 unusual_byte_groupings = "allow" # misunderstands floating-point binary representation
 
 [workspace.dependencies]
-# some features are in the repo but not released yet
-# TODO change this to stable after the features/fixes get merged in
-egui = { git = "https://github.com/emilk/egui.git", rev = "d4e8966aac9347965f8d02310ecf2c9f23bb9bbc", default-features = false }
+egui = "0.28.1"
 log = "0.4.22"
 ahash = "0.8.11"
 smallvec = "1.13.2"

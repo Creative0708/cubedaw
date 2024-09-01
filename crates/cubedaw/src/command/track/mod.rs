@@ -41,10 +41,13 @@ impl UiTrackAddOrRemove {
         ui_state
             .tracks
             .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
-        ui_state.track_list.insert(
-            (self.insertion_pos as usize).min(ui_state.track_list.len()),
-            self.inner.id(),
-        );
+        if let Some(parent_track) = self.inner.parent_track() {
+            let parent_track_ui = ui_state.tracks.force_get_mut(parent_track);
+            parent_track_ui.track_list.insert(
+                (self.insertion_pos as usize).min(parent_track_ui.track_list.len()),
+                self.inner.id(),
+            );
+        }
 
         ephemeral_state
             .tracks
@@ -56,7 +59,13 @@ impl UiTrackAddOrRemove {
         ephemeral_state: &mut crate::EphemeralState,
     ) {
         self.ui_data = ui_state.tracks.remove(self.inner.id());
-        ui_state.track_list.retain(|&id| id != self.inner.id());
+        if let Some(parent_track) = self.inner.parent_track() {
+            ui_state
+                .tracks
+                .force_get_mut(parent_track)
+                .track_list
+                .retain(|&id| id != self.inner.id());
+        }
 
         ephemeral_state.tracks.remove(self.inner.id());
     }
