@@ -33,6 +33,65 @@ impl UiTrackAddOrRemove {
         }
     }
 
+    pub fn add_generic_track(
+        id: Id<Track>,
+        parent_track: Option<Id<Track>>,
+        insertion_pos: u32,
+        node_registry: &cubedaw_lib::NodeRegistry,
+    ) -> Self {
+        let id_note_output = Id::arbitrary();
+        let id_track_output = Id::arbitrary();
+        Self::addition(
+            id,
+            cubedaw_lib::Track::new_section({
+                let mut patch = cubedaw_lib::Patch::default();
+
+                patch.insert_node(
+                    id_note_output,
+                    node_registry.create_data(Id::new("builtin:note_output"), Default::default()),
+                    vec![0.0],
+                    1,
+                );
+                patch.insert_node(
+                    id_track_output,
+                    node_registry.create_data(Id::new("builtin:track_output"), Default::default()),
+                    vec![0.0],
+                    0,
+                );
+
+                patch
+            }),
+            Some(crate::state::ui::TrackUiState {
+                name: format!("Track {:04x}", id.raw().get() >> 48),
+                patch: crate::state::ui::PatchUiState {
+                    nodes: {
+                        let mut map = cubedaw_lib::IdMap::new();
+                        map.insert(
+                            id_note_output,
+                            crate::state::ui::NodeUiState {
+                                selected: false,
+                                pos: egui::pos2(-320.0, 0.0),
+                                width: 128.0,
+                            },
+                        );
+                        map.insert(
+                            id_track_output,
+                            crate::state::ui::NodeUiState {
+                                selected: false,
+                                pos: egui::pos2(320.0, 0.0),
+                                width: 128.0,
+                            },
+                        );
+                        map
+                    },
+                },
+                ..Default::default()
+            }),
+            parent_track,
+            0,
+        )
+    }
+
     fn execute_add(
         &mut self,
         ui_state: &mut crate::UiState,
@@ -97,45 +156,6 @@ impl UiStateCommand for UiTrackAddOrRemove {
 
     fn inner(&mut self) -> Option<&mut dyn cubedaw_command::StateCommandWrapper> {
         Some(&mut self.inner)
-    }
-}
-
-pub struct UiTrackRename {
-    id: Id<Track>,
-    data: String,
-}
-
-impl UiTrackRename {
-    pub fn new(id: Id<Track>, name: String) -> Self {
-        Self { id, data: name }
-    }
-
-    fn swap_data(&mut self, ui_state: &mut crate::UiState) {
-        core::mem::swap(
-            &mut ui_state
-                .tracks
-                .get_mut(self.id)
-                .expect("nonexistent track")
-                .name,
-            &mut self.data,
-        );
-    }
-}
-
-impl UiStateCommand for UiTrackRename {
-    fn ui_execute(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        self.swap_data(ui_state);
-    }
-    fn ui_rollback(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        self.swap_data(ui_state);
     }
 }
 

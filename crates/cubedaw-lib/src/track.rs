@@ -9,7 +9,7 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn new_empty(patch: Patch) -> Self {
+    pub fn new_section(patch: Patch) -> Self {
         Self {
             patch,
             inner: TrackInner::Section(SectionTrack::new()),
@@ -57,15 +57,20 @@ impl TrackInner {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SectionTrack {
+    polyphony: u32,
     section_map: IdMap<Section>,
     sections: BTreeMap<Range, Id<Section>>,
 }
 
 impl SectionTrack {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            polyphony: 32,
+            section_map: Default::default(),
+            sections: Default::default(),
+        }
     }
 
     pub fn check_overlap(&self) {
@@ -175,6 +180,18 @@ impl SectionTrack {
                 self.section_map.get(id).unwrap_or_else(|| unreachable!()),
             )
         })
+    }
+
+    pub fn polyphony(&self) -> u32 {
+        self.polyphony
+    }
+    pub fn set_polyphony(&mut self, polyphony: u32) {
+        self.polyphony = polyphony;
+    }
+}
+impl Default for SectionTrack {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

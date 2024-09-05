@@ -7,7 +7,7 @@ members = [
     "crates/cubedaw-lib",
     "crates/cubedaw-worker",
     "crates/cubedaw-command",
-    "crates/cubedaw-pluginlib",
+    # "crates/cubedaw-pluginlib",
     "crates/cubedaw-plugin",
     "crates/cubedaw-default-plugins",
 ]

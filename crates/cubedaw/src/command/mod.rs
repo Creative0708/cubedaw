@@ -1,4 +1,4 @@
-// Like cubedaw-command, but allowing
+//! Like cubedaw-command, but with `UiState` support.
 
 use cubedaw_command::{StateCommand, StateCommandWrapper};
 use egui::util::id_type_map::TypeId;
@@ -24,18 +24,6 @@ pub trait UiStateCommand: 'static + Send {
     // TODO should there be a default impl? kinda seems like a footgun if you forget to implement it
     fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
         None
-    }
-}
-impl<T: StateCommand> UiStateCommand for T {
-    fn ui_execute(&mut self, _ui_state: &mut UiState, _ephemeral_state: &mut EphemeralState) {}
-    fn ui_rollback(&mut self, _ui_state: &mut UiState, _ephemeral_state: &mut EphemeralState) {}
-
-    fn try_merge(&mut self, other: &Self) -> bool {
-        StateCommand::try_merge(self, other)
-    }
-
-    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
-        Some(self)
     }
 }
 
@@ -89,4 +77,71 @@ impl dyn UiStateCommandWrapper {
             None
         }
     }
+}
+
+pub struct UiStateCommandNoop<T: StateCommand>(pub T);
+
+impl<T: StateCommand> UiStateCommand for UiStateCommandNoop<T> {
+    fn ui_execute(&mut self, _ui_state: &mut UiState, _ephemeral_state: &mut EphemeralState) {}
+    fn ui_rollback(&mut self, _ui_state: &mut UiState, _ephemeral_state: &mut EphemeralState) {}
+
+    fn try_merge(&mut self, other: &Self) -> bool {
+        StateCommand::try_merge(&mut self.0, &other.0)
+    }
+
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
+        Some(&mut self.0)
+    }
+}
+
+pub trait IntoUiStateCommand<T: UiStateCommand> {
+    fn into_ui_state_command(self) -> T;
+}
+
+impl<T: StateCommand> IntoUiStateCommand<UiStateCommandNoop<T>> for T {
+    fn into_ui_state_command(self) -> UiStateCommandNoop<T> {
+        UiStateCommandNoop(self)
+    }
+}
+
+impl<T: UiStateCommand> IntoUiStateCommand<T> for T {
+    fn into_ui_state_command(self) -> Self {
+        self
+    }
+}
+
+pub struct FunctionUiStateCommand<
+    F: FnMut(&mut UiState, &mut EphemeralState, UiActionType) + Send + 'static,
+>(F);
+
+impl<F: FnMut(&mut UiState, &mut EphemeralState, UiActionType) + Send + 'static> UiStateCommand
+    for FunctionUiStateCommand<F>
+{
+    fn ui_execute(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState) {
+        (self.0)(ui_state, ephemeral_state, UiActionType::Execute);
+    }
+    fn ui_rollback(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState) {
+        (self.0)(ui_state, ephemeral_state, UiActionType::Execute);
+    }
+
+    fn try_merge(&mut self, _other: &Self) -> bool {
+        false
+    }
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
+        None
+    }
+}
+
+// convenience impl for "inline" state commands
+impl<F: FnMut(&mut UiState, &mut EphemeralState, UiActionType) + Send + 'static>
+    IntoUiStateCommand<FunctionUiStateCommand<F>> for F
+{
+    fn into_ui_state_command(self) -> FunctionUiStateCommand<F> {
+        FunctionUiStateCommand(self)
+    }
+}
+
+pub enum UiActionType {
+    Execute,
+    Rollback,
 }

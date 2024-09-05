@@ -899,10 +899,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cubedaw-pluginlib"
-version = "0.1.0"
-
-[[package]]
 name = "cubedaw-worker"
 version = "0.1.0"
 dependencies = [

@@ -363,7 +363,7 @@ mod tests {
         let options = WorkerOptions::default();
 
         {
-            let track = Track::new_empty(Patch::new());
+            let track = Track::new_section(Patch::new());
             WorkerSectionTrackState::empty(&track, track.inner.section().unwrap(), &options);
         }
         {
@@ -372,3 +372,47 @@ mod tests {
         }
     }
 }
+
+// TODO
+// #[derive(Debug, Clone)]
+// pub struct IdVecMap<K: 'static, T = K> {
+//     inner: Box<[Option<(Id<K>, T)>]>,
+// }
+// impl<K: 'static, T> IdVecMap<K, T> {
+//     pub fn new(capacity: usize) -> Self {
+//         Self {
+//             inner: {
+//                 let mut vec = Vec::with_capacity(capacity);
+//                 vec.resize_with(capacity, || None);
+//                 vec.into_boxed_slice()
+//             },
+//         }
+//     }
+
+//     fn find_empty_slot(&mut self) -> Option<&mut Option<(Id<K>, T)>> {
+//         self.inner.iter_mut().find(|o| o.is_none())
+//     }
+//     fn find_slot(&mut self, id: Id<K>) -> Option<&mut Option<(Id<K>, T)>> {
+//         self.inner
+//             .iter_mut()
+//             .find(|o| matches!(o, Some((slot_id, _)) if *slot_id == id))
+//     }
+
+//     pub fn insert(&mut self, id: Id<K>, val: T) -> Result<(), T> {
+//         match self.find_empty_slot() {
+//             Some(slot) => {
+//                 *slot = Some((id, val));
+//                 Ok(())
+//             }
+//             None => Err(val),
+//         }
+//     }
+
+//     pub fn remove(&mut self, id: Id<K>) -> Option<T> {
+//         self.find_slot(id).map(|slot| slot.take().unwrap().1)
+//     }
+// }
+
+// impl<K, V> IntoIterator for IdVecMap<K, T> {
+//     type Item = ;
+// }

@@ -102,13 +102,13 @@ impl cubedaw_lib::Node for OscillatorNode {
                     sin01(oscillator_cycle)
                 },
                 OscillatorNodeType::Saw => oscillator_cycle * 2.0 - 1.0,
-                OscillatorNodeType::Square => 1.0f32.abs(),
+                OscillatorNodeType::Square => 1.0f32.copysign(oscillator_cycle - 0.5),
                 OscillatorNodeType::Triangle => 1.0 - (2.0 - oscillator_cycle * 4.0).abs(),
             };
             output.set(i, val * volume[i]);
 
             let increment = cubedaw_lib::pitch_to_hertz(pitch[i]) / ctx.sample_rate() as f32;
-            // for math reasons all the infinities, NaNs, and negative numbers have a bit
+            // for IEEE 754 reasons all the infinities, NaNs, and negative numbers have a bit
             // representation that is greater than 1.0f32.to_bits().
             // this prevents a NaN/infinity from poisoning self.oscillator_cycle
             if increment.to_bits() < 1.0f32.to_bits() {

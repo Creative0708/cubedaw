@@ -34,14 +34,14 @@ fn transform_viewport(transform: TSTransform, viewport: Rect) -> TSTransform {
 }
 
 impl crate::Screen for PatchTab {
-    fn create(ctx: &mut crate::Context) -> Self
+    fn create(state: &cubedaw_lib::State, ui_state: &crate::UiState) -> Self
     where
         Self: Sized,
     {
         Self {
             id: Id::arbitrary(),
 
-            track_id: ctx.ui_state.get_single_selected_track(),
+            track_id: ui_state.get_single_selected_track(),
 
             transform: TSTransform::IDENTITY,
 
@@ -346,7 +346,7 @@ impl PatchTab {
                             );
                             prepared.process_interaction(
                                 node_id.cast(),
-                                drag_response,
+                                &drag_response,
                                 (track_id, node_id),
                                 node_ui.selected,
                             );

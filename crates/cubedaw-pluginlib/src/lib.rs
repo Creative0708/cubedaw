@@ -1,4 +1,7 @@
-// wow, so much code here
+#[cfg(not(target_family = "wasm"))]
+mod no {
+    compile_error!("Non-WebAssembly targets are not supported");
+}
 
 /*
 TODO:
@@ -16,9 +19,9 @@ pub enum Attribute {
 extern "C" {
     // can't use a static global here. https://github.com/rust-lang/rust/issues/65987#issuecomment-566271861
     pub fn sample_rate() -> u32;
-    pub fn input(index: u32) -> f32;
-    pub fn output(index: u32, sample: f32);
-    pub fn attribute(attr: Attribute) -> f32;
+    pub fn input(index: u32) -> f32x16;
+    pub fn output(index: u32, val: f32x16);
+    pub fn attribute(attr: Attribute, sample: u8) -> f32x16;
 }
 
 // TODO possibly turn into proc_macro?

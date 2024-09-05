@@ -5,7 +5,7 @@ use cubedaw_lib::Id;
 use crate::{app::Tab, Context};
 
 pub trait Screen: Any {
-    fn create(ctx: &mut Context) -> Self
+    fn create(state: &cubedaw_lib::State, ui_state: &crate::UiState) -> Self
     where
         Self: Sized;
 

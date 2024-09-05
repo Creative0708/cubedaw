@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cubedaw_lib::Id;
+use cubedaw_lib::{Id, IdMap};
 use egui_dock::{DockArea, DockState};
 
 use crate::{
@@ -59,8 +59,6 @@ impl CubedawApp {
                 registry
             });
 
-            let track_id = Id::arbitrary();
-
             execute(
                 crate::command::track::UiTrackAddOrRemove::addition(
                     Id::arbitrary(),
@@ -79,16 +77,11 @@ impl CubedawApp {
 
             for i in 1..=6 {
                 execute(
-                    crate::command::track::UiTrackAddOrRemove::addition(
-                        if i == 1 { track_id } else { Id::arbitrary() },
-                        cubedaw_lib::Track::new_empty(cubedaw_lib::Patch::default()),
-                        Some(crate::state::ui::TrackUiState {
-                            selected: i == 1,
-                            name: format!("Unnamed Track #{i}"),
-                            ..Default::default()
-                        }),
+                    crate::command::track::UiTrackAddOrRemove::add_generic_track(
+                        Id::arbitrary(),
                         Some(state.root_track),
-                        0,
+                        i - 1,
+                        &node_registry,
                     ),
                     &mut state,
                     &mut ui_state,
@@ -126,8 +119,10 @@ impl CubedawApp {
             None,
         );
 
-        ctx.create_tab::<crate::tab::pianoroll::PianoRollTab>();
-        ctx.create_tab::<crate::tab::track::TrackTab>();
+        ctx.tabs
+            .create_tab::<crate::tab::pianoroll::PianoRollTab>(ctx.state, ctx.ui_state);
+        ctx.tabs
+            .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
         // ctx.create_tab::<PatchTab>();
 
         let result = ctx.finish();
@@ -225,7 +220,7 @@ impl eframe::App for CubedawApp {
 
         self.worker_host.handle_events();
 
-        let mut ctx =
+        let ctx =
             Context::new(
                 &self.state,
                 &self.ui_state,
@@ -258,15 +253,20 @@ impl eframe::App for CubedawApp {
                 });
                 ui.menu_button("Window", |ui| {
                     if ui.button("Tracks").clicked() {
-                        ctx.create_tab::<crate::tab::track::TrackTab>();
+                        ctx.tabs
+                            .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
                         ui.close_menu();
                     }
                     if ui.button("Patch Editor").clicked() {
-                        ctx.create_tab::<crate::tab::patch::PatchTab>();
+                        ctx.tabs
+                            .create_tab::<crate::tab::patch::PatchTab>(ctx.state, ctx.ui_state);
                         ui.close_menu();
                     }
                     if ui.button("Piano Roll").clicked() {
-                        ctx.create_tab::<crate::tab::pianoroll::PianoRollTab>();
+                        ctx.tabs.create_tab::<crate::tab::pianoroll::PianoRollTab>(
+                            ctx.state,
+                            ctx.ui_state,
+                        );
                         ui.close_menu();
                     }
                 });
@@ -320,9 +320,11 @@ impl eframe::App for CubedawApp {
                 self.worker_host.stop_processing();
             }
         }
-        if let Some(is_redo) = egui_ctx.input(|i| {
-            (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
-        }) {
+        if egui_ctx.memory(|mem| mem.focused().is_none())
+            && let Some(is_redo) = egui_ctx.input(|i| {
+                (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)
+            })
+        {
             let mut state_commands = Vec::new();
             if is_redo {
                 if let Some(actions_being_redone) = self.undo_stack.get_mut(self.undo_index) {
@@ -392,7 +394,7 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
     }
 
     fn on_close(&mut self, &mut id: &mut Self::Tab) -> bool {
-        self.ctx.queue_tab_removal_from_map(id);
+        self.ctx.tabs.queue_tab_removal_from_map(id);
         true
     }
 }

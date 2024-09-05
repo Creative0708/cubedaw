@@ -64,8 +64,15 @@ impl NoteProperty {
         Self(unsafe { NonZeroU32::new_unchecked(val) })
     }
 
-    // SAFETY: duh
-    pub const PITCH: Self = unsafe { Self::new_unchecked(1) };
+    const fn new_or_panic(val: u32) -> Self {
+        match Self::new(val) {
+            Some(p) => p,
+            None => panic!("0 passed to NoteProperty::new_or_panic"),
+        }
+    }
+    pub const PITCH: Self = Self::new_or_panic(1);
+    pub const TIME_SINCE_START: Self = Self::new_or_panic(2);
+    pub const BEATS_SINCE_START: Self = Self::new_or_panic(3);
 }
 
 pub trait Node: 'static + Sized + Send + Clone {

@@ -117,7 +117,7 @@ impl<T, E> SyncBuffer<T, E> {
 
     pub fn reset(&mut self) -> &mut T {
         let pair = self.inner.mutex.get_mut().expect("mutex poisoned");
-        pair.0 = 0;
+        pair.0 = UNPRIMED;
 
         pair.1.get_mut()
     }

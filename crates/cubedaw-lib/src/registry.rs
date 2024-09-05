@@ -1,6 +1,6 @@
 use std::{any::TypeId, ops};
 
-use crate::{DynNode, DynNodeState, Id, IdMap, Node, NodeCreationContext, ResourceKey};
+use crate::{DynNode, DynNodeState, Id, IdMap, Node, NodeCreationContext, NodeData, ResourceKey};
 use ahash::{HashMap, HashMapExt};
 
 use crate::builtin_nodes as nodes;
@@ -118,6 +118,16 @@ impl NodeRegistry {
             panic!("invalid key id passed to create_state: {key_id:?}");
         };
         (entry.node_state_factory)(creation_context)
+    }
+    pub fn create_data(
+        &self,
+        key_id: Id<ResourceKey>,
+        creation_context: NodeCreationContext<'_>,
+    ) -> NodeData {
+        NodeData {
+            key_id,
+            inner: self.create_state(key_id, creation_context),
+        }
     }
 
     pub fn create_node_and_state(

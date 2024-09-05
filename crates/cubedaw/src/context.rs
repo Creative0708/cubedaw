@@ -4,7 +4,7 @@ use cubedaw_lib::{Id, IdMap, PreciseSongPos, State};
 
 use crate::{
     app::Tab,
-    command::{UiStateCommand, UiStateCommandWrapper},
+    command::{IntoUiStateCommand, UiStateCommand, UiStateCommandWrapper},
     EphemeralState, Screen, UiState,
 };
 
@@ -30,8 +30,6 @@ pub struct Context<'a> {
 
     // State tracker to track events that mutate state or ui_state.
     pub tracker: UiStateTracker,
-
-    dock_events: Vec<DockEvent>,
 
     focused_tab: Option<Id<Tab>>,
 
@@ -61,7 +59,6 @@ impl<'a> Context<'a> {
             node_registry,
 
             tracker: UiStateTracker::new(),
-            dock_events: Vec::new(),
 
             focused_tab,
 
@@ -73,31 +70,6 @@ impl<'a> Context<'a> {
 
     pub fn duration_since_last_frame(&self) -> f32 {
         self.time_since_last_frame
-    }
-
-    pub fn get_or_create_tab<T: Screen>(&mut self) -> &mut T {
-        if self.tabs.has_tab::<T>() {
-            return self.tabs.get_tab().unwrap();
-        }
-
-        self.create_tab()
-    }
-    pub fn create_tab<T: Screen>(&mut self) -> &mut T {
-        let tab = T::create(self);
-        let id = tab.id();
-
-        self.dock_events.push(DockEvent::AddTabToDockState(id));
-
-        let tab = self.tabs.map.insert_and_get_mut(id, Box::new(tab));
-
-        // TODO any way to safely remove the unreachable here?
-        (&mut **tab as &mut dyn Any)
-            .downcast_mut()
-            .unwrap_or_else(|| unreachable!())
-    }
-
-    pub fn queue_tab_removal_from_map(&mut self, id: Id<Box<dyn Screen>>) {
-        self.dock_events.push(DockEvent::RemoveTabFromMap(id))
     }
 
     pub fn focused_tab(&self) -> Option<Id<Tab>> {
@@ -114,7 +86,7 @@ impl<'a> Context<'a> {
     pub fn finish(self) -> ContextResult {
         self.ephemeral_state.selection_rect.finish();
         ContextResult {
-            dock_events: self.dock_events,
+            dock_events: core::mem::take(&mut self.tabs.dock_events),
             tracker: self.tracker.finish(),
         }
     }
@@ -123,6 +95,7 @@ impl<'a> Context<'a> {
 #[derive(Default)]
 pub struct Tabs {
     pub map: IdMap<Tab>,
+    dock_events: Vec<DockEvent>,
 }
 
 impl Tabs {
@@ -143,6 +116,38 @@ impl Tabs {
             .map
             .iter()
             .any(|(_, tab)| (&**tab as &dyn Any).is::<T>());
+    }
+
+    pub fn get_or_create_tab<T: Screen>(
+        &mut self,
+        state: &cubedaw_lib::State,
+        ui_state: &crate::UiState,
+    ) -> &mut T {
+        if self.has_tab::<T>() {
+            return self.get_tab().unwrap();
+        }
+
+        self.create_tab(state, ui_state)
+    }
+    pub fn create_tab<T: Screen>(
+        &mut self,
+        state: &cubedaw_lib::State,
+        ui_state: &crate::UiState,
+    ) -> &mut T {
+        let tab = T::create(state, ui_state);
+        let id = tab.id();
+
+        self.dock_events.push(DockEvent::AddTabToDockState(id));
+
+        let tab = self.map.insert_and_get_mut(id, Box::new(tab));
+
+        (&mut **tab as &mut dyn Any)
+            .downcast_mut()
+            .unwrap_or_else(|| unreachable!())
+    }
+
+    pub fn queue_tab_removal_from_map(&mut self, id: Id<Box<dyn Screen>>) {
+        self.dock_events.push(DockEvent::RemoveTabFromMap(id))
     }
 }
 
@@ -170,12 +175,14 @@ impl UiStateTracker {
             strong: false,
         }
     }
-    pub fn add(&mut self, command: impl UiStateCommand) {
+    pub fn add<I: UiStateCommand>(&mut self, command: impl IntoUiStateCommand<I>) {
         // dbg!(std::any::type_name_of_val(&command));
         self.strong = true;
         self.add_weak(command)
     }
-    pub fn add_weak(&mut self, command: impl UiStateCommand) {
+    pub fn add_weak<I: UiStateCommand>(&mut self, command: impl IntoUiStateCommand<I>) {
+        let command = command.into_ui_state_command();
+
         // dbg!(std::any::type_name_of_val(&command));
         if let Some(last) = self.commands.last_mut() {
             if last.try_merge(&command) {

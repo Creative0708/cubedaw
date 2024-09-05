@@ -1,8 +1,4 @@
-use crate::{
-    id::IdMap,
-    track::{GroupTrack, Track},
-    Id, Range,
-};
+use crate::{id::IdMap, track::Track, Id, Range};
 
 #[derive(Debug, Clone)]
 pub struct State {

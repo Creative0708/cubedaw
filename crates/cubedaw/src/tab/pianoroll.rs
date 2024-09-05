@@ -15,7 +15,7 @@ use crate::{
 pub struct PianoRollTab {
     id: Id<Tab>,
 
-    track: Option<Id<Track>>,
+    track_id: Option<Id<Track>>,
 
     // Vertical zoom. Each note is this tall
     units_per_pitch: f32,
@@ -40,11 +40,11 @@ fn snap_pos(pos: i64, units_per_tick: f32) -> i64 {
 }
 
 impl crate::Screen for PianoRollTab {
-    fn create(ctx: &mut crate::Context) -> Self {
+    fn create(state: &cubedaw_lib::State, ui_state: &crate::UiState) -> Self {
         Self {
             id: Id::arbitrary(),
 
-            track: ctx.ui_state.get_single_selected_track(),
+            track_id: ui_state.get_single_selected_track(),
 
             units_per_pitch: 16.0,
             units_per_tick: 0.5,
@@ -66,7 +66,7 @@ impl crate::Screen for PianoRollTab {
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::both().show_viewport(ui, |ui, viewport| {
-                if let Some(track_id) = self.track
+                if let Some(track_id) = self.track_id
                     && ctx.state.tracks.has(track_id)
                 {
                     self.pianoroll(ctx, ui, viewport);
@@ -80,7 +80,7 @@ impl crate::Screen for PianoRollTab {
 
 impl PianoRollTab {
     fn pianoroll(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui, viewport: Rect) {
-        let Some(track_id) = self.track else {
+        let Some(track_id) = self.track_id else {
             unreachable!()
         };
         let Some(outer_track) = ctx.state.tracks.get(track_id) else {
@@ -277,7 +277,7 @@ impl PianoRollTab {
                         prepared.set_scale((1.0 / self.units_per_tick, 1.0 / self.units_per_pitch));
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
-                    prepared.process_interaction(note_id.cast(), note_interaction, (track_id, section_id, note_id), is_selected);
+                    prepared.process_interaction(note_id.cast(), &note_interaction, (track_id, section_id, note_id), is_selected);
                 }
             };
 
@@ -546,7 +546,7 @@ impl PianoRollTab {
                     if header_resp.dragged() {
                         prepared.set_scale((1.0 / self.units_per_tick, 0.0));
                     }
-                    prepared.process_interaction(section_id.cast(), header_resp, (track_id, section_id), section_ui.selected);
+                    prepared.process_interaction(section_id.cast(), &header_resp, (track_id, section_id), section_ui.selected);
                 }
             },
         );
@@ -710,5 +710,10 @@ impl PianoRollTab {
                 ui.label("No track selected");
             },
         );
+    }
+
+    pub fn select_track(&mut self, track_id: Option<Id<Track>>) {
+        self.track_id = track_id;
+        self.currently_drawn_note = None;
     }
 }
