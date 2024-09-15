@@ -1,0 +1,8 @@
+[unstable]
+codegen-backend = true
+
+[build]
+target = ["wasm32-unknown-unknown"]
+
+[profile.dev]
+codegen-backend = "llvm"

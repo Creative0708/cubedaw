@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+package.edition = "2021"
+package.rust-version = "1.76.0"
+members = ["cubedaw-default-plugins", "cubedaw-pluginlib"]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "forbid"

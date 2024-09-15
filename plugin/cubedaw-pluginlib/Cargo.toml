@@ -1,0 +1,16 @@
+[package]
+authors = ["Colin Cai <therealcreative0708@gmail.com>"]
+edition.workspace = true
+name = "cubedaw-pluginlib"
+rust-version.workspace = true
+version = "0.1.0"
+
+[lib]
+
+[features]
+portable_simd = []
+
+[dependencies]
+
+[lints]
+workspace = true
