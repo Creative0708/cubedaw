@@ -14,9 +14,9 @@ pub struct MathNodeState {
 }
 
 #[no_mangle]
-fn do_add(state: MathNodeState) {
-    let in1 = cubedaw_pluginlib::input(0);
-    let in2 = cubedaw_pluginlib::input(1);
+fn do_math(state: MathNodeState) {
+    let in1 = cubedaw_pluginlib::input::<0>();
+    let in2 = cubedaw_pluginlib::input::<1>();
 
     let val = match state.node_type {
         MathNodeType::Add => in1 + in2,
@@ -25,8 +25,8 @@ fn do_add(state: MathNodeState) {
         MathNodeType::Divide => in1 / in2,
     };
 
-    cubedaw_pluginlib::output(0, val);
+    cubedaw_pluginlib::output::<0>(val);
 }
 
 #[link_section = "cubedaw:pluginlist"]
-static _ADD: [u8; 20] = *b"\x0ccubedaw:math\x06do_add";
+static _ADD: [u8; 21] = *b"\x0ccubedaw:math\x07do_math";

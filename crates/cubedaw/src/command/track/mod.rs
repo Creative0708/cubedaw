@@ -15,13 +15,13 @@ impl UiTrackAddOrRemove {
     pub fn addition(
         id: Id<Track>,
         data: Track,
-        ui_data: Option<TrackUiState>,
+        ui_data: TrackUiState,
         parent_track: Option<Id<Track>>,
         insertion_pos: u32,
     ) -> Self {
         Self {
             inner: TrackAddOrRemove::addition(id, data, parent_track),
-            ui_data,
+            ui_data: Some(ui_data),
             insertion_pos,
         }
     }
@@ -58,10 +58,14 @@ impl UiTrackAddOrRemove {
                     vec![0.0],
                     0,
                 );
+                patch.insert_cable(
+                    Id::arbitrary(),
+                    cubedaw_lib::Cable::new(id_note_output, 0, id_track_output, 0),
+                );
 
                 patch
             }),
-            Some(crate::state::ui::TrackUiState {
+            crate::state::ui::TrackUiState {
                 name: format!("Track {:04x}", id.raw().get() >> 48),
                 patch: crate::state::ui::PatchUiState {
                     nodes: {
@@ -70,7 +74,7 @@ impl UiTrackAddOrRemove {
                             id_note_output,
                             crate::state::ui::NodeUiState {
                                 selected: false,
-                                pos: egui::pos2(-320.0, 0.0),
+                                pos: egui::pos2(-160.0, 0.0),
                                 width: 128.0,
                             },
                         );
@@ -78,7 +82,7 @@ impl UiTrackAddOrRemove {
                             id_track_output,
                             crate::state::ui::NodeUiState {
                                 selected: false,
-                                pos: egui::pos2(320.0, 0.0),
+                                pos: egui::pos2(160.0, 0.0),
                                 width: 128.0,
                             },
                         );
@@ -86,9 +90,9 @@ impl UiTrackAddOrRemove {
                     },
                 },
                 ..Default::default()
-            }),
+            },
             parent_track,
-            0,
+            insertion_pos,
         )
     }
 

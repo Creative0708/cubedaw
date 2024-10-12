@@ -1,66 +1,66 @@
-unsafe fn sin01(x: f32) -> f32 {
-    use std::f32::consts;
-    use std::sync::LazyLock;
+use cubedaw_lib::NodeInputUiOptions;
+use egui::ComboBox;
+use std::f32::consts;
 
-    const TABLE_SIZE: usize = 1024;
-    static SINE_TABLE: LazyLock<[f32; TABLE_SIZE + 2]> = LazyLock::new(|| {
-        let mut table = [0.0; TABLE_SIZE + 2];
-        for (i, val) in table.iter_mut().enumerate() {
-            *val = f32::sin(i as f32 / TABLE_SIZE as f32 * consts::FRAC_PI_2);
+const TABLE_SIZE: usize = 256;
+static SINE_TABLE: [f32; TABLE_SIZE + 2] = const {
+    /// Very slow but accurate sine function using the Taylor series.
+    /// Good enough for a lookup table at compile time.
+    const fn slow_const_sin(x: f32) -> f32 {
+        let mut i = 0;
+
+        let mut val = 1.0;
+        let mut ans = 0.0;
+        loop {
+            i += 1;
+            val *= x / i as f32;
+            if i % 2 == 1 {
+                let prev_ans = ans;
+                if i % 4 == 1 {
+                    ans += val;
+                } else {
+                    ans -= val;
+                }
+                if prev_ans == ans {
+                    // val is too small to contribute anything to ans anymore, stop the loop
+                    break;
+                }
+            }
         }
-        table
-    });
-
-    let y = x * 4.0;
-
-    // The u32 representation of positive finite f32s is monotonically increasing
-    // (that is, if y.to_bits() > x.to_bits(), y > x and vice versa)
-    // Additionally, the NaNs and infinities have an exponent field of all ones, so
-    // they are all always greater than every finite positive f32.
-    // This means we can do a cheap u32 comparison to check if a value either
-    // causes UB in to_int_unchecked or is too imprecise to produce a useful result.
-    // In both cases 0 is a sensible return value.
-    //
-    // Yippee!
-    let casted = y.to_bits();
-
-    // 67108864.0f32. Beyond this the f32 is too imprecise to be
-    // anything other than an integer that is 0 (mod 4).
-    if casted >= 0b01001100100000000000000000000000 {
-        return 0.0;
+        ans
     }
 
-    // SAFETY: We checked for NaNs, infinities, and representability.
-    // See above for reasoning.
-    let int = unsafe { y.to_int_unchecked::<i32>() };
-
-    let mut fract = y - int as f32;
-    let flip_y = int & 2 != 0;
-    let flip_x = int & 1 != 0;
-    if flip_x {
-        fract = 1.0 - fract;
+    let mut table = [0.0; TABLE_SIZE + 2];
+    let mut i = 0;
+    while i < table.len() {
+        table[i] = slow_const_sin(i as f32 / TABLE_SIZE as f32 * consts::TAU);
+        i += 1;
     }
+    table
+};
 
-    let index_f32 = fract * TABLE_SIZE as f32;
-    // SAFETY: fract is in the range 0.0..=1.0 so index_f32 is in the range of 0..=TABLE_SIZE
-    let index = unsafe { index_f32.to_int_unchecked::<usize>() };
+/// Computes sin(x * tau) with a lookup table. Very fast.
+///
+/// # Safety
+/// If `0.0 <= x <= 1.0` is true, then this function is safe. Everything else is UB.
+/// This makes infinities and NaNs UB as well. So make sure that doesn't happen.
+pub unsafe fn sin01_unchecked(x: f32) -> f32 {
+    let val = x * TABLE_SIZE as f32;
 
-    // SAFETY: fract is in the range 0.0..=1.0 so index is in the range of 0..=TABLE_SIZE
+    // SAFETY: 0.0 <= x <= 1.0, so 0.0 <= val <= TABLE_SIZE. TABLE_SIZE + 2 is a usize, so this can't overflow.
+    let index: usize = unsafe { val.to_int_unchecked() };
+    let fraction = val - index as f32;
+
+    // SAFETY: 0 <= index <= TABLE_SIZE
     let (val1, val2) = unsafe {
         (
             *SINE_TABLE.get_unchecked(index),
             *SINE_TABLE.get_unchecked(index + 1),
         )
     };
-    let mut val = val1 + (val2 - val1) * (index_f32 - index as f32);
-    if flip_y {
-        val = -val
-    }
-    val
-}
 
-use cubedaw_lib::NodeInputUiOptions;
-use egui::ComboBox;
+    (val2 - val1) * fraction + val1
+}
 
 #[derive(Debug, Clone)]
 pub struct OscillatorNode {
@@ -92,20 +92,19 @@ impl cubedaw_lib::Node for OscillatorNode {
     // TODO optimize (saw/square/whatever waves are optimizable but how the hell do we optimize the sin lookup table)
     fn process(&mut self, state: &Self::State, ctx: &mut dyn cubedaw_lib::NodeContext<'_>) {
         let pitch = ctx.input(0);
-        let volume = ctx.input(1);
         let output = ctx.output(0);
         for i in 0..ctx.buffer_size() {
             let oscillator_cycle = self.oscillator_cycle;
             let val = match state.node_type {
                 OscillatorNodeType::Sine => unsafe {
                     // SAFETY: oscillator_cycle is always within the range 0.0..1.0.
-                    sin01(oscillator_cycle)
+                    sin01_unchecked(oscillator_cycle)
                 },
                 OscillatorNodeType::Saw => oscillator_cycle * 2.0 - 1.0,
                 OscillatorNodeType::Square => 1.0f32.copysign(oscillator_cycle - 0.5),
                 OscillatorNodeType::Triangle => 1.0 - (2.0 - oscillator_cycle * 4.0).abs(),
             };
-            output.set(i, val * volume[i]);
+            output.set(i, val);
 
             let increment = cubedaw_lib::pitch_to_hertz(pitch[i]) / ctx.sample_rate() as f32;
             // for IEEE 754 reasons all the infinities, NaNs, and negative numbers have a bit
@@ -175,26 +174,20 @@ impl OscillatorNodeType {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_sin01() {
-        use crate::node::oscillator::sin01;
+    fn sanity_check() {
+        use std::f32::consts::*;
 
-        unsafe fn test_about_eq(x: f32) {
-            let expected = (x * std::f32::consts::TAU).sin();
-            let actual = unsafe { sin01(x) };
-            if (actual - expected).abs() > 1e-5 {
-                panic!(
-                    "sin({:.02}) failed: expected {expected:.05}, got {actual:.05}",
-                    x * std::f32::consts::TAU
-                );
-            }
-        }
-
-        unsafe {
-            for i in 0..=40 {
-                test_about_eq(i as f32 / 40.0);
-            }
-            test_about_eq(1.0f32.next_down());
-            test_about_eq(0.0f32.next_up());
+        for x in 0..=50 {
+            let val = x as f32 / 50.0;
+            let fast = unsafe { super::sin01_unchecked(val) };
+            let accurate = (val * TAU).sin();
+            assert!(
+                (fast - accurate).abs() < 0.0001,
+                "sin({}): expected {}, got {}",
+                val * TAU,
+                accurate,
+                fast
+            );
         }
     }
 }

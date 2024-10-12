@@ -7,6 +7,8 @@ use egui::{emath::inverse_lerp, text_edit::TextEditState, *};
 pub struct DragValue<'a> {
     reference: &'a mut f32,
 
+    show_number_text: bool,
+    interactable: bool,
     range: Rangef,
     display_range: Rangef,
     display: &'a dyn ValueHandler,
@@ -31,10 +33,24 @@ impl<'a> DragValue<'a> {
         Self {
             reference,
 
+            show_number_text: true,
+            interactable: true,
             range: Rangef::EVERYTHING,
             display_range: Rangef::new(0.0, 1.0),
             display: &DefaultValueDisplay,
             name: None,
+        }
+    }
+    pub fn show_number_text(self, show_number_text: bool) -> Self {
+        Self {
+            show_number_text,
+            ..self
+        }
+    }
+    pub fn interactable(self, interactable: bool) -> Self {
+        Self {
+            interactable,
+            ..self
         }
     }
     pub fn range(self, range: Rangef) -> Self {
@@ -59,6 +75,8 @@ impl<'a> Widget for DragValue<'a> {
         let Self {
             reference,
 
+            show_number_text,
+            interactable,
             range,
             display_range,
             display,
@@ -134,21 +152,25 @@ impl<'a> Widget for DragValue<'a> {
 
             response
         } else {
-            let value_text = display.to_display(value);
-
             let max_width = ui.max_rect().width();
 
-            let number_galley = value_text.into_galley(ui, None, max_width, TextStyle::Button);
+            let number_galley = show_number_text.then(|| {
+                let value_text = display.to_display(value);
+                value_text.into_galley(ui, None, max_width, TextStyle::Button)
+            });
             let name_galley = name.map(|name| {
                 WidgetText::from(name).into_galley(
                     ui,
                     None,
-                    max_width - number_galley.rect.width(),
+                    max_width
+                        - number_galley
+                            .as_ref()
+                            .map_or(0.0, |galley| galley.rect.width()),
                     TextStyle::Button,
                 )
             });
 
-            let mut text_height = number_galley.size().y;
+            let mut text_height = number_galley.as_ref().map_or(8.0, |galley| galley.size().y);
             if let Some(ref name_galley) = name_galley {
                 let name_height = name_galley.size().y;
                 if name_height > text_height {
@@ -158,8 +180,17 @@ impl<'a> Widget for DragValue<'a> {
 
             let desired_height = text_height + padding.y * 2.0;
 
-            let (rect, response) =
-                ui.allocate_at_least(vec2(max_width, desired_height), Sense::click_and_drag());
+            let (rect, mut response) = ui.allocate_at_least(
+                vec2(max_width, desired_height),
+                if interactable {
+                    Sense::click_and_drag()
+                } else {
+                    Sense::hover()
+                },
+            );
+            if interactable {
+                response = response.on_hover_cursor(CursorIcon::ResizeHorizontal);
+            }
 
             // TODO make configurable
             if response.hovered()
@@ -167,8 +198,6 @@ impl<'a> Widget for DragValue<'a> {
             {
                 *reference = display.default_value();
             }
-
-            let mut response = response.on_hover_cursor(CursorIcon::ResizeHorizontal);
 
             if ui.style().explanation_tooltips {
                 response = response.on_hover_text(format!(
@@ -281,11 +310,13 @@ impl<'a> Widget for DragValue<'a> {
                     }
                 };
 
-                let text_pos = text_layout
-                    .align_size_within_rect(number_galley.size(), rect_without_padding)
-                    .min;
+                if let Some(number_galley) = number_galley {
+                    let text_pos = text_layout
+                        .align_size_within_rect(number_galley.size(), rect_without_padding)
+                        .min;
 
-                painter.galley(text_pos, number_galley, visuals.text_color());
+                    painter.galley(text_pos, number_galley, visuals.text_color());
+                }
             }
 
             response

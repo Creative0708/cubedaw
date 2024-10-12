@@ -148,10 +148,10 @@ impl WorkerHost {
                         deleted_notes.push((track_id, note_descriptor));
                     }
                     JobDescriptor::TrackProcess { track_id } => {
-                        // TODO
+                        todo!("{track_id:?}");
                     }
                     JobDescriptor::TrackGroup { track_id } => {
-                        // TODO
+                        todo!("{track_id:?}");
                     }
                 },
             }

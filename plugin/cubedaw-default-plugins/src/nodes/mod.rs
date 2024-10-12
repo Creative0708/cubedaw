@@ -1,2 +1,2 @@
-mod add;
+mod math;
 mod oscillator;

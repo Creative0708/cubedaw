@@ -14,5 +14,5 @@ fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
     wasm::unreachable()
 }
 
-#[link_section = "cubedaw:abi_version"]
+#[link_section = "cubedaw:plugin_version"]
 static _VERSION: [u8; 5] = *b"0.1.0";

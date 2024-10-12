@@ -6,11 +6,13 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
+resourcekey = { path = "../resourcekey" }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 egui = { workspace = true, optional = true }
 meminterval = { workspace = true }
 bytemuck = { workspace = true }
+ascii = { workspace = true }
 
 [features]
 egui = ["dep:egui"]

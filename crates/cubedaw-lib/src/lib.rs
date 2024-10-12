@@ -9,25 +9,23 @@ pub use id::{Id, IdMap, IdSet};
 mod state;
 pub use state::State;
 mod track;
+pub use resourcekey::ResourceKey;
 pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
-mod resource_key;
-pub use resource_key::ResourceKey;
 mod patch;
 pub use patch::{Cable, CableTag, NodeData, NodeEntry, NodeInput, NodeOutput, NodeTag, Patch};
-mod node;
-pub use node::{
-    DataDrain, DataSource, DynNode, DynNodeState, Node, NodeCreationContext, NodeState,
-    NoteProperty,
-};
+// mod node;
+// pub use node::{
+//     DataDrain, DataSource, DynNode, DynNodeState, Node, NodeCreationContext, NodeState,
+//     NoteProperty,
+// };
 mod registry;
 pub use registry::{DynNodeFactory, NodeRegistry, NodeRegistryEntry, NodeStateFactory};
 mod buffer;
 pub use buffer::{Buffer, BufferOwned, BufferType};
 mod util;
-#[cfg(feature = "egui")]
-pub use node::{NodeContext, NodeInputUiOptions, NodeStateWrapper, NodeUiContext, ValueHandler};
+// #[cfg(feature = "egui")]
+// pub use node::{NodeContext, NodeInputUiOptions, NodeStateWrapper, NodeUiContext, ValueHandler};
 pub use util::PreciseSongPos;
-pub mod builtin_nodes;
 
 // TODO replace with more robust system (for scales other than 12TET, etc.)
 pub fn pitch_to_hertz(pitch: f32) -> f32 {

@@ -63,10 +63,10 @@ impl CubedawApp {
                 crate::command::track::UiTrackAddOrRemove::addition(
                     Id::arbitrary(),
                     cubedaw_lib::Track::new_group(cubedaw_lib::Patch::default()),
-                    Some(crate::state::ui::TrackUiState {
+                    crate::state::ui::TrackUiState {
                         name: "Master".into(),
                         ..Default::default()
-                    }),
+                    },
                     None,
                     0,
                 ),
@@ -108,7 +108,7 @@ impl CubedawApp {
             }
         };
 
-        let mut ctx = Context::new(
+        let ctx = Context::new(
             &app.state,
             &app.ui_state,
             &mut app.ephemeral_state,

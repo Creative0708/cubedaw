@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use ahash::HashSetExt;
-use cubedaw_lib::{DynNode, DynNodeState, Id, IdMap, IdSet, NodeEntry, NodeStateWrapper, Patch};
+use cubedaw_lib::{DynNode, DynNodeState, Id, IdMap, IdSet, NodeEntry, Patch};
 
 use crate::WorkerOptions;
 

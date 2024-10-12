@@ -27,7 +27,7 @@ type IdInner = NonZeroU64;
 // This is definitely _not_ what generics are meant to be used for, but it's convenient soooo......
 // Also this may result in unneeded generic impls for stuff like IdMap. :shrug:
 #[repr(transparent)]
-pub struct Id<T: 'static = ()>(IdInner, PhantomData<T>);
+pub struct Id<T = ()>(IdInner, PhantomData<T>);
 
 fn new_impl(source: impl Hash) -> IdInner {
     let mut hasher = new_hasher();
@@ -67,7 +67,7 @@ impl<T> Id<T> {
         Self::from_raw(new_impl(source))
     }
 
-    pub fn with<U>(self, child: impl Hash) -> Id<U> {
+    pub fn with(self, child: impl Hash) -> Self {
         Id::from_raw(with_impl(self.raw(), child))
     }
 
@@ -82,18 +82,18 @@ impl<T> Id<T> {
 
 impl<T> Debug for Id<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO: replace when impl specialization stabilizes
-        // https://rust-lang.github.io/rfcs/1210-impl-specialization.html
-        use std::any::Any;
-        if let Some(&key_id) = (self as &dyn Any).downcast_ref::<Id<crate::ResourceKey>>() {
-            static DEFAULT_REGISTRY: std::sync::LazyLock<crate::NodeRegistry> =
-                std::sync::LazyLock::new(crate::NodeRegistry::new);
+        // // TODO: replace when impl specialization stabilizes
+        // // https://rust-lang.github.io/rfcs/1210-impl-specialization.html
+        // use std::any::Any;
+        // if let Some(&key_id) = (self as &dyn Any).downcast_ref::<Id<crate::ResourceKey>>() {
+        //     static DEFAULT_REGISTRY: std::sync::LazyLock<crate::NodeRegistry> =
+        //         std::sync::LazyLock::new(crate::NodeRegistry::new);
 
-            return match DEFAULT_REGISTRY.get(key_id) {
-                None => f.write_str("Id(<invalid ResourceKey>)"),
-                Some(entry) => write!(f, "Id({:?})", entry.key),
-            };
-        }
+        //     return match DEFAULT_REGISTRY.get(key_id) {
+        //         None => f.write_str("Id(<invalid ResourceKey>)"),
+        //         Some(entry) => write!(f, "Id({:?})", entry.key),
+        //     };
+        // }
 
         if *self == Id::<T>::invalid() {
             return write!(f, "Id::<{}>(<invalid>)", std::any::type_name::<T>());
@@ -171,6 +171,12 @@ impl<T, V> IdMap<T, V> {
     }
     pub fn get_mut_or_insert(&mut self, id: Id<T>, f: impl FnOnce() -> V) -> &mut V {
         self.map.entry(id).or_insert_with(f)
+    }
+    pub fn get_mut_or_insert_default(&mut self, id: Id<T>) -> &mut V
+    where
+        V: Default,
+    {
+        self.get_mut_or_insert(id, Default::default)
     }
     pub fn get_mut_or_default(&mut self, id: Id<T>) -> &mut V
     where

@@ -236,10 +236,10 @@ impl PianoRollTab {
 
         // Handle drawn note
 
-        let result = ctx.ephemeral_state.note_drag.handle_snapped( |egui::Vec2 { x, y }| {
+        let result = ctx.ephemeral_state.drag.handle_snapped(Id::new("notes"), |egui::Vec2 { x, y }| {
             vec2(snap_pos(x.round() as _, self.units_per_tick) as _, y.round())
-        },|prepared| {
-            let mut handle_note = |relative_start_pos: i64, note: &Note, section_and_note_id: Option<(Id<Section>, Id<Note>)>, is_selected: bool| {
+        }, |prepared| {
+            let mut handle_note = |prepared: &mut crate::util::Prepared<'_, _, _>, relative_start_pos: i64, note: &Note, section_and_note_id: Option<(Id<Section>, Id<Note>)>, is_selected: bool| {
                 let movement = prepared.movement().unwrap_or_default();
 
                 let mut note_range = note.range_with(relative_start_pos);
@@ -285,10 +285,8 @@ impl PianoRollTab {
                 let Some((section_id, section_ui,  section_range, section)) = get_section_render_data!(
                     packed_section,
                     {
-                        ctx.ephemeral_state
-                            .section_drag
-                            .raw_movement_x()
-                            .map(|m| snap_pos(m.round() as _, self.units_per_tick))
+                        prepared
+                            .movement_x()
                     },
                     track_ui
                 ) else {
@@ -323,6 +321,7 @@ impl PianoRollTab {
                 // Notes
                 for (note_start, note_id, note) in section.notes() {
                     handle_note(
+                        prepared,
                         section_range.start + note_start,
                         note,
                         Some((section_id, note_id)),
@@ -331,7 +330,7 @@ impl PianoRollTab {
                 }
             }
             if let Some((start_pos, ref note)) = self.currently_drawn_note {
-                handle_note(start_pos, note, None, true);
+                handle_note(prepared, start_pos, note, None, true);
             }
         });
         {
@@ -493,7 +492,8 @@ impl PianoRollTab {
 
         // Section headers
 
-        let result = ctx.ephemeral_state.section_drag.handle_snapped(
+        let result = ctx.ephemeral_state.drag.handle_snapped(
+            Id::new("section"),
             |unsnapped| vec2(snap_pos(unsnapped.x as _, self.units_per_tick) as _, 0.0),
             |prepared| {
                 for packed_section in track.sections() {

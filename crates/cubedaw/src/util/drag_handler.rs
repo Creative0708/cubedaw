@@ -9,9 +9,15 @@ impl<T: Sized + std::hash::Hash + Eq + PartialEq + 'static> SelectablePath for T
 
 #[derive(Debug)]
 pub struct DragHandler {
-    dragged_id: Option<Id>,
+    dragged_id: Option<DraggedId>,
     raw_movement: Vec2,
     scale: Vec2,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DraggedId {
+    id: Id,
+    thing: Id,
 }
 
 impl DragHandler {
@@ -34,6 +40,10 @@ impl DragHandler {
     pub fn is_something_being_dragged(&self) -> bool {
         self.dragged_id.is_some()
     }
+    pub fn is_dragged(&self, id: Id) -> bool {
+        self.dragged_id.is_some_and(|ids| ids.id == id)
+    }
+
     pub fn raw_movement(&self) -> Option<Vec2> {
         self.is_something_being_dragged()
             .then_some(self.raw_movement)
@@ -47,18 +57,31 @@ impl DragHandler {
             .then_some(self.raw_movement.y)
     }
 
+    pub fn raw_movement_for(&self, id: Id) -> Option<Vec2> {
+        self.is_dragged(id).then_some(self.raw_movement)
+    }
+    pub fn raw_movement_x_for(&self, id: Id) -> Option<f32> {
+        self.is_dragged(id).then_some(self.raw_movement.x)
+    }
+    pub fn raw_movement_y_for(&self, id: Id) -> Option<f32> {
+        self.is_dragged(id).then_some(self.raw_movement.y)
+    }
+
     pub fn handle<T: SelectablePath, R>(
         &mut self,
+        id: Id,
         f: impl FnOnce(&mut Prepared<T, fn(Vec2) -> Vec2>) -> R,
     ) -> DragHandlerResult<T, R> {
-        self.handle_snapped(|x| x, f)
+        self.handle_snapped(id, |x| x, f)
     }
     pub fn handle_snapped<T: SelectablePath, R, F: Fn(Vec2) -> Vec2>(
         &mut self,
+        id: Id,
         snap_fn: F,
         f: impl FnOnce(&mut Prepared<T, F>) -> R,
     ) -> DragHandlerResult<T, R> {
         let mut prepared = Prepared {
+            id,
             drag_handler: self,
             selection_changes: HashMap::new(),
             should_deselect_everything: false,
@@ -81,6 +104,8 @@ impl Default for DragHandler {
 }
 
 pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2 = fn(Vec2) -> Vec2> {
+    id: Id,
+
     drag_handler: &'a mut DragHandler,
     // HashMap<changed path, whether it is selected>
     selection_changes: HashMap<T, bool>,
@@ -95,35 +120,49 @@ impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
     pub fn set_scale(&mut self, scale: impl Into<Vec2>) {
         self.drag_handler.set_scale(scale)
     }
-    pub fn dragged_id(&self) -> Option<Id> {
-        self.drag_handler.dragged_id
+    pub fn dragged_thing(&self) -> Option<Id> {
+        self.drag_handler
+            .dragged_id
+            .and_then(|ids| (ids.id == self.id).then_some(ids.thing))
     }
-    pub fn is_something_being_dragged(&self) -> bool {
-        self.drag_handler.is_something_being_dragged()
+    pub fn is_being_dragged(&self) -> bool {
+        self.drag_handler
+            .dragged_id
+            .is_some_and(|ids| ids.id == self.id)
+    }
+    pub fn raw_movement(&self) -> Option<Vec2> {
+        self.is_being_dragged()
+            .then_some(self.drag_handler.raw_movement)
+    }
+    pub fn raw_movement_x(&self) -> Option<f32> {
+        self.is_being_dragged()
+            .then_some(self.drag_handler.raw_movement.x)
+    }
+    pub fn raw_movement_y(&self) -> Option<f32> {
+        self.is_being_dragged()
+            .then_some(self.drag_handler.raw_movement.y)
     }
     pub fn movement(&self) -> Option<Vec2> {
-        self.drag_handler.raw_movement().map(|m| (self.snap_fn)(m))
+        self.raw_movement().map(|m| (self.snap_fn)(m))
     }
     pub fn movement_x(&self) -> Option<f32> {
-        self.drag_handler
-            .raw_movement_x()
+        self.raw_movement_x()
             .map(|x| (self.snap_fn)(Vec2::new(x, 0.0)).x)
     }
     pub fn movement_y(&self) -> Option<f32> {
-        self.drag_handler
-            .raw_movement_y()
+        self.raw_movement_y()
             .map(|y| (self.snap_fn)(Vec2::new(0.0, y)).y)
     }
 
     pub fn process_interaction(
         &mut self,
-        id: Id,
+        thing: Id,
         resp: &egui::Response,
         path: T,
         is_currently_selected: bool,
     ) {
         if resp.drag_started() {
-            self.drag_handler.dragged_id = Some(id);
+            self.drag_handler.dragged_id = Some(DraggedId { id: self.id, thing });
             self.new_drag_movement = Some(Vec2::ZERO);
         }
         if resp.clicked() || (resp.drag_started() && !is_currently_selected) {

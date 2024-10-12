@@ -3,6 +3,8 @@ codegen-backend = true
 
 [build]
 target = ["wasm32-unknown-unknown"]
+rustflags = ["-C", "target-feature=+multivalue,+simd128"]
 
 [profile.dev]
+# cranelift doesn't support wasm :(
 codegen-backend = "llvm"

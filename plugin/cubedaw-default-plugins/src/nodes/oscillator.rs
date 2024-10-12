@@ -25,7 +25,7 @@ pub struct OscillatorNodeState {
 
 #[no_mangle]
 fn do_oscillator(state: OscillatorNodeArgs, buf: &mut OscillatorNodeState) {
-    let pitch = cubedaw_pluginlib::input(0);
+    let pitch = cubedaw_pluginlib::input::<0>();
 
     let increment = crate::util::pitch_to_hertz(pitch)
         * (f32x16::splat(1.0) / f32x16::splat(cubedaw_pluginlib::sample_rate() as f32));
@@ -42,7 +42,7 @@ fn do_oscillator(state: OscillatorNodeArgs, buf: &mut OscillatorNodeState) {
         }
     };
 
-    cubedaw_pluginlib::output(0, val);
+    cubedaw_pluginlib::output::<0>(val);
 }
 
 #[link_section = "cubedaw:pluginlist"]

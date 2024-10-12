@@ -3,6 +3,7 @@ use cubedaw_lib::{NodeState, NodeUiContext};
 use egui::ComboBox;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
 enum MathNodeType {
     Add,
     Subtract,
@@ -67,6 +68,7 @@ impl Node for MathNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct MathNodeState {
     node_type: MathNodeType,
 }

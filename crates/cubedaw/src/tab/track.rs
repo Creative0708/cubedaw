@@ -58,16 +58,22 @@ struct Prepared<'a, 'b> {
     ctx: &'a mut crate::Context<'b>,
     tab: &'a mut TrackTab,
 
+    original_track_list: Option<Vec<TrackListEntry<'b>>>,
     track_list: Vec<TrackListEntry<'b>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TrackListEntry<'a> {
+    id: Id<TrackListEntry<'a>>,
+
     /// If this track weren't selected and being dragged, what would be its y position?
     /// This is used for calculating drag positions.
     actual_pos: f32,
 
     is_highlighted: bool,
+    /// If the user drags a track, would this track be dragged along with it?
+    /// Basically, is this track either selected or a direct or indirect child of a selected track
+    would_be_dragged: bool,
 
     track_id: Id<Track>,
     track: &'a Track,
@@ -175,47 +181,60 @@ impl TrackListEntry<'_> {
 
 impl<'a, 'b> Prepared<'a, 'b> {
     fn new(ctx: &'a mut crate::Context<'b>, ui: &mut egui::Ui, tab: &'a mut TrackTab) -> Self {
-        let mut track_list: Vec<TrackListEntry> = vec![];
+        let mut track_list: Vec<TrackListEntry> = Vec::new();
         let mut current_y = ui.max_rect().top();
         if ctx.state.tracks.get(ctx.state.root_track).is_some() {
             // traverse the track list in order
 
-            let mut track_stack: Vec<(Id<Track>, i32)> = vec![(
-                ctx.state.root_track,
-                if ctx.ui_state.show_root_track { 0 } else { -1 },
-            )];
+            let mut track_stack: Vec<(Id<Track>, Option<TrackListEntry>)> =
+                vec![(ctx.state.root_track, None)];
 
-            while let Some((track_id, depth)) = track_stack.pop() {
+            while let Some((track_id, parent)) = track_stack.pop() {
                 let track = ctx.state.tracks.force_get(track_id);
 
-                // depth < 0 only happens when the track is a root track
-                // and ctx.ui_state.show_root_track is false
-                if depth >= 0 {
+                let mut entry = None;
+                if track_id != ctx.state.root_track || ctx.ui_state.show_root_track {
                     let height = 48.0; // TODO make configurable
+                    let track_ui = ctx.ui_state.tracks.force_get(track_id);
                     track_list.push(TrackListEntry {
+                        id: Id::arbitrary(),
+
                         actual_pos: current_y,
 
                         is_highlighted: false,
+                        would_be_dragged: track_ui.selected
+                            || parent
+                                .as_ref()
+                                .is_some_and(|parent| parent.would_be_dragged),
 
                         track_id,
                         track,
-                        track_ui: ctx.ui_state.tracks.force_get(track_id),
+                        track_ui,
                         position: current_y,
                         height,
-                        indentation: depth as f32 * 16.0,
+                        indentation: parent
+                            .as_ref()
+                            .map_or(0.0, |parent| parent.indentation + 16.0),
                     });
+                    entry = track_list.last();
                     current_y += height;
                 }
 
                 if matches!(track.inner, cubedaw_lib::TrackInner::Group(_)) {
                     for &child_id in &ctx.ui_state.tracks.force_get(track_id).track_list {
-                        track_stack.push((child_id, depth + 1));
+                        track_stack.push((child_id, entry.cloned()));
                     }
                 }
             }
         }
 
-        if let Some(raw_movement_y) = ctx.ephemeral_state.track_drag.raw_movement_y() {
+        let mut original_track_list = None;
+
+        if let Some(raw_movement_y) = ctx
+            .ephemeral_state
+            .drag
+            .raw_movement_y_for(Id::new("tracks"))
+        {
             assert!(
                 track_list.len() <= u32::MAX as usize,
                 "there are more than u32::MAX tracks. wat"
@@ -225,8 +244,8 @@ impl<'a, 'b> Prepared<'a, 'b> {
             let mut dragging_tracks = VecDeque::new();
             let mut not_dragging_tracks = Vec::new();
 
-            for track_entry in track_list.into_iter() {
-                if track_entry.track_ui.selected {
+            for track_entry in track_list.iter().cloned() {
+                if track_entry.would_be_dragged {
                     dragging_tracks.push_back(track_entry);
                 } else {
                     not_dragging_tracks.push(track_entry);
@@ -262,20 +281,24 @@ impl<'a, 'b> Prepared<'a, 'b> {
                 }
             }
 
+            original_track_list = Some(track_list);
             track_list = dragging_track_list;
         }
 
         Self {
             ctx,
             tab,
+
+            original_track_list,
             track_list,
         }
     }
 
     fn update(&mut self, ui: &mut egui::Ui) {
-        let ctx = &mut *self.ctx;
         egui::SidePanel::left(egui::Id::new(self.tab.id)).show_inside(ui, |ui| {
-            let result = ctx.ephemeral_state.track_drag.handle(
+            let ctx = &mut *self.ctx;
+            let result = ctx.ephemeral_state.drag.handle(
+                Id::new("tracks"),
                 |prepared: &mut crate::util::Prepared<'_, Id<Track>>| {
                     for track_entry in &mut self.track_list {
                         let rect = egui::Rect {
@@ -311,16 +334,15 @@ impl<'a, 'b> Prepared<'a, 'b> {
                                 .select_track(Some(track_entry.track_id));
                         }
 
-                        // if not for the `!prepared.is_something_being_dragged()`,
+                        // if not for the `!prepared.is_being_dragged()`,
                         // egui would think the rect at this position is hovered during dragging (which it's not)
                         // so this is a workaround.
-                        track_entry.is_highlighted = !prepared.is_something_being_dragged()
+                        track_entry.is_highlighted = !prepared.is_being_dragged()
                             && (track_entry.track_ui.selected)
                             || response.hovered();
 
                         ui.add_enabled_ui(
-                            !(prepared.is_something_being_dragged()
-                                && track_entry.track_ui.selected),
+                            !(prepared.is_being_dragged() && track_entry.would_be_dragged),
                             |ui| {
                                 track_entry.track_header(
                                     &mut ctx.tracker,
@@ -333,9 +355,14 @@ impl<'a, 'b> Prepared<'a, 'b> {
                             },
                         );
                     }
+
+                    let track_header_drag_layer_id = egui::LayerId {
+                        order: egui::Order::Tooltip,
+                        id: egui::Id::new((ui.id(), "track_header")),
+                    };
                     if let Some(movement) = prepared.movement() {
                         for track_entry in &self.track_list {
-                            if !track_entry.track_ui.selected {
+                            if !track_entry.would_be_dragged {
                                 continue;
                             }
                             let untransformed_rect = egui::Rect {
@@ -354,11 +381,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                             //     dbg!(track_entry.track_ui.selected, track_entry.actual_pos);
                             // }
 
-                            ui.scope(|ui| {
-                                ui.painter().set_layer_id(egui::LayerId {
-                                    order: egui::Order::Tooltip,
-                                    id: egui::Id::
-                                })
+                            ui.with_layer_id(track_header_drag_layer_id, |ui| {
                                 ui.set_clip_rect(ui.ctx().screen_rect());
                                 track_entry.track_header(
                                     &mut ctx.tracker,
@@ -420,23 +443,14 @@ impl<'a, 'b> Prepared<'a, 'b> {
                         ctx.tracker.add(UiTrackSelect::new(track_id, selected));
                     }
                 }
-                if let Some(finished_drag_offset) = result.movement {
-                    // for (&node_id, node_ui) in &track_ui.patch.nodes {
-                    //     if node_ui.selected {
-                    //         ctx.tracker.add(UiNodeMove::new(
-                    //             node_id,
-                    //             track_id,
-                    //             finished_drag_offset,
-                    //         ));
-                    //     }
-                    // }
-
-                    // TODO
+                if let Some(_finished_drag_offset) = result.movement {
+                    self.move_tracks_from_track_list();
                 }
             }
         });
 
         egui::CentralPanel::frame(Default::default(), Default::default()).show_inside(ui, |ui| {
+            let ctx = &mut *self.ctx;
             egui::ScrollArea::horizontal()
                 .auto_shrink(egui::Vec2b::FALSE)
                 .show_viewport(ui, |ui, viewport| {
@@ -464,7 +478,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                     for track_entry in &self.track_list {
                         let highlighted = track_entry.is_highlighted;
                         let visuals = if track_entry.track_ui.selected
-                            && ctx.ephemeral_state.track_drag.is_something_being_dragged()
+                            && ctx.ephemeral_state.drag.is_dragged(Id::new("tracks"))
                         {
                             ui.visuals().widgets.noninteractive
                         } else if highlighted {
@@ -493,5 +507,18 @@ impl<'a, 'b> Prepared<'a, 'b> {
                     }
                 });
         });
+    }
+
+    fn move_tracks_from_track_list(&mut self) {
+        let ctx = &mut self.ctx;
+
+        let Some(ref original_track_list) = self.original_track_list else {
+            return;
+        };
+
+        // reverse the iterator; we
+        for (original, new) in original_track_list.iter().zip(&self.track_list).rev() {
+            if original.id != new.id {}
+        }
     }
 }

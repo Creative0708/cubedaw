@@ -1,11 +1,13 @@
 [package]
 authors = ["Colin Cai <therealcreative0708@gmail.com>"]
 edition.workspace = true
-name = "cubedaw-default-plugins"
+name = "resourcekey"
 rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
+ascii = { workspace = true }
+arcstr = "1.2.0"
 
 [lints]
 workspace = true

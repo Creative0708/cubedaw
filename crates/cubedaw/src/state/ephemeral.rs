@@ -5,9 +5,7 @@ use crate::util::{DragHandler, NodeSearch, SelectionRect};
 
 #[derive(Debug)]
 pub struct EphemeralState {
-    pub section_drag: DragHandler,
-    pub note_drag: DragHandler,
-    pub track_drag: DragHandler,
+    pub drag: DragHandler,
 
     pub tracks: IdMap<Track, TrackEphemeralState>,
 
@@ -19,9 +17,7 @@ pub struct EphemeralState {
 impl Default for EphemeralState {
     fn default() -> Self {
         Self {
-            section_drag: DragHandler::new(),
-            note_drag: DragHandler::new(),
-            track_drag: DragHandler::new(),
+            drag: DragHandler::new(),
 
             tracks: IdMap::new(),
 

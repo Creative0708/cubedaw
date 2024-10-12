@@ -4,6 +4,7 @@
 #![feature(let_chains)]
 #![feature(portable_simd)]
 #![feature(float_next_up_down)]
+#![feature(const_fn_floating_point_arithmetic)]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::new_without_default)] // useless, cubedaw isn't a library so default impls aren't necessary
 
