@@ -1,10 +1,11 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
+#[allow(unused)] // passed in as parameter; never constructed in this plugin
 enum MathNodeType {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
+    Add = 0,
+    Subtract = 1,
+    Multiply = 2,
+    Divide = 3,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,7 +15,7 @@ pub struct MathNodeState {
 }
 
 #[no_mangle]
-fn do_math(state: MathNodeState) {
+extern "C" fn do_math(state: &MathNodeState) {
     let in1 = cubedaw_pluginlib::input::<0>();
     let in2 = cubedaw_pluginlib::input::<1>();
 
@@ -28,5 +29,4 @@ fn do_math(state: MathNodeState) {
     cubedaw_pluginlib::output::<0>(val);
 }
 
-#[link_section = "cubedaw:pluginlist"]
-static _ADD: [u8; 21] = *b"\x0ccubedaw:math\x07do_math";
+cubedaw_pluginlib::export_node!("math", do_math);

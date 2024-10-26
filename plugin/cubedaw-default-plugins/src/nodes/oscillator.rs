@@ -45,5 +45,4 @@ fn do_oscillator(state: OscillatorNodeArgs, buf: &mut OscillatorNodeState) {
     cubedaw_pluginlib::output::<0>(val);
 }
 
-#[link_section = "cubedaw:pluginlist"]
-static _OSCILLATOR: [u8; 33] = *b"\x12cubedaw:oscillator\x0ddo_oscillator";
+cubedaw_pluginlib::export_node!("oscillator", do_oscillator);

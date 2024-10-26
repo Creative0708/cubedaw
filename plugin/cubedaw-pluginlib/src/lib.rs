@@ -1,6 +1,5 @@
 #![no_std]
 #![cfg_attr(feature = "portable_simd", feature(portable_simd))]
-#![feature(stdarch_wasm_relaxed_simd)]
 #![feature(adt_const_params)]
 // v128 (and thus f32x16) are not technically ffi-safe but i don't see any situation where they would not be
 #![allow(improper_ctypes_definitions, improper_ctypes)]
@@ -8,9 +7,14 @@
 #![allow(incomplete_features)]
 
 use core::arch::wasm32 as wasm;
+use core::marker::ConstParamTy;
 
 mod simd;
 pub use simd::f32x16;
+mod macros;
+
+#[doc(hidden)]
+pub use macros::{__paste, __postcard_stringify};
 
 /*
 TODO:
@@ -21,11 +25,10 @@ TODO:
 */
 
 #[repr(u32)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy)]
 pub enum Attribute {
     Pitch = 1,
 }
-impl core::marker::ConstParamTy for Attribute {}
 
 #[cfg(not(test))]
 #[allow(clippy::items_after_test_module)]
@@ -40,7 +43,7 @@ mod ffi {
     }
 }
 #[cfg(test)]
-// Use a fake FFI to not get import errors when wasmtiming the tests.
+// Use a fake FFI to not get import errors when wasmtiming the tests
 #[allow(clippy::items_after_test_module)]
 mod ffi {
     use crate::f32x16;

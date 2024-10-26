@@ -11,6 +11,8 @@ version = "0.1.0"
 portable_simd = []
 
 [dependencies]
+postcard-stringify = { path = "../postcard-stringify" }
+paste = "1.0.15"
 
 [lints]
 workspace = true
