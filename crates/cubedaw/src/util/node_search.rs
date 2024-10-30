@@ -1,5 +1,3 @@
-use cubedaw_lib::NodeRegistry;
-
 #[derive(Debug, Default)]
 pub struct NodeSearch {
     pub inner: String,

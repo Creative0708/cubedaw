@@ -2,7 +2,7 @@ use wasm_encoder::reencode::Reencode;
 
 use super::{
     instructions::PreparedInstructionList,
-    stitch::{ModuleOffsets, ModuleStitch},
+    stitch::{ModuleStitch, ModuleStitchInfo},
 };
 
 pub struct Table {
@@ -25,7 +25,7 @@ impl Table {
         })
     }
 
-    pub fn stitch(&self, module: &mut ModuleStitch, offsets: &ModuleOffsets) {
+    pub fn stitch(&self, module: &mut ModuleStitch, offsets: &ModuleStitchInfo) {
         match self.init {
             TableInit::RefNull => module.tables.table(self.table_type.encode()),
             TableInit::Expr(ref expr) => module
@@ -112,7 +112,10 @@ pub struct DataSegment {
     pub data: Box<[u8]>,
 }
 pub enum DataSegmentMode {
-    Active { offset: PreparedInstructionList },
+    Active {
+        offset: PreparedInstructionList,
+        memory_index: u32,
+    },
     Passive,
 }
 

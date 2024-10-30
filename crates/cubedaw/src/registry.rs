@@ -1,13 +1,11 @@
 use std::{any::TypeId, ops};
 
-use crate::{DynNode, DynNodeState, Id, IdMap, Node, NodeCreationContext, NodeData, ResourceKey};
 use ahash::{HashMap, HashMapExt};
+use cubedaw_lib::{Id, IdMap, NodeData, ResourceKey};
 
-use crate::builtin_nodes as nodes;
-
-pub struct DynNodeFactory(pub Box<dyn Send + Sync + Fn() -> DynNode>);
+pub struct DynNodeFactory(pub Box<dyn Send + Sync + Fn() -> Box<u8>>);
 impl ops::Deref for DynNodeFactory {
-    type Target = dyn Send + Sync + Fn() -> DynNode;
+    type Target = dyn Send + Sync + Fn() -> Box<u8>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -23,27 +21,27 @@ impl std::fmt::Debug for DynNodeFactory {
     }
 }
 
-pub struct NodeStateFactory(pub Box<dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState>);
-impl ops::Deref for NodeStateFactory {
-    type Target = dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl ops::DerefMut for NodeStateFactory {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl std::fmt::Debug for NodeStateFactory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NodeStateFactory {{ <{:?}> }}", self as *const _)
-    }
-}
+// pub struct NodeStateFactory(pub Box<dyn Send + Sync + Fn(NodeCreationContext) -> Box<u8>>);
+// impl ops::Deref for NodeStateFactory {
+//     type Target = dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState;
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
+// impl ops::DerefMut for NodeStateFactory {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
+// impl std::fmt::Debug for NodeStateFactory {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "NodeStateFactory {{ <{:?}> }}", self as *const _)
+//     }
+// }
 
 #[derive(Debug)]
 pub struct NodeRegistry {
-    type_id_to_resource_key: HashMap<TypeId, Id<ResourceKey>>,
+    type_id_to_resource_key: HashMap<TypeId, ResourceKey>,
     entries: IdMap<ResourceKey, NodeRegistryEntry>,
     name_entries: Vec<NameEntry>,
 }
@@ -70,7 +68,7 @@ impl NodeRegistry {
         this
     }
 
-    pub fn register_node<N: Node>(&mut self, key: ResourceKey, name: Box<str>) {
+    pub fn register_node(&mut self, key: ResourceKey) {
         let key_id = key.id();
         self.type_id_to_resource_key
             .insert(TypeId::of::<N::State>(), key_id);
@@ -78,9 +76,7 @@ impl NodeRegistry {
             key_id,
             NodeRegistryEntry {
                 key,
-                name: name.clone(),
                 node_factory: DynNodeFactory(Box::new(|| Box::new(N::new()))),
-                node_state_factory: NodeStateFactory(Box::new(|ctx| Box::new(N::new_state(ctx)))),
             },
         );
         self.name_entries.push(NameEntry {
@@ -89,21 +85,21 @@ impl NodeRegistry {
             entry_type: NameEntryType::Name,
         });
     }
-    pub fn register_alias(&mut self, node_key: Id<ResourceKey>, alias: Box<str>) {
+    pub fn register_alias(&mut self, node_key: ResourceKey, alias: Box<str>) {
         self.name_entries.push(NameEntry {
             name: alias,
             node_key,
             entry_type: NameEntryType::Alias,
         });
     }
-    pub fn get_resource_key_of(&self, node: &dyn crate::NodeStateWrapper) -> Id<ResourceKey> {
+    pub fn get_resource_key_of(&self, node: &dyn crate::NodeStateWrapper) -> ResourceKey {
         *self
             .type_id_to_resource_key
             .get(&node.type_id())
             .expect("node of unregistered type passed to get_resource_key_of")
     }
 
-    pub fn create_node(&self, key_id: Id<ResourceKey>) -> DynNode {
+    pub fn create_node(&self, key_id: ResourceKey) -> DynNode {
         let Some(entry) = self.entries.get(key_id) else {
             panic!("invalid key id passed to create_node");
         };
@@ -111,7 +107,7 @@ impl NodeRegistry {
     }
     pub fn create_state(
         &self,
-        key_id: Id<ResourceKey>,
+        key_id: ResourceKey,
         creation_context: NodeCreationContext<'_>,
     ) -> DynNodeState {
         let Some(entry) = self.entries.get(key_id) else {
@@ -121,7 +117,7 @@ impl NodeRegistry {
     }
     pub fn create_data(
         &self,
-        key_id: Id<ResourceKey>,
+        key_id: ResourceKey,
         creation_context: NodeCreationContext<'_>,
     ) -> NodeData {
         NodeData {
@@ -132,7 +128,7 @@ impl NodeRegistry {
 
     pub fn create_node_and_state(
         &self,
-        key_id: Id<ResourceKey>,
+        key_id: ResourceKey,
         creation_context: NodeCreationContext<'_>,
     ) -> (DynNode, DynNodeState) {
         let Some(entry) = self.entries.get(key_id) else {
@@ -146,7 +142,7 @@ impl NodeRegistry {
         &self.name_entries
     }
 
-    pub fn get(&self, key_id: Id<ResourceKey>) -> Option<&NodeRegistryEntry> {
+    pub fn get(&self, key_id: ResourceKey) -> Option<&NodeRegistryEntry> {
         self.entries.get(key_id)
     }
 }
@@ -160,15 +156,13 @@ impl Default for NodeRegistry {
 #[derive(Debug)]
 pub struct NodeRegistryEntry {
     pub key: ResourceKey,
-    pub name: Box<str>,
     pub node_factory: DynNodeFactory,
-    pub node_state_factory: NodeStateFactory,
 }
 
 #[derive(Debug)]
 pub struct NameEntry {
     pub name: Box<str>,
-    pub node_key: Id<ResourceKey>,
+    pub node_key: ResourceKey,
     pub entry_type: NameEntryType,
 }
 

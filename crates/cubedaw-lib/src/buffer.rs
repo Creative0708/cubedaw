@@ -1,32 +1,5 @@
 use std::{fmt, ops, ptr::NonNull};
 
-use bytemuck::Zeroable;
-
-fn boxed_slice<T: Zeroable>(length: usize) -> Box<[T]> {
-    use core::{mem, slice};
-    use std::alloc;
-
-    let size = mem::size_of::<T>();
-    if size == 0 || length == 0 {
-        unsafe {
-            Box::from_raw(slice::from_raw_parts_mut(
-                NonNull::dangling().as_ptr(),
-                length,
-            ))
-        }
-    } else {
-        unsafe {
-            let layout = alloc::Layout::array::<T>(length).expect("total size exceeds isize::MAX");
-            let ptr = alloc::alloc_zeroed(layout);
-            if ptr.is_null() {
-                alloc::handle_alloc_error(layout);
-            }
-
-            Box::from_raw(slice::from_raw_parts_mut(ptr as *mut _, length))
-        }
-    }
-}
-
 // TODO figure this out
 // fn resize_boxed_slice<T: Zeroable>(t: &mut Box<[T]>, length: usize) {
 //     use core::{mem, slice};
@@ -51,139 +24,139 @@ fn boxed_slice<T: Zeroable>(length: usize) -> Box<[T]> {
 // (i.e. f32 is too imprecise and is changed to an f64)
 pub type BufferType = f32;
 
-pub struct Buffer<'a>(&'a mut [BufferType]);
-impl<'a> Buffer<'a> {
-    pub fn new(inner: &'a mut [BufferType]) -> Self {
+#[repr(align(16))]
+#[derive(Clone, Copy, Debug)]
+pub struct InternalBufferType(pub [BufferType; 4]);
+unsafe impl bytemuck::Zeroable for InternalBufferType {}
+unsafe impl bytemuck::Pod for InternalBufferType {}
+
+impl InternalBufferType {
+    /// The number of `BufferType`s that fit in this object. This is always a power of 2.
+    pub const N: usize = core::mem::size_of::<Self>() / core::mem::size_of::<BufferType>();
+
+    pub fn splat(val: BufferType) -> Self {
+        Self([val; Self::N])
+    }
+}
+const _: () = assert!(
+    InternalBufferType::N.is_power_of_two(),
+    "InternalBufferType::N must be a power of 2"
+);
+
+#[repr(transparent)]
+pub struct Buffer([InternalBufferType]);
+impl Buffer {
+    pub fn new<'a>(inner: &'a [InternalBufferType]) -> &'a Self {
         assert!(
-            inner.len() <= u32::MAX as usize,
+            inner.len() <= u32::MAX as usize / InternalBufferType::N,
             "buffer length must fit in a u32"
         );
-        Self(inner)
+        // SAFETY: Buffer is repr(transparent) and thus has the same layout as [InternalBufferType]
+        unsafe { &*(inner as *const [InternalBufferType] as *const Buffer) }
     }
-    pub fn len(&self) -> u32 {
-        self.0.len() as u32
+    pub fn new_mut<'a>(inner: &'a mut [InternalBufferType]) -> &'a mut Self {
+        assert!(
+            inner.len() <= u32::MAX as usize / InternalBufferType::N,
+            "buffer length must fit in a u32"
+        );
+        // SAFETY: Buffer is repr(transparent) and thus has the same layout as [InternalBufferType]
+        unsafe { &mut *(inner as *mut [InternalBufferType] as *mut Buffer) }
     }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+    pub fn new_box(inner: Box<[InternalBufferType]>) -> Box<Self> {
+        assert!(
+            inner.len() <= u32::MAX as usize / InternalBufferType::N,
+            "buffer length must fit in a u32"
+        );
+        // SAFETY: Buffer is repr(transparent) and thus has the same layout as [InternalBufferType]
+        unsafe { Box::from_raw(Box::into_raw(inner) as *mut [InternalBufferType] as *mut Buffer) }
     }
-    pub fn as_slice(&self) -> &[BufferType] {
-        self.0
-    }
-    pub fn as_slice_mut(&mut self) -> &mut [BufferType] {
-        self.0
+    /// Creates a `Box<Self>` with `length` elements.
+    pub fn new_box_zeroed(length: u32) -> Box<Self> {
+        assert!(
+            length % InternalBufferType::N as u32 == 0,
+            "buffer length must be a multiple of InternalBufferType::N ({})",
+            InternalBufferType::N
+        );
+        Self::new_box(bytemuck::zeroed_slice_box(
+            (length / InternalBufferType::N as u32) as usize,
+        ))
     }
 
-    pub fn reborrow(&mut self) -> Buffer<'_> {
-        Buffer(self.0)
+    pub fn as_internal(&self) -> &[InternalBufferType] {
+        &self.0
+    }
+    pub fn as_internal_mut(&mut self) -> &mut [InternalBufferType] {
+        &mut self.0
     }
 
+    pub fn copy_from(&mut self, that: &Buffer) {
+        self.copy_from_slice(&that);
+    }
     pub fn accumulate(&mut self, that: &Buffer) {
         // TODO accelerate with like simd or something
         debug_assert!(self.len() == that.len(), "buffer length mismatch");
 
-        for (this, that) in self.0.iter_mut().zip(that.0.iter()) {
+        for (this, that) in self.iter_mut().zip(that.iter()) {
             *this += that;
         }
     }
 }
-impl<'a> Default for Buffer<'a> {
+impl<'a> Default for &'a mut Buffer {
     fn default() -> Self {
-        Self::new(&mut [])
+        Buffer::new_mut(&mut [])
     }
 }
-impl<'a> ops::Index<u32> for Buffer<'a> {
+impl ops::Deref for Buffer {
+    type Target = [BufferType];
+    fn deref(&self) -> &Self::Target {
+        bytemuck::cast_slice(self.as_internal())
+    }
+}
+impl ops::DerefMut for Buffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        bytemuck::cast_slice_mut(self.as_internal_mut())
+    }
+}
+impl ops::Index<u32> for Buffer {
     type Output = BufferType;
     fn index(&self, index: u32) -> &Self::Output {
-        &self.0[index as usize]
+        &(**self)[index as usize]
     }
 }
-impl<'a> ops::IndexMut<u32> for Buffer<'a> {
+impl ops::IndexMut<u32> for Buffer {
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
-        &mut self.0[index as usize]
+        &mut (**self)[index as usize]
     }
 }
-impl<'a> fmt::Debug for Buffer<'a> {
+
+impl Clone for Box<Buffer> {
+    fn clone(&self) -> Self {
+        let b: Box<[InternalBufferType]> = self.0.into();
+        Buffer::new_box(b)
+    }
+}
+
+impl fmt::Debug for Buffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.len() <= 4 {
-            write!(f, "Buffer {{ {:?} }}", &self.0)
+        if self.len() <= 4 {
+            f.debug_tuple("Buffer").field(&&**self).finish()
         } else {
-            write!(
-                f,
-                "Buffer {{ [{:?}, {:?}, {:?}, ... length {}] }}",
-                self.0[0],
-                self.0[1],
-                self.0[2],
-                self.0.len()
-            )
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct BufferOwned(Box<[BufferType]>);
-impl BufferOwned {
-    pub fn new(inner: Box<[BufferType]>) -> Self {
-        assert!(
-            inner.len() <= u32::MAX as usize,
-            "buffer length must fit in a u32"
-        );
-        Self(inner)
-    }
-    pub fn zeroed(len: u32) -> Self {
-        Self(boxed_slice(len as usize))
-    }
-
-    pub fn len(&self) -> u32 {
-        self.0.len() as u32
-    }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    pub fn as_slice(&self) -> &[BufferType] {
-        &self.0
-    }
-    pub fn as_slice_mut(&mut self) -> &mut [BufferType] {
-        &mut self.0
-    }
-
-    pub fn borrow_mut(&mut self) -> Buffer {
-        Buffer::new(&mut self.0)
-    }
-
-    pub fn accumulate(&mut self, that: &Self) {
-        // TODO accelerate with like simd or something
-        debug_assert!(self.len() == that.len(), "buffer length mismatch")
-    }
-}
-impl<'a> Default for BufferOwned {
-    fn default() -> Self {
-        Self::new(Box::new([]))
-    }
-}
-impl ops::Index<u32> for BufferOwned {
-    type Output = BufferType;
-    fn index(&self, index: u32) -> &Self::Output {
-        &self.0[index as usize]
-    }
-}
-impl ops::IndexMut<u32> for BufferOwned {
-    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
-        &mut self.0[index as usize]
-    }
-}
-impl fmt::Debug for BufferOwned {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.len() <= 4 {
-            write!(f, "BufferOwned {{ {:?} }}", &self.0)
-        } else {
-            write!(
-                f,
-                "BufferOwned {{ [{:?}, {:?}, {:?}, ... length {}] }}",
-                self.0[0],
-                self.0[1],
-                self.0[2],
-                self.0.len()
-            )
+            // replace with `field_with` when it's stabilized
+            // https://github.com/rust-lang/rust/issues/117729
+            struct DebugListHelper<'a>(&'a Buffer);
+            impl<'a> std::fmt::Debug for DebugListHelper<'a> {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    f.debug_list()
+                        .entry(&self.0[0])
+                        .entry(&self.0[1])
+                        .entry(&self.0[2])
+                        .entry(&format_args!("... length {}", &self.0.len()))
+                        .finish()
+                }
+            }
+            f.debug_tuple("Buffer")
+                .field(&DebugListHelper(self))
+                .finish()
         }
     }
 }

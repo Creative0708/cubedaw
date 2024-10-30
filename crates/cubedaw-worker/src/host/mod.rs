@@ -1,20 +1,25 @@
-use std::{fmt::Debug, thread};
+use std::{fmt::Debug, sync::Arc, thread};
 
-use cubedaw_lib::{IdMap, PreciseSongPos, Range, State};
+use cubedaw_lib::{IdMap, InternalBufferType, PreciseSongPos, Range, State};
 
 use crate::{
     common::{HostToWorkerEvent, JobDescriptor, WorkerToHostEvent},
-    worker, WorkerJob, WorkerOptions, WorkerState,
+    worker, WorkerJob, WorkerOptions,
+};
+mod state;
+pub use state::{
+    WorkerGroupTrackState, WorkerHostState, WorkerLiveNoteState, WorkerNoteState,
+    WorkerSectionTrackState,
 };
 
 /// An interface for controlling the audio worker threads. This won't run on the ui thread. Please do not run this on the ui thread.
 #[derive(Debug)]
 pub struct WorkerHost {
     state: State,
-    worker_state: WorkerState,
+    worker_state: WorkerHostState,
 
     worker_handles: Box<[WorkerHandle]>,
-    worker_options: WorkerOptions,
+    worker_options: Arc<WorkerOptions>,
     worker_tx: crossbeam_channel::Sender<WorkerToHostEvent>, // keep a cloneable reference to send to workers
     rx: crossbeam_channel::Receiver<WorkerToHostEvent>,
 
@@ -24,6 +29,8 @@ pub struct WorkerHost {
 
 impl WorkerHost {
     pub fn new(state: State, worker_options: WorkerOptions) -> Self {
+        let worker_options = Arc::new(worker_options);
+
         let (worker_tx, rx) = crossbeam_channel::unbounded();
         let (work_tx, work_rx) = crossbeam_channel::unbounded();
 
@@ -40,7 +47,7 @@ impl WorkerHost {
         }
 
         Self {
-            worker_state: WorkerState::new(&state, &worker_options),
+            worker_state: WorkerHostState::new(&state, &worker_options),
             state,
             worker_handles: worker_handles.into_boxed_slice(),
             worker_options,
@@ -256,7 +263,7 @@ impl WorkerHandle {
         index: u32,
 
         worker_tx: crossbeam_channel::Sender<WorkerToHostEvent>,
-        worker_options: WorkerOptions,
+        worker_options: Arc<WorkerOptions>,
 
         work_tx: crossbeam_channel::Sender<WorkerJob>,
         work_rx: crossbeam_channel::Receiver<WorkerJob>,
@@ -268,7 +275,7 @@ impl WorkerHandle {
             join_handle: thread::Builder::new()
                 .name(format!("Audio Worker #{index}"))
                 .spawn(move || {
-                    worker::run_forever(worker_tx, worker_rx, work_tx, work_rx, worker_options)
+                    worker::run_forever(worker_tx, worker_rx, work_tx, work_rx, &worker_options)
                 })
                 .expect("failed to spawn thread"),
         }
@@ -279,17 +286,20 @@ fn add_jobs(
     allocator: &'static bumpalo::Bump,
     work_tx: &crossbeam_channel::Sender<WorkerJob>,
     state: &'static State,
-    worker_state: &'static mut WorkerState,
+    worker_state: &'static mut WorkerHostState,
     worker_options: &WorkerOptions,
     start_pos_ref: Option<&mut PreciseSongPos>,
 ) {
     use crate::sync::SyncBuffer;
 
-    type WorkerJobSyncBuffer = SyncBuffer<cubedaw_lib::Buffer<'static>, WorkerJob>;
+    type WorkerJobSyncBuffer = SyncBuffer<&'static mut cubedaw_lib::Buffer, WorkerJob>;
 
     let allocate_sync_buffer = |alloc: &'static bumpalo::Bump| -> &'static WorkerJobSyncBuffer {
-        let slice = alloc.alloc_slice_fill_copy(worker_options.buffer_size as usize, 0.0);
-        alloc.alloc(SyncBuffer::new(cubedaw_lib::Buffer::new(slice)))
+        let slice = alloc.alloc_slice_fill_copy(
+            worker_options.buffer_size as usize / InternalBufferType::N,
+            InternalBufferType::splat(0.0),
+        );
+        alloc.alloc(SyncBuffer::new(cubedaw_lib::Buffer::new_mut(slice)))
     };
 
     let master_output = allocate_sync_buffer(allocator);
@@ -410,7 +420,7 @@ fn add_jobs(
                                 dbg!(note_id);
                                 worker_track_data.notes.insert(
                                     note_id,
-                                    crate::WorkerNoteState {
+                                    WorkerNoteState {
                                         section_id,
                                         nodes: worker_track_data.note_nodes.clone(),
                                     },

@@ -1,3 +1,6 @@
+// TODO: i don't know how tired i was when i wrote this code but i'm 99% sure this is unsound or leaks memory somehow (see dropping the handles)
+// anyways since i don't even use half of the functionality here (namely the resetting part) i think it's fine for now
+
 use std::{
     cell::{Cell, UnsafeCell},
     mem::MaybeUninit,
@@ -145,6 +148,7 @@ pub struct SyncAccessibleReadHandle<'a, T, E> {
     inner: &'a SyncBufferInner<T, E>,
 }
 impl<'a, T, E> SyncAccessibleReadHandle<'a, T, E> {
+    /// Waits on this handle, blocking if necessary. Returns the finished value.
     pub fn wait(&self) -> &'a T {
         let mut lock = self.inner.mutex.lock().expect("mutex poisoned");
         if lock.0 == UNPRIMED {
@@ -155,6 +159,19 @@ impl<'a, T, E> SyncAccessibleReadHandle<'a, T, E> {
         }
         // SAFETY: when lock.0 == 0, SyncAccessible won't ever modify the UnsafeCell (unless it's through a mutable reference)
         unsafe { &*lock.1.get() }
+    }
+
+    /// Waits on this handle, returning `None` if the lock hasn't finished yet. Returns the finished value otherwise.
+    pub fn try_wait(&self) -> Option<&'a T> {
+        let mut lock = self.inner.mutex.lock().expect("mutex poisoned");
+        if lock.0 == UNPRIMED {
+            panic!("SyncAccessibleReadHandle::wait called before SyncBuffer::prime");
+        }
+        if lock.0 > 0 {
+            return None;
+        }
+        // SAFETY: when lock.0 == 0, SyncAccessible won't ever modify the UnsafeCell (unless it's through a mutable reference)
+        Some(unsafe { &*lock.1.get() })
     }
 }
 pub struct SyncAccessibleWriteHandle<'a, T, E> {

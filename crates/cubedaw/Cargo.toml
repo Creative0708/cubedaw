@@ -10,8 +10,8 @@ egui = { workspace = true }
 eframe = "0.28.1"
 egui_dock = "0.13.0"
 env_logger = "0.11.3"
-cubedaw-lib = { path = "../cubedaw-lib", features = ["egui"] }
-cubedaw-worker = { path = "../cubedaw-worker", features = ["egui"] }
+cubedaw-lib = { path = "../cubedaw-lib" }
+cubedaw-worker = { path = "../cubedaw-worker" }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }

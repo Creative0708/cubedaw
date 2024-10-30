@@ -2,11 +2,12 @@ use wasm_encoder::reencode::Reencode;
 
 use super::{
     instructions::PreparedInstructionList,
-    stitch::{FunctionStitch, ModuleOffsets},
+    stitch::{FunctionStitch, ModuleStitchInfo},
 };
 
 // TODO possibly store a semi-complete byte representation for function instructions
 // for optimization purposes?
+#[derive(Clone)]
 pub struct PreparedFunction {
     ty: u32,
     locals: Box<[wasm_encoder::ValType]>,
@@ -45,13 +46,13 @@ impl PreparedFunction {
 
     /// Adds the locals and code of this function into `instructions_sink`.
     /// This assumes that the arguments are already on the stack, and will put the results on the stack.
-    pub fn stitch(&self, func: &mut FunctionStitch, offsets: &ModuleOffsets) {
+    pub fn stitch(&self, func: &mut FunctionStitch, offsets: &ModuleStitchInfo) {
         self.instructions.stitch(func, offsets);
         func.locals.extend(self.locals.iter().cloned());
     }
 
-    pub fn encode(&self, offsets: &ModuleOffsets) -> wasm_encoder::Function {
-        let mut func = FunctionStitch::new();
+    pub fn encode_empty(&self, offsets: &ModuleStitchInfo) -> wasm_encoder::Function {
+        let mut func = FunctionStitch::empty();
         self.stitch(&mut func, offsets);
         func.finalize()
     }

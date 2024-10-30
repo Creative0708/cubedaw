@@ -1,25 +1,30 @@
+mod function;
+mod instructions;
+mod misc;
+mod stitch;
+
+use ahash::{HashMap, HashMapExt};
 use anyhow::Context;
+use function::PreparedFunction;
+use resourcekey::{Namespace, ResourceKey};
 
-use crate::plugin::misc;
-
-use super::{function::PreparedFunction, stitch};
-
-pub struct PreparedModule {
+pub struct Plugin {
     hash: u64,
 
     plugin_version: semver::Version,
+    plugin_manifest: PluginManifest,
     tys: Box<[wasm_encoder::FuncType]>,
 
     plugin_imports: [Option<u32>; CubedawPluginImport::SIZE],
-    plugin_exports: ahash::HashMap<resourc>,
-    funcs: Box<[PreparedFunction]>,
+    exported_modules: ahash::HashMap<ResourceKey, u32>,
+    nonspecial_funcs: Box<[PreparedFunction]>,
     tables: Box<[misc::Table]>,
     memory: wasm_encoder::MemoryType,
     globals: Box<[misc::Global]>,
     elems: Box<[misc::ElementSegment]>,
     datas: Box<[misc::DataSegment]>,
 
-    start_function: Option<u32>,
+    start_function: Option<PreparedFunction>,
 }
 
 fn plugin_wasm_features() -> wasmparser::WasmFeatures {
@@ -47,13 +52,13 @@ const MAX_SUPPORTED_VERSION: semver::Version = semver::Version {
     build: semver::BuildMetadata::EMPTY,
 };
 
-impl PreparedModule {
+impl Plugin {
     pub fn new(buf: &[u8]) -> anyhow::Result<Self> {
         let plugin_version = Self::module_version_from(buf)?;
 
         if !plugin_version
             .cmp_precedence(&MAX_SUPPORTED_VERSION)
-            .is_le()
+            .is_gt()
         {
             anyhow::bail!(
                 "unsupported plugin version: {}. max supported version is {}",
@@ -75,6 +80,8 @@ impl PreparedModule {
         let mut parser = wasmparser::Parser::new(0);
         parser.set_features(plugin_wasm_features());
 
+        let mut plugin_manifest: Option<PluginManifest> = None;
+
         let mut tys: Vec<wasm_encoder::FuncType> = Vec::new();
         let mut plugin_imports = [None; CubedawPluginImport::SIZE];
         let mut funcs: Vec<PreparedFunction> = Vec::new();
@@ -83,6 +90,9 @@ impl PreparedModule {
         let mut globals: Box<[misc::Global]> = Box::new([]);
         let mut elems: Box<[misc::ElementSegment]> = Box::new([]);
         let mut datas: Box<[misc::DataSegment]> = Box::new([]);
+
+        let mut func_exports: HashMap<&str, u32> = HashMap::new();
+        let mut function_names_of_exported_modules: HashMap<ResourceKey, &str> = HashMap::new();
 
         let mut start_function: Option<u32> = None;
 
@@ -207,7 +217,10 @@ impl PreparedModule {
                 }
                 wasmparser::Payload::ExportSection(r) => {
                     for export in r {
-                        dbg!(export?);
+                        let export = export?;
+                        if export.kind == wasmparser::ExternalKind::Func {
+                            func_exports.insert(export.name, export.index);
+                        }
                     }
                 }
                 wasmparser::Payload::StartSection { func, range: _ } => {
@@ -237,11 +250,14 @@ impl PreparedModule {
                     assert_eq!(count as usize, func_tys.len());
                 }
                 wasmparser::Payload::CodeSectionEntry(r) => {
-                    funcs.push(PreparedFunction::new(
-                        func_tys[current_function],
-                        r,
-                        &mut reencoder,
-                    )?);
+                    funcs.insert(
+                        current_function,
+                        PreparedFunction::new(
+                            func_tys[current_function as usize],
+                            r,
+                            &mut reencoder,
+                        )?,
+                    );
                     current_function += 1;
                 }
 
@@ -260,7 +276,24 @@ impl PreparedModule {
                 }
 
                 wasmparser::Payload::CustomSection(section) => {
-                    log::warn!("unknown custom section {:?}", section.name());
+                    match CubedawSectionType::from_name(section.name()) {
+                        Some(CubedawSectionType::PluginList) => {
+                            #[derive(serde::Deserialize)]
+                            struct PluginEntry<'a> {
+                                key: ResourceKey,
+                                export_name: &'a str,
+                            }
+                            let mut bytes = section.data();
+                            while !bytes.is_empty() {
+                                let entry: PluginEntry;
+                                (entry, bytes) = postcard::take_from_bytes(bytes)
+                                    .context("invalid plugin entry")?;
+                                function_names_of_exported_modules
+                                    .insert(entry.key, entry.export_name);
+                            }
+                        }
+                        _ => (),
+                    }
                 }
                 wasmparser::Payload::UnknownSection {
                     id,
@@ -273,14 +306,26 @@ impl PreparedModule {
             }
         }
 
+        let start_function = start_function.map(|function| funcs[function as usize].clone());
+
         Ok(Self {
             hash: ahash::random_state::RandomState::new().hash_one(buf),
 
             plugin_version,
+            plugin_manifest: plugin_manifest.context("plugin manifest doesn't exist")?,
             tys: tys.into_boxed_slice(),
 
             plugin_imports,
-            funcs: funcs.into_boxed_slice(),
+            exported_modules: function_names_of_exported_modules
+                .into_iter()
+                .map(|(k, v)| {
+                    let func_idx = *func_exports
+                        .get(k.as_str())
+                        .context("module references nonexistent function")?;
+                    Ok((k, func_idx))
+                })
+                .collect::<anyhow::Result<HashMap<_, _>>>()?,
+            nonspecial_funcs: funcs.into_boxed_slice(),
             tables,
             memory: memory.ok_or_else(|| anyhow::anyhow!("plugin has no memory section"))?,
             globals,
@@ -291,10 +336,33 @@ impl PreparedModule {
         })
     }
 
+    pub fn exported_modules(&self) -> impl Iterator<Item = &ResourceKey> {
+        self.exported_modules.keys()
+    }
+
+    pub fn memory(&self) -> wasm_encoder::MemoryType {
+        self.memory
+    }
+
     pub fn stitch(&self, func: &mut stitch::FunctionStitch, module: &mut stitch::ModuleStitch) {
         let offsets = self.get_offsets_or_stitch(module);
-        for f in &self.funcs {
-            module.funcs.function(f.ty());
+    }
+
+    /// Gets the offsets for this module, stitching if not present.
+    fn get_offsets_or_stitch(&self, module: &mut stitch::ModuleStitch) -> stitch::ModuleOffsets {
+        if let Some(offsets) = module.offset_map.get(&self.hash) {
+            return offsets.clone();
+        }
+
+        let offsets = module.current_offsets();
+        module.offset_map.insert(self.hash, offsets);
+
+        for ty in &self.tys {
+            module.tys.func_type(ty);
+        }
+        for func in &self.nonspecial_funcs {
+            module.funcs.function(func.ty());
+            module.code.function(&func.encode(&offsets));
         }
         for table in &self.tables {
             table.stitch(module, &offsets);
@@ -320,23 +388,26 @@ impl PreparedModule {
                     .passive(wasm_encoder::Elements::Functions(&elem.items)),
             };
         }
-    }
-
-    /// Gets the offsets for this module, stitching if not present.
-    fn get_offsets_or_stitch(&self, module: &mut stitch::ModuleStitch) -> stitch::ModuleOffsets {
-        if let Some(offsets) = module.offset_map.get(&self.hash) {
-            return offsets.clone();
+        for data in &self.datas {
+            match data.mode {
+                misc::DataSegmentMode::Passive => {
+                    module.datas.passive(data.data.iter().cloned());
+                }
+                misc::DataSegmentMode::Active {
+                    memory_index,
+                    ref offset,
+                } => {
+                    module.datas.active(
+                        memory_index,
+                        &offset.encode(&offsets),
+                        data.data.iter().cloned(),
+                    );
+                }
+            }
         }
 
-        let offsets = module.current_offsets();
-        module.offset_map.insert(self.hash, offsets);
-
-        for ty in &self.tys {
-            module.tys.func_type(ty);
-        }
-        for func in &self.funcs {
-            module.funcs.function(func.ty());
-            module.code.function(&func.encode(&offsets));
+        if let Some(ref start_function) = self.start_function {
+            start_function.stitch(&mut module.start_function, &offsets);
         }
 
         offsets
@@ -365,15 +436,23 @@ impl PreparedModule {
     }
 }
 
-impl PartialEq for PreparedModule {
+impl PartialEq for Plugin {
     fn eq(&self, other: &Self) -> bool {
         self.hash == other.hash
     }
 }
-impl Eq for PreparedModule {}
-impl std::hash::Hash for PreparedModule {
+impl Eq for Plugin {}
+impl std::hash::Hash for Plugin {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
+    }
+}
+
+impl std::fmt::Debug for Plugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Plugin")
+            .field("id", &self.plugin_manifest.id)
+            .finish_non_exhaustive()
     }
 }
 
@@ -427,6 +506,8 @@ impl CubedawPluginImport {
 
 enum CubedawSectionType {
     PluginVersion,
+    PluginManifest,
+    PluginList,
 }
 
 impl CubedawSectionType {
@@ -435,5 +516,41 @@ impl CubedawSectionType {
             "cubedaw:plugin_version" => Self::PluginVersion,
             _ => return None,
         })
+    }
+}
+
+struct PluginManifest {
+    id: Namespace,
+    name: String,
+    description: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stitch;
+
+    #[test]
+    fn test_basic() {
+        let mut plugin = super::Plugin::new(
+            &std::fs::read({
+                let mut path = std::env::var_os("CARGO_MANIFEST_DIR").unwrap();
+                path.push(
+                    "/../../plugin/target/wasm32-unknown-unknown/debug/deps/cubedaw_default_plugins.wasm",
+                );
+                println!("plugin path: {path:?}");
+                path
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut module = stitch::ModuleStitch::new();
+        let mut func = stitch::FunctionStitch::new();
+        plugin.stitch(&mut func, &mut module);
+
+        dbg!(func);
+        // dbg!(module);
+
+        panic!();
     }
 }

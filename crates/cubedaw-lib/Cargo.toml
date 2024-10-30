@@ -9,10 +9,10 @@ version = "0.1.0"
 resourcekey = { path = "../resourcekey" }
 ahash = { workspace = true }
 smallvec = { workspace = true }
-egui = { workspace = true, optional = true }
 meminterval = { workspace = true }
-bytemuck = { workspace = true }
+bytemuck = { workspace = true, features = ["must_cast", "extern_crate_alloc"] }
 ascii = { workspace = true }
+egui = { workspace = true, optional = true }
 
 [features]
 egui = ["dep:egui"]

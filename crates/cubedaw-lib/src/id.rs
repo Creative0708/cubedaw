@@ -43,11 +43,13 @@ fn with_impl(source: IdInner, child: impl Hash) -> IdInner {
 }
 
 fn arbitrary_impl() -> IdInner {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    use std::cell::Cell;
+    thread_local! {
+        static COUNTER: Cell<u64> = Cell::new(0);
+    }
 
-    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-    new_impl(counter)
+    COUNTER.set(COUNTER.get() + 1);
+    new_impl((COUNTER.get(), std::thread::current().id()))
 }
 
 impl<T> Id<T> {

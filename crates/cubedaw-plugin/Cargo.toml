@@ -6,12 +6,13 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
-resourcekey = { path = "../resourcekey" }
+resourcekey = { path = "../resourcekey", features = ["serde"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }
 log = { workspace = true }
 postcard = "1.0.10"
+serde = { workspace = true }
 wasmparser = "0.215.0"
 wasm-encoder = { version = "0.215.0", features = ["wasmparser"] }
 anyhow = { workspace = true }

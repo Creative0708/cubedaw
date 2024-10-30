@@ -1,10 +1,14 @@
-use std::borrow::Cow;
+use std::{any::Any, borrow::Cow, mem, rc::Rc};
 
-use wasm_encoder::Instruction;
+use wasm_encoder::{Encode, Instruction, ValType};
+use wasmparser::FunctionSectionReader;
 
-#[derive(Default, Debug)]
+use crate::CubedawPluginImport;
+
+#[derive(Debug)]
 pub struct ModuleStitch {
-    pub offset_map: ahash::HashMap<u64, ModuleOffsets>,
+    pub offset_map: ahash::HashMap<u64, ModuleStitchInfo>,
+    pub shim_info: ShimInfo,
 
     // https://webassembly.github.io/spec/core/binary/modules.html#indices
     pub tys: wasm_encoder::TypeSection,
@@ -15,50 +19,152 @@ pub struct ModuleStitch {
     pub globals: wasm_encoder::GlobalSection,
     pub elems: wasm_encoder::ElementSection,
     pub datas: wasm_encoder::DataSection,
+    pub exports: wasm_encoder::ExportSection,
+
+    pub start_function: FunctionStitch,
+
+    _private: private::Private,
+}
+
+mod private {
+    #[derive(Debug, Clone, Copy)]
+    pub struct Private;
 }
 
 impl ModuleStitch {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(shim_info: ShimInfo) -> Self {
+        let mut this = Self {
+            offset_map: Default::default(),
+            shim_info,
+
+            tys: Default::default(),
+            funcs: Default::default(),
+            code: Default::default(),
+            tables: Default::default(),
+            memories: Default::default(),
+            globals: Default::default(),
+            elems: Default::default(),
+            datas: Default::default(),
+            exports: Default::default(),
+
+            start_function: FunctionStitch::empty(),
+
+            _private: private::Private,
+        };
+        for import in CubedawPluginImport::ALL {
+            this.tys.func_type(&import.ty());
+        }
+        this
     }
-    pub fn current_offsets(&self) -> ModuleOffsets {
-        ModuleOffsets {
+    pub fn get_current_offsets_for(&self, module: &crate::Plugin) -> ModuleStitchInfo {
+        ModuleStitchInfo {
+            shim_info: self.shim_info.clone(),
+
             ty_offset: self.tys.len(),
             func_offset: self.funcs.len(),
             table_offset: self.tables.len(),
             memory_offset: self.memories.len(),
             global_offset: self.globals.len(),
             elem_offset: self.elems.len(),
-            data_offset: self.datas.len(),
+            data_index: self.datas.len() as u32,
+
+            cubedaw_imports: ImportStitchInfo {
+                mappings: module.cubedaw_imports,
+            },
         }
+    }
+    pub fn add_function(&mut self, func: FunctionStitch) -> u32 {
+        let type_idx = self.tys.len();
+        self.tys.function(func.params, func.results);
+        let func_idx = self.funcs.len();
+        self.funcs.function(type_idx);
+        func_idx
+    }
+    pub fn finish(mut self) -> Vec<u8> {
+        let mut encoder = wasm_encoder::Module::new();
+
+        let start_function = mem::replace(&mut self.start_function, FunctionStitch::empty());
+        let start_func_idx = self.add_function(start_function);
+
+        // https://webassembly.github.io/spec/core/binary/modules.html#binary-module
+        encoder.section(&self.tys);
+        encoder.section(&{
+            let mut cubedaw_imports = wasm_encoder::ImportSection::new();
+            for import in CubedawPluginImport::ALL {
+                cubedaw_imports.import(
+                    "env",
+                    import.name(),
+                    wasm_encoder::EntityType::Function(import as u32),
+                );
+            }
+
+            cubedaw_imports
+        });
+        encoder.section(&self.funcs);
+        encoder.section(&self.tables);
+        encoder.section(&self.memories);
+        encoder.section(&self.globals);
+        encoder.section(&self.exports);
+        encoder.section(&wasm_encoder::StartSection {
+            function_index: start_func_idx,
+        });
+        encoder.section(&self.elems);
+        encoder.section(&wasm_encoder::DataCountSection {
+            count: self
+                .datas
+                .len()
+                .try_into()
+                .expect("how the heck do you have 4 billion data sections"),
+        });
+
+        encoder.finish()
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ModuleOffsets {
+#[derive(Clone, Debug)]
+pub struct ModuleStitchInfo {
+    pub shim_info: ShimInfo,
+
     pub ty_offset: u32,
     pub func_offset: u32,
     pub table_offset: u32,
     pub memory_offset: u32,
     pub global_offset: u32,
     pub elem_offset: u32,
-    pub data_offset: u32,
+    pub data_index: u32,
+
+    pub cubedaw_imports: ImportStitchInfo,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct FunctionStitch {
-    pub locals: Vec<wasm_encoder::ValType>,
+    params: Box<[ValType]>,
+    results: Box<[ValType]>,
+    pub locals: Vec<ValType>,
     pub code: Vec<u8>,
 }
-
 impl FunctionStitch {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(
+        params: impl IntoIterator<Item = ValType>,
+        results: impl IntoIterator<Item = ValType>,
+    ) -> Self {
+        Self {
+            params: params.into_iter().collect(),
+            results: results.into_iter().collect(),
+
+            locals: Default::default(),
+            code: Default::default(),
+        }
     }
+    pub fn empty() -> Self {
+        Self::new([], [])
+    }
+
+    /// Encodes an instruction. This does not take shims into account; use with caution!
     pub fn instruction<'i, 'a>(
         &self,
         inst: &'i Instruction<'a>,
-        offsets: &ModuleOffsets,
+        offsets: &ModuleStitchInfo,
     ) -> Cow<'i, Instruction<'a>> {
         use wasm_encoder::Instruction as I;
 
@@ -74,7 +180,7 @@ impl FunctionStitch {
             debug_assert_eq!(mem, 0, "webassembly module uses multiple memories");
             offsets.memory_offset
         };
-        let d = |data: u32| data + offsets.data_offset;
+        let d = |data: u32| data + offsets.data_index;
 
         let modified_inst = match *inst {
             // Memory instructions.
@@ -187,7 +293,7 @@ impl FunctionStitch {
             I::LocalSet(idx) => I::LocalSet(l(idx)),
             I::LocalTee(idx) => I::LocalTee(l(idx)),
 
-            // there are a bunch of atomic instructions and stuff but those aren't allowed in plugins
+            // there are a bunch of atomic/gc/whatever instructions but those aren't allowed in plugins
             // so we don't need to handle them
 
             // instruction doesn't need to be modified
@@ -198,7 +304,7 @@ impl FunctionStitch {
     }
 
     pub fn finalize(self) -> wasm_encoder::Function {
-        let mut locals_vec: Vec<(u32, wasm_encoder::ValType)> = Vec::new();
+        let mut locals_vec: Vec<(u32, ValType)> = Vec::new();
         for &local_ty in &self.locals {
             if let Some((num, ty)) = locals_vec.last_mut() {
                 if *ty == local_ty {
@@ -211,5 +317,68 @@ impl FunctionStitch {
         let mut func = wasm_encoder::Function::new(locals_vec);
         func.raw(self.code.iter().cloned());
         func
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ImportStitchInfo {
+    mappings: [Option<u32>; CubedawPluginImport::SIZE],
+}
+impl ImportStitchInfo {
+    pub fn new() -> Self {
+        Default::default()
+    }
+    pub fn transform(&self, func_idx: u32) -> u32 {
+        self.mappings
+            .into_iter()
+            .zip(CubedawPluginImport::ALL)
+            .find_map(|(idx, ty)| (idx == Some(func_idx)).then_some(ty))
+            .map_or(func_idx, |ty| ty as u32)
+    }
+}
+
+#[derive(Clone)]
+pub struct ShimInfo {
+    shim: Rc<dyn Fn(ShimContext)>,
+}
+impl ShimInfo {
+    pub fn new(f: impl Fn(ShimContext) + 'static) -> Self {
+        Self { shim: Rc::new(f) }
+    }
+}
+
+impl std::fmt::Debug for ShimInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShimInfo").finish_non_exhaustive()
+    }
+}
+
+// TODO: currently this is hardcoded to provide the current instruction and the single instruction in front.
+// in the future this should probably be configurable.
+// also the fields probably shouldn't be pub
+/// Docs TODO.
+///
+/// Call `ShimContext::replace` to replace the instructions and `ShimContext::insert_original` to
+/// instert the original instructions.
+pub struct ShimContext<'a> {
+    import: CubedawPluginImport,
+
+    pub prev_instruction: Instruction<'static>,
+    pub current_instruction: Instruction<'static>,
+
+    sink: &'a mut Vec<u8>,
+}
+impl ShimContext<'_> {
+    pub fn import(&self) -> CubedawPluginImport {
+        self.import
+    }
+    pub fn replace(mut self, iter: impl IntoIterator<Item = Instruction<'static>>) {
+        for instruction in iter {
+            instruction.encode(&mut self.sink);
+        }
+    }
+    pub fn insert_original(mut self) {
+        self.prev_instruction.encode(&mut self.sink);
+        self.current_instruction.encode(&mut self.sink);
     }
 }

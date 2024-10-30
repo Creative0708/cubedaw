@@ -1,4 +1,4 @@
-use cubedaw_lib::{Id, NodeData, NodeEntry, NodeStateWrapper, Track};
+use cubedaw_lib::{Id, NodeData, NodeEntry, Track};
 
 use crate::StateCommand;
 
@@ -6,7 +6,7 @@ use crate::StateCommand;
 pub struct NodeStateUpdate {
     id: Id<NodeEntry>,
     track_id: Id<Track>,
-    data: Box<dyn NodeStateWrapper>,
+    data: Box<[u8]>,
     input_values: Vec<f32>,
     old_input_values: Vec<f32>,
     num_outputs: u32,
@@ -17,7 +17,7 @@ impl NodeStateUpdate {
     pub fn new(
         id: Id<NodeEntry>,
         track_id: Id<Track>,
-        data: Box<dyn NodeStateWrapper>,
+        data: Box<[u8]>,
         input_values: Vec<f32>,
         old_input_values: Vec<f32>,
         num_outputs: u32,
@@ -88,11 +88,6 @@ impl NodeStateUpdate {
                 }
             }
 
-            if NodeStateWrapper::type_id(self.data.as_ref())
-                != NodeStateWrapper::type_id(node.data.inner.as_ref())
-            {
-                panic!("tried to replace NodeData with NodeData of different type")
-            }
             core::mem::swap(&mut self.data, &mut node.data.inner);
         }
     }

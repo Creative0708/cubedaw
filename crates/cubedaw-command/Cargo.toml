@@ -9,7 +9,6 @@ version = "0.1.0"
 cubedaw-lib = { path = "../cubedaw-lib" }
 
 [features]
-"egui" = ["cubedaw-lib/egui"]
 
 [lints]
 workspace = true

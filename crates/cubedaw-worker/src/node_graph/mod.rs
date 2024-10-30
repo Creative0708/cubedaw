@@ -1,12 +1,22 @@
-use std::cell::Cell;
+// mod group_track;
+// mod note;
+// mod section_track;
 
 use ahash::HashSetExt;
-use cubedaw_lib::{DynNode, DynNodeState, Id, IdMap, IdSet, NodeEntry, Patch};
+use cubedaw_lib::{Buffer, Id, IdMap, IdSet, NodeEntry, Patch};
+use resourcekey::ResourceKey;
 
-use crate::WorkerOptions;
+use crate::{host::WorkerHostState, WorkerOptions, WorkerState};
+
+mod group;
+pub use group::GroupNodeGraph;
+mod synth_note;
+pub use synth_note::SynthNoteNodeGraph;
+mod synth_track;
+pub use synth_track::SynthTrackNodeGraph;
 
 #[derive(Clone, Debug)]
-pub struct ProcessedNodeGraph {
+pub struct PreparedNodeGraph {
     input_node: Option<Id<NodeEntry>>,
     output_node: Id<NodeEntry>,
 
@@ -14,7 +24,7 @@ pub struct ProcessedNodeGraph {
     nodes: Vec<NodeGraphEntry>,
 }
 
-impl ProcessedNodeGraph {
+impl PreparedNodeGraph {
     pub fn new(
         patch: &Patch,
         options: &WorkerOptions,
@@ -84,7 +94,7 @@ impl ProcessedNodeGraph {
 
         let mut old_node_inners = IdMap::new();
         for graph_entry in self.nodes.drain(..) {
-            old_node_inners.insert(graph_entry.node_id, graph_entry.inner);
+            old_node_inners.insert(graph_entry.node_id, graph_entry.state);
         }
 
         while let Some(node_id) = zero_indegree_node_stack.pop() {
@@ -92,9 +102,14 @@ impl ProcessedNodeGraph {
 
             node_id_to_vec_index_map.insert(node_id, self.nodes.len() as u32);
             self.nodes.push(NodeGraphEntry {
-                inner: old_node_inners
-                    .remove(node_id)
-                    .unwrap_or_else(|| options.registry.create_node(node.data.key_id)),
+                node_id,
+                args: node.data.inner.clone(),
+                key: node.data.key.clone(),
+
+                state: old_node_inners.remove(node_id).unwrap_or_else(|| {
+                    let entry = options.registry.get(&node.data.key).expect("unreachable");
+                    (entry.node_factory)(&node.data.inner)
+                }),
                 inputs: node
                     .inputs()
                     .iter()
@@ -116,26 +131,14 @@ impl ProcessedNodeGraph {
                                 .collect()
                         },
                         bias: input.bias,
-                        buffer: vec![0.0; options.buffer_size as usize].into_boxed_slice(),
+                        buffer: Buffer::new_box_zeroed(options.buffer_size),
                     })
                     .collect(),
                 outputs: node
                     .outputs()
                     .iter()
-                    .map(|output| {
-                        if output.connections.is_empty() {
-                            None
-                        } else {
-                            Some(
-                                vec![Cell::new(0.0); options.buffer_size as usize]
-                                    .into_boxed_slice(),
-                            )
-                        }
-                    })
+                    .map(|_output| Buffer::new_box_zeroed(options.buffer_size))
                     .collect(),
-
-                node_id,
-                state: node.data.inner.clone(),
             });
 
             if node_id != output_node {
@@ -193,113 +196,101 @@ impl ProcessedNodeGraph {
             .map(|&index| &mut self.nodes[index as usize])
     }
 
-    pub fn process(&mut self, worker_options: &WorkerOptions) {
+    pub fn process(
+        &mut self,
+        options: &WorkerOptions,
+        state: &mut WorkerState,
+    ) -> anyhow::Result<()> {
         // self.nodes has been topologically sorted so the all dependencies of a node appear before it in the vec
         for index in 0..self.nodes.len() {
             let (previous_nodes, [node, ..]) = self.nodes.split_at_mut(index) else {
                 unreachable!()
             };
-            let mut inputs_vec = Vec::with_capacity(node.inputs.len());
-
-            struct CubedawNodeContext<'a> {
-                worker_options: &'a WorkerOptions,
-                previous_nodes: &'a [NodeGraphEntry],
-                inputs: &'a [cubedaw_lib::DataSource<'a>],
-                outputs: &'a mut [Option<Box<[Cell<f32>]>>],
-            }
-
-            impl<'a> cubedaw_lib::NodeContext<'a> for CubedawNodeContext<'a> {
-                fn sample_rate(&self) -> u32 {
-                    self.worker_options.sample_rate
-                }
-                fn buffer_size(&self) -> u32 {
-                    self.worker_options.buffer_size
-                }
-
-                fn input(&self, index: u32) -> cubedaw_lib::DataSource<'_> {
-                    self.inputs[index as usize]
-                }
-                fn output(&self, index: u32) -> cubedaw_lib::DataDrain<'_> {
-                    match self.outputs[index as usize] {
-                        None => cubedaw_lib::DataDrain::Disconnected,
-                        Some(ref buf) => cubedaw_lib::DataDrain::NodeInput(buf),
-                    }
-                }
-                fn property(&self, property: cubedaw_lib::NoteProperty) -> f32 {
-                    match property {
-                        cubedaw_lib::NoteProperty::PITCH => 1.0,
-                        _ => 0.0,
-                    }
-                }
-            }
 
             for input in &mut node.inputs {
-                if input.connections.is_empty() {
-                    inputs_vec.push(cubedaw_lib::DataSource::Const(input.bias));
-                } else {
-                    input.buffer.fill(0.0);
-                    for &(connection, output_index, multiplier) in &input.connections {
-                        let connected_node = &previous_nodes[connection as usize];
-                        let zipped = connected_node.outputs[output_index as usize]
-                            .as_ref()
-                            .expect("???")
-                            .iter()
-                            .zip(&mut input.buffer);
+                input.buffer.fill(0.0);
+                for &(connection, output_index, multiplier) in &input.connections {
+                    let connected_node = &previous_nodes[connection as usize];
+                    let zipped = connected_node.outputs[output_index as usize]
+                        .iter()
+                        .zip(input.buffer.iter_mut());
 
-                        match multiplier {
-                            0.0 => (),
-                            1.0 => {
-                                for (conn_val, buf_val) in zipped {
-                                    *buf_val += conn_val.get();
-                                }
+                    match multiplier {
+                        0.0 => (),
+                        1.0 => {
+                            for (conn_val, buf_val) in zipped {
+                                *buf_val += conn_val;
                             }
-                            -1.0 => {
-                                for (conn_val, buf_val) in zipped {
-                                    *buf_val -= conn_val.get();
-                                }
+                        }
+                        -1.0 => {
+                            for (conn_val, buf_val) in zipped {
+                                *buf_val -= conn_val;
                             }
-                            multiplier => {
-                                for (conn_val, buf_val) in zipped {
-                                    *buf_val += conn_val.get() * multiplier;
-                                }
+                        }
+                        multiplier => {
+                            for (conn_val, buf_val) in zipped {
+                                *buf_val += conn_val * multiplier;
                             }
                         }
                     }
-
-                    inputs_vec.push(cubedaw_lib::DataSource::Buffer(&input.buffer))
                 }
             }
 
-            node.inner.process(
-                &*node.state,
-                &mut CubedawNodeContext {
-                    worker_options,
-                    previous_nodes,
-                    inputs: &inputs_vec,
-                    outputs: &mut node.outputs,
-                },
-            );
+            let registry_entry = options
+                .registry
+                .get(&node.key)
+                .expect("desynced node graph");
+            match registry_entry.plugin_data {
+                Some(ref plugin_data) => {
+                    let plugin = state
+                        .standalone_instances
+                        .get(&node.key)
+                        .expect("desynced node graph");
+                    plugin
+                        .borrow_mut()
+                        .run(&node.key, &node.args, &mut node.state)?;
+                }
+                None => {
+                    // special passthrough lopic
+                    for (input, output) in node.inputs.iter().zip(node.outputs.iter_mut()) {
+                        output.copy_from(&input.buffer);
+                    }
+                }
+            }
+
+            // node.inner.process(
+            //     &*node.state,
+            //     &mut CubedawNodeContext {
+            //         worker_options,
+            //         previous_nodes,
+            //         inputs: &inputs_vec,
+            //         outputs: &mut node.outputs,
+            //     },
+            // );
         }
+        Ok(())
     }
 }
 
 #[derive(Clone)]
 pub struct NodeGraphEntry {
-    pub inner: DynNode,
+    pub state: Box<[u8]>,
     pub inputs: Vec<NodeGraphInput>,
-    pub outputs: Vec<Option<Box<[Cell<f32>]>>>,
+    pub outputs: Vec<Box<Buffer>>,
 
+    pub key: ResourceKey,
     pub node_id: Id<NodeEntry>,
-    pub state: DynNodeState,
+    pub args: Box<[u8]>,
 }
 impl std::fmt::Debug for NodeGraphEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeGraphEntry")
-            .field("inner", &self.inner)
+            .field("key", &self.key)
+            .field("inner", &format_args!("<len {}>", self.state.len()))
             .field("inputs", &self.inputs)
             .field("outputs", &format_args!("<{} outputs>", self.outputs.len()))
             .field("node_id", &self.node_id)
-            .field("state", &self.state)
+            .field("state", &format_args!("<len {}>", self.args.len()))
             .finish()
     }
 }
@@ -308,7 +299,7 @@ impl std::fmt::Debug for NodeGraphEntry {
 pub struct NodeGraphInput {
     connections: Vec<(u32, u32, f32)>,
     bias: f32,
-    buffer: Box<[f32]>,
+    buffer: Box<Buffer>,
 }
 
 impl std::fmt::Debug for NodeGraphInput {

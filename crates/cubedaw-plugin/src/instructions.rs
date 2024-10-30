@@ -1,8 +1,9 @@
 use wasm_encoder::{reencode, Encode};
 
-use super::stitch::{FunctionStitch, ModuleOffsets};
+use super::stitch::{FunctionStitch, ModuleStitchInfo};
 
 // Used in functions and ConstExprs.
+#[derive(Clone)]
 pub struct PreparedInstructionList {
     instructions: Box<[wasm_encoder::Instruction<'static>]>,
 }
@@ -25,15 +26,15 @@ impl PreparedInstructionList {
         })
     }
 
-    pub fn stitch(&self, func: &mut FunctionStitch, offsets: &ModuleOffsets) {
+    pub fn stitch(&self, func: &mut FunctionStitch, offsets: &ModuleStitchInfo) {
         for inst in self.instructions.iter() {
             let modified = func.instruction(inst, offsets);
             modified.encode(&mut func.code);
         }
     }
-    pub fn encode(&self, offsets: &ModuleOffsets) -> wasm_encoder::ConstExpr {
-        let mut func = FunctionStitch::new();
-        self.stitch(&mut func, offsets);
+    pub fn encode(&self, info: &ModuleStitchInfo) -> wasm_encoder::ConstExpr {
+        let mut func = FunctionStitch::empty();
+        self.stitch(&mut func, info);
         wasm_encoder::ConstExpr::raw(func.code)
     }
 }

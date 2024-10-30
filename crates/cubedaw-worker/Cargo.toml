@@ -6,19 +6,23 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
+egui = { workspace = true, optional = true }
 ahash = { workspace = true }
 smallvec = { workspace = true }
+anyhow = { workspace = true }
 cubedaw-lib = { path = "../cubedaw-lib" }
+resourcekey = { path = "../resourcekey" }
 cubedaw-command = { path = "../cubedaw-command" }
-egui = { workspace = true, optional = true }
+cubedaw-plugin = { path = "../cubedaw-plugin" }
+cubedaw-wasm = { path = "../cubedaw-wasm" }
 crossbeam-channel = { workspace = true }
 replace_with = { workspace = true }
 log = { workspace = true }
 bumpalo = { workspace = true }
 work-queue = { workspace = true }
+unwrap_todo = { workspace = true }
 
 [features]
-egui = ["dep:egui"]
 
 [lints]
 workspace = true

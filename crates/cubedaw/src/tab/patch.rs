@@ -1,8 +1,5 @@
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
-use cubedaw_lib::{
-    Cable, CableTag, Id, IdMap, Node as _, NodeData, NodeEntry, NodeInputUiOptions,
-    NodeStateWrapper, Track,
-};
+use cubedaw_lib::{Cable, CableTag, Id, IdMap, NodeData, NodeEntry, Track};
 use egui::{emath::TSTransform, pos2, Pos2, Rect, Vec2};
 
 use crate::{

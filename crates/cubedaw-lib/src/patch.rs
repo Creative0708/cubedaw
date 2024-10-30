@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
-use ahash::HashSetExt;
+use ahash::{HashSet, HashSetExt};
 
-use crate::{Id, IdMap, IdSet, NodeStateWrapper, ResourceKey};
+use crate::{Id, IdMap, IdSet, ResourceKey};
 
 #[derive(Debug, Default, Clone)]
 pub struct Patch {
@@ -18,16 +18,16 @@ impl Patch {
     /// If the provided node was added, what would its tag be?
     pub fn get_node_tag_if_added(&self, node: &NodeData) -> NodeTag {
         // nodes have no tag on their own but certain special nodes have their own NodeTag
-        static SPECIAL_NODES: std::sync::LazyLock<IdSet<ResourceKey>> =
+        static SPECIAL_NODES: std::sync::LazyLock<HashSet<ResourceKey>> =
             std::sync::LazyLock::new(|| {
-                let mut map = IdSet::new();
-                map.insert(Id::new("builtin:note_output"));
-                map.insert(Id::new("builtin:track_input"));
-                map.insert(Id::new("builtin:track_output"));
+                let mut map = HashSet::new();
+                map.insert(ResourceKey::new("builtin:note_output").unwrap());
+                map.insert(ResourceKey::new("builtin:track_input").unwrap());
+                map.insert(ResourceKey::new("builtin:track_output").unwrap());
                 map
             });
 
-        if SPECIAL_NODES.contains(&node.key_id) {
+        if SPECIAL_NODES.contains(&node.key) {
             NodeTag::Special
         } else {
             NodeTag::Disconnected
@@ -321,14 +321,15 @@ impl CableTag {
 
 #[derive(Debug, Clone)]
 pub struct NodeData {
-    pub key_id: Id<ResourceKey>,
-    pub inner: Box<dyn NodeStateWrapper>,
+    pub key: ResourceKey,
+    /// Node args. _Not_ state, which can change over time. This stays static.
+    pub inner: Box<[u8]>,
 }
 
 impl NodeData {
-    pub fn new_disconnected(node_type: Id<ResourceKey>, inner: Box<dyn NodeStateWrapper>) -> Self {
+    pub fn new_disconnected(node_type: ResourceKey, inner: Box<[u8]>) -> Self {
         Self {
-            key_id: node_type,
+            key: node_type,
             inner,
         }
     }

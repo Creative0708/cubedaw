@@ -7,7 +7,12 @@ version = "0.1.0"
 
 [dependencies]
 ascii = { workspace = true }
-arcstr = "1.2.0"
+ahash = { workspace = true }
+serde = { workspace = true, optional = true }
+const-fnv1a-hash = "1.1.0"
+
+[features]
+serde = ["dep:serde"]
 
 [lints]
 workspace = true

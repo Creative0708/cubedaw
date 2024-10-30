@@ -1,6 +1,15 @@
-use cubedaw_lib::{builtin_nodes, Buffer, Id, Note, Track};
+use std::ops::Deref;
 
-use crate::{sync, worker::WorkerScratch, ProcessedNodeGraph};
+use cubedaw_lib::{Buffer, Id, Note, Track};
+use unwrap_todo::UnwrapTodo;
+
+use crate::{
+    host::WorkerGroupTrackState,
+    node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
+    sync,
+    worker::WorkerScratch,
+    PreparedNodeGraph, WorkerState,
+};
 
 #[derive(Debug)]
 pub enum WorkerJob {
@@ -9,21 +18,21 @@ pub enum WorkerJob {
     NoteProcess {
         track_id: Id<Track>,
         note_descriptor: NoteDescriptor,
-        nodes: &'static mut ProcessedNodeGraph,
-        output: sync::SyncAccessibleWriteHandle<'static, Buffer<'static>, WorkerJob>,
+        nodes: &'static mut SynthNoteNodeGraph,
+        output: sync::SyncAccessibleWriteHandle<'static, &'static mut Buffer, WorkerJob>,
     },
     /// Process a track.
     TrackProcess {
         track_id: Id<Track>,
-        nodes: &'static mut ProcessedNodeGraph,
-        input: sync::SyncAccessibleReadHandle<'static, Buffer<'static>, WorkerJob>,
-        output: sync::SyncAccessibleWriteHandle<'static, Buffer<'static>, WorkerJob>,
+        nodes: &'static mut SynthTrackNodeGraph,
+        input: sync::SyncAccessibleReadHandle<'static, &'static mut Buffer, WorkerJob>,
+        output: sync::SyncAccessibleWriteHandle<'static, &'static mut Buffer, WorkerJob>,
     },
     TrackGroup {
         track_id: Id<Track>,
-        nodes: &'static mut ProcessedNodeGraph,
-        input: sync::SyncAccessibleReadHandle<'static, Buffer<'static>, WorkerJob>,
-        output: sync::SyncAccessibleWriteHandle<'static, Buffer<'static>, WorkerJob>,
+        nodes: &'static mut GroupNodeGraph,
+        input: sync::SyncAccessibleReadHandle<'static, &'static mut Buffer, WorkerJob>,
+        output: sync::SyncAccessibleWriteHandle<'static, &'static mut Buffer, WorkerJob>,
     },
     /// Not actually a job. This is a signal to the worker that they should drop all resources and send the `Idle` event.
     Finalize,
@@ -34,6 +43,7 @@ impl WorkerJob {
         self,
         state: &cubedaw_lib::State,
         worker_options: &crate::WorkerOptions,
+        worker_state: &mut WorkerState,
         scratch: &mut WorkerScratch,
     ) -> WorkerJobResult {
         match self {
@@ -43,39 +53,15 @@ impl WorkerJob {
                 nodes,
                 output,
             } => {
-                let possibly_deleted_note = match note_descriptor {
+                let note = match note_descriptor {
                     NoteDescriptor::State { note, .. } => note,
                     NoteDescriptor::Live { note, .. } => note,
                 };
 
-                replace_with::replace_with_or_default(scratch, |mut scratch| {
-                    let output_node: &mut builtin_nodes::NoteOutputNode = nodes
-                        .get_node_mut(nodes.output_node())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-                    output_node.start(builtin_nodes::NoteOutputNodeInner::Output(scratch.0));
-
-                    nodes.process(worker_options);
-
-                    let output_node: &mut builtin_nodes::NoteOutputNode = nodes
-                        .get_node_mut(nodes.output_node())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-
-                    scratch.0 = match output_node.end() {
-                        builtin_nodes::NoteOutputNodeInner::Input(_) => unreachable!(),
-                        builtin_nodes::NoteOutputNodeInner::Output(buf) => buf,
-                    };
-
-                    scratch
-                });
+                let buffer = nodes.process(worker_options, worker_state);
 
                 let job_to_add = output.lock(|output_buf| {
-                    output_buf.accumulate(&scratch.0.borrow_mut());
+                    output_buf.accumulate(buffer);
                 });
 
                 WorkerJobResult {
@@ -89,48 +75,10 @@ impl WorkerJob {
                 input,
                 output,
             } => {
-                replace_with::replace_with_or_default(scratch, |mut scratch| {
-                    let input_node: &mut builtin_nodes::NoteOutputNode = nodes
-                        .get_node_mut(nodes.input_node().unwrap())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-                    input_node.start(builtin_nodes::NoteOutputNodeInner::Input(
-                        input.wait().as_slice(),
-                    ));
-                    let output_node: &mut builtin_nodes::TrackOutputNode = nodes
-                        .get_node_mut(nodes.output_node())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-
-                    output_node.start(scratch.0);
-
-                    nodes.process(worker_options);
-
-                    let input_node: &mut builtin_nodes::NoteOutputNode = nodes
-                        .get_node_mut(nodes.input_node().unwrap())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-                    input_node.end();
-                    let output_node: &mut builtin_nodes::TrackOutputNode = nodes
-                        .get_node_mut(nodes.output_node())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-
-                    scratch.0 = output_node.end();
-
-                    scratch
-                });
+                let buffer = nodes.process(worker_options, worker_state, input.wait());
 
                 let job_to_add = output.lock(|output_buf| {
-                    output_buf.accumulate(&scratch.0.borrow_mut());
+                    output_buf.accumulate(&buffer);
                 });
 
                 WorkerJobResult {
@@ -144,45 +92,10 @@ impl WorkerJob {
                 input,
                 output,
             } => {
-                replace_with::replace_with_or_default(scratch, |mut scratch| {
-                    let input_node: &mut builtin_nodes::TrackInputNode = nodes
-                        .get_node_mut(nodes.input_node().unwrap())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-                    input_node.start(input.wait().as_slice());
-                    let output_node: &mut builtin_nodes::TrackOutputNode = nodes
-                        .get_node_mut(nodes.output_node())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-                    output_node.start(scratch.0);
-
-                    nodes.process(worker_options);
-
-                    let input_node: &mut builtin_nodes::TrackInputNode = nodes
-                        .get_node_mut(nodes.input_node().unwrap())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-                    input_node.end();
-                    let output_node: &mut builtin_nodes::TrackOutputNode = nodes
-                        .get_node_mut(nodes.output_node())
-                        .unwrap()
-                        .inner
-                        .downcast_mut()
-                        .unwrap();
-
-                    scratch.0 = output_node.end();
-
-                    scratch
-                });
+                let buffer = nodes.process(worker_options, worker_state, input.wait());
 
                 let job_to_add = output.lock(|output_buf| {
-                    output_buf.accumulate(&scratch.0.borrow_mut());
+                    output_buf.accumulate(&buffer);
                 });
 
                 WorkerJobResult {

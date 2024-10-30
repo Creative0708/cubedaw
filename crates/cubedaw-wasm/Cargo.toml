@@ -1,0 +1,23 @@
+[package]
+authors = ["Colin Cai <therealcreative0708@gmail.com>"]
+edition.workspace = true
+name = "cubedaw-wasm"
+rust-version.workspace = true
+version = "0.1.0"
+
+[dependencies]
+smallvec = { workspace = true }
+anyhow = { workspace = true }
+
+[features]
+default = ["fmt"]
+fmt = []
+
+[target.'cfg(not(target_os = "wasm"))'.dependencies]
+wasmtime = { version = "25.0.2", default-features = false, features = [
+    "runtime",
+    "cranelift",
+    "cache",
+    "demangle",
+    "addr2line",
+] }
