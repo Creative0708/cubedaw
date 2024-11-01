@@ -1,14 +1,13 @@
 [package]
 edition = "2021"
 name = "postcard-stringify"
-rust-version = "1.83.0"
 
 version = "0.1.0"
 
 [dependencies]
 leb128 = "0.2"
-syn = "2.0.85"
-proc-macro2 = "1.0.47"
+syn = "=1.0.0"
+proc-macro2 = "=1.0.40"
 
 [dev-dependencies]
 postcard = "1.0.10"

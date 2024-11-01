@@ -33,12 +33,14 @@ pub(crate) use every;
 pub struct f32x16(pub [v128; 4]);
 
 impl f32x16 {
+    #[inline(always)]
     pub fn splat(val: f32) -> Self {
         let inner = wasm::f32x4_splat(val);
         Self([inner; 4])
     }
 
     /// Extracts a lane from 0 to 15. If the index is out of range it is wrapped.
+    #[inline(always)]
     pub fn extract(self, mut index: u8) -> f32 {
         index &= 0xF;
 
@@ -52,6 +54,7 @@ impl f32x16 {
         }
     }
     /// Replaces a lane from 0 to 15. If the index is out of range it is wrapped.
+    #[inline(always)]
     pub fn replace(&mut self, mut index: u8, val: f32) {
         index &= 0xF;
 
@@ -65,16 +68,19 @@ impl f32x16 {
         }
     }
 
+    #[inline(always)]
     pub fn to_array(self) -> [f32; 16] {
         // SAFETY: f32 is valid for all bit patterns. Probably.
         unsafe { core::mem::transmute::<[v128; 4], [f32; 16]>(self.0) }
     }
+    #[inline(always)]
     pub fn from_array(val: [f32; 16]) -> Self {
         // SAFETY: v128 is valid for all bit patterns.
         Self(unsafe { core::mem::transmute::<[f32; 16], [v128; 4]>(val) })
     }
 
     #[cfg(feature = "portable_simd")]
+    #[inline(always)]
     pub fn to_array_f32x4(self) -> [core::simd::f32x4; 4] {
         // SAFETY: [f32; 16] and [[f32; 4]; 4] have the same layout
         let arrays = unsafe { core::mem::transmute::<[f32; 16], [[f32; 4]; 4]>(self.to_array()) };
@@ -89,45 +95,56 @@ impl f32x16 {
 
     // Wrapper functions
 
+    #[inline(always)]
     pub fn madd(self, mul: Self, add: Self) -> Self {
         every!(wasm::f32x4_relaxed_madd, self, mul, add)
     }
+    #[inline(always)]
     pub fn nmadd(self, mul: Self, add: Self) -> Self {
         every!(wasm::f32x4_relaxed_nmadd, self, mul, add)
     }
+    #[inline(always)]
     pub fn min(self, rhs: Self) -> Self {
         every!(wasm::f32x4_relaxed_min, self, rhs)
     }
+    #[inline(always)]
     pub fn max(self, rhs: Self) -> Self {
         every!(wasm::f32x4_relaxed_max, self, rhs)
     }
+    #[inline(always)]
     pub fn trunc(self) -> Self {
         every!(wasm::f32x4_trunc, self)
     }
+    #[inline(always)]
     pub fn fract(self) -> Self {
         self - self.trunc()
     }
+    #[inline(always)]
     pub fn abs(self) -> Self {
         every!(wasm::f32x4_abs, self)
     }
+    #[inline(always)]
     pub fn floor(self) -> Self {
         every!(wasm::f32x4_floor, self)
     }
+    #[inline(always)]
     pub fn ceil(self) -> Self {
         every!(wasm::f32x4_ceil, self)
     }
 
     // Utility functions
 
+    #[inline(always)]
     pub fn prefix_sum_with(self, start: f32) -> Self {
-        let mut new = self;
+        let mut new = [0.0; 16];
+        let mut arr = self.to_array();
         let mut tot = start;
         // go go gadget loop unroller
         for i in 0..16 {
-            tot += new.extract(i);
-            new.replace(i, tot);
+            tot += arr[i];
+            new[i] = tot;
         }
-        new
+        Self::from_array(new)
     }
     pub fn copysign(self, other: Self) -> Self {
         fn copysign_inner(val: v128, other: v128) -> v128 {
@@ -139,46 +156,54 @@ impl f32x16 {
 
 impl ops::Add<Self> for f32x16 {
     type Output = Self;
+    #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
         every!(wasm::f32x4_add, self, rhs)
     }
 }
 impl ops::Sub<Self> for f32x16 {
     type Output = Self;
+    #[inline(always)]
     fn sub(self, rhs: Self) -> Self::Output {
         every!(wasm::f32x4_sub, self, rhs)
     }
 }
 impl ops::Mul<Self> for f32x16 {
     type Output = Self;
+    #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
         every!(wasm::f32x4_mul, self, rhs)
     }
 }
 impl ops::Div<Self> for f32x16 {
     type Output = Self;
+    #[inline(always)]
     fn div(self, rhs: Self) -> Self::Output {
         every!(wasm::f32x4_div, self, rhs)
     }
 }
 impl ops::AddAssign<Self> for f32x16 {
+    #[inline(always)]
     fn add_assign(&mut self, rhs: Self) {
-        *self = every!(wasm::f32x4_add, self, rhs)
+        *self = *self + rhs;
     }
 }
 impl ops::SubAssign<Self> for f32x16 {
+    #[inline(always)]
     fn sub_assign(&mut self, rhs: Self) {
-        *self = every!(wasm::f32x4_sub, self, rhs)
+        *self = *self - rhs;
     }
 }
 impl ops::MulAssign<Self> for f32x16 {
+    #[inline(always)]
     fn mul_assign(&mut self, rhs: Self) {
-        *self = every!(wasm::f32x4_mul, self, rhs)
+        *self = *self * rhs;
     }
 }
 impl ops::DivAssign<Self> for f32x16 {
+    #[inline(always)]
     fn div_assign(&mut self, rhs: Self) {
-        *self = every!(wasm::f32x4_div, self, rhs);
+        *self = *self / rhs;
     }
 }
 impl fmt::Debug for f32x16 {

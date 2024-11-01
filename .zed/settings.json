@@ -9,6 +9,12 @@
       "enable": "always"
     }
   },
+  "languages": {
+    "Markdown": {
+      "preferred_line_length": 80,
+      "soft_wrap": "preferred_line_length"
+    }
+  },
   "lsp": {
     "rust-analyzer": {
       "initialization_options": {

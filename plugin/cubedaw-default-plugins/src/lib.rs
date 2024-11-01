@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(portable_simd)]
+#![feature(const_fn_floating_point_arithmetic)]
 
 use core::arch::wasm32 as wasm;
 

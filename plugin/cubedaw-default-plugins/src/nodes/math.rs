@@ -29,4 +29,4 @@ extern "C" fn do_math(state: &MathNodeState) {
     cubedaw_pluginlib::output::<0>(val);
 }
 
-cubedaw_pluginlib::export_node!("math", do_math);
+cubedaw_pluginlib::export_node!("cubedaw:math", do_math);

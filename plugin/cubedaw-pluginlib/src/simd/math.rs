@@ -1,18 +1,18 @@
 //! Approximation functions for f32x4 (modified functions from [micromath](https://github.com/tarcieri/micromath
 
-// Some code is taken/modified from the micromath repository, which is dually licensed under the MIT and Apache licenses.
+// Some code is taken/modified from the micromath repository, which is dually licensed under the MIT and Apache 2.0 licenses.
 // https://github.com/tarcieri/micromath/tree/main?tab=readme-ov-file#license
 
 use crate::wasm::{self, v128};
 
 /// Sign mask.
-pub(crate) const SIGN_MASK: u32 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
+// pub(crate) const SIGN_MASK: u32 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
 
 /// Exponent mask.
 pub(crate) const EXPONENT_MASK: u32 = 0b0111_1111_1000_0000_0000_0000_0000_0000;
 
 /// Mantissa mask.
-pub(crate) const MANTISSA_MASK: u32 = 0b0000_0000_0111_1111_1111_1111_1111_1111;
+// pub(crate) const MANTISSA_MASK: u32 = 0b0000_0000_0111_1111_1111_1111_1111_1111;
 
 /// Exponent mask.
 pub(crate) const EXPONENT_BIAS: u32 = 127;

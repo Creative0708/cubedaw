@@ -238,13 +238,13 @@ fn token_tree_to_postcard(tt: TokenTree, sink: &mut Vec<u8>) {
                 Lit::Int(int) => {
                     let digits = int.base10_digits();
                     if &digits[0..1] == "-" {
-                        let i64: i64 = int
-                            .base10_parse()
+                        let i64: i64 = digits
+                            .parse()
                             .unwrap_or_else(|_| panic!("number {} doesn't fit in an i64", digits));
                         leb128::write::signed(sink, i64).expect("unreachable");
                     } else {
-                        let u64: u64 = int
-                            .base10_parse()
+                        let u64: u64 = digits
+                            .parse()
                             .unwrap_or_else(|_| panic!("number {} doesn't fit in an u64", digits));
                         leb128::write::unsigned(sink, u64).expect("unreachable");
                     }

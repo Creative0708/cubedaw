@@ -1,22 +1,28 @@
 use wasm_encoder::reencode::Reencode;
 
-use super::{
-    instructions::PreparedInstructionList,
+use crate::{
+    prepare::PreparedInstructionList,
     stitch::{FunctionStitch, ModuleStitchInfo},
 };
 
+use super::PrepareContext;
+
 // TODO possibly store a semi-complete byte representation for function instructions
 // for optimization purposes?
+/// A function, ready to be stitched into a `FunctionStitch`.
 #[derive(Clone)]
 pub struct PreparedFunction {
-    ty: u32,
+    ty_index: u32,
+    ty: wasm_encoder::FuncType,
     locals: Box<[wasm_encoder::ValType]>,
     instructions: PreparedInstructionList,
 }
 
 impl PreparedFunction {
     pub fn new(
-        ty: u32,
+        ctx: &PrepareContext,
+        ty_index: u32,
+        ty: wasm_encoder::FuncType,
         reader: wasmparser::FunctionBody,
         reencoder: &mut wasm_encoder::reencode::RoundtripReencoder,
     ) -> Result<Self, wasmparser::BinaryReaderError> {
@@ -34,26 +40,41 @@ impl PreparedFunction {
         }
 
         Ok(Self {
+            ty_index,
             ty,
             locals: locals.into_boxed_slice(),
-            instructions: PreparedInstructionList::new(reader.get_operators_reader()?, reencoder)?,
+            instructions: PreparedInstructionList::new(
+                ctx,
+                reader.get_operators_reader()?,
+                reencoder,
+            )?,
         })
     }
 
     pub fn ty(&self) -> u32 {
-        self.ty
+        self.ty_index
     }
 
     /// Adds the locals and code of this function into `instructions_sink`.
     /// This assumes that the arguments are already on the stack, and will put the results on the stack.
     pub fn stitch(&self, func: &mut FunctionStitch, offsets: &ModuleStitchInfo) {
+        let locals_offset = func.locals_offset();
+        // put stuff from the stack into locals
+        for local_index in locals_offset..locals_offset + self.ty.params().len() as u32 {
+            func.add_instruction_raw(&wasm_encoder::Instruction::LocalSet(local_index));
+        }
         self.instructions.stitch(func, offsets);
-        func.locals.extend(self.locals.iter().cloned());
+
+        // allocate locals for the parameters
+        func.extend_locals(self.ty.params().iter().cloned());
+        func.extend_locals(self.locals.iter().cloned());
     }
 
-    pub fn encode_empty(&self, offsets: &ModuleStitchInfo) -> wasm_encoder::Function {
-        let mut func = FunctionStitch::empty();
-        self.stitch(&mut func, offsets);
-        func.finalize()
+    pub fn encode_standalone(&self, offsets: &ModuleStitchInfo) -> FunctionStitch {
+        let mut func = FunctionStitch::standalone(self.ty.clone());
+        // no need to do anything fancy here, just encode the locals and instructions without needing extra locals
+        self.instructions.stitch(&mut func, offsets);
+        func.extend_locals(self.locals.iter().cloned());
+        func
     }
 }

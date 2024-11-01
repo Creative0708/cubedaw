@@ -14,7 +14,7 @@ default = ["fmt"]
 fmt = []
 
 [target.'cfg(not(target_os = "wasm"))'.dependencies]
-wasmtime = { version = "25.0.2", default-features = false, features = [
+wasmtime = { version = "25.0.2", features = [
     "runtime",
     "cranelift",
     "cache",

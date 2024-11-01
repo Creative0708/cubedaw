@@ -1,20 +1,19 @@
 [package]
 authors = ["Colin Cai <therealcreative0708@gmail.com>"]
 edition.workspace = true
-name = "cubedaw-pluginlib"
+name = "cubedaw-test-plugin"
 rust-version.workspace = true
 version = "0.1.0"
 
 [lib]
+crate-type = ["cdylib"]
 
-[features]
-inline = []
-portable_simd = []
-default = []
+[profile.release]
+strip = true
+opt-level = 3
 
 [dependencies]
-postcard-stringify = { path = "../postcard-stringify" }
-paste = "1.0.15"
+cubedaw-pluginlib = { path = "../cubedaw-pluginlib", features = ["inline"] }
 
 [lints]
 workspace = true

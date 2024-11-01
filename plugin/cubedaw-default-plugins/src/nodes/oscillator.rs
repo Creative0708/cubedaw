@@ -1,5 +1,3 @@
-use core::simd::num::SimdFloat;
-
 use cubedaw_pluginlib::f32x16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +26,7 @@ fn do_oscillator(state: OscillatorNodeArgs, buf: &mut OscillatorNodeState) {
     let pitch = cubedaw_pluginlib::input::<0>();
 
     let increment = crate::util::pitch_to_hertz(pitch)
-        * (f32x16::splat(1.0) / f32x16::splat(cubedaw_pluginlib::sample_rate() as f32));
+        * (f32x16::splat(1.0) * f32x16::splat(1.0 / cubedaw_pluginlib::sample_rate() as f32));
 
     let cycle = increment.prefix_sum_with(buf.cycle);
     buf.cycle = cycle.extract(15);
@@ -45,4 +43,4 @@ fn do_oscillator(state: OscillatorNodeArgs, buf: &mut OscillatorNodeState) {
     cubedaw_pluginlib::output::<0>(val);
 }
 
-cubedaw_pluginlib::export_node!("oscillator", do_oscillator);
+cubedaw_pluginlib::export_node!("cubedaw:oscillator", do_oscillator);

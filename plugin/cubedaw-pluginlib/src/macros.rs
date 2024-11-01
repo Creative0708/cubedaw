@@ -1,6 +1,18 @@
 #[macro_export]
 macro_rules! declare_plugin {
     (@1
+        id: $value:literal
+        $($args:tt)*
+    ) => {
+        const _: &str = $value;
+        $crate::__postcard_stringify::declare! {
+            #[link_section = "cubedaw:plugin_meta"]
+            static _CUBEDAWPLUGIN_ID = "id", $value;
+        }
+
+        $crate::declare_plugin!(@2 $($args)*);
+    };
+    (@1
         name: $value:literal
         $($args:tt)*
     ) => {
@@ -25,7 +37,6 @@ macro_rules! declare_plugin {
         $crate::declare_plugin!(@2 $($args)*);
     };
 
-    // TODO: more entries; license, version, etc etc
 
     (@1
         $key:ident: $val:tt
@@ -42,14 +53,15 @@ macro_rules! declare_plugin {
         compile_error!(concat!("invalid syntax in plugin declaration: ", stringify!($($args)+)));
     };
 
-    (@2, $($args:tt)*) => {};
-
-
+    // TODO: more entries; license, version, etc etc
     ($($args:tt)*) => {
         #[link_section = "cubedaw:plugin_version"]
         static _CUBEDAWPLUGIN_VERSION: [u8; 5] = *b"0.1.0";
 
         $crate::declare_plugin!(@1 $($args)*);
+    };
+    ($($args:tt)*) => {
+        compile_error!("invalid syntax in plugin declaration");
     };
 }
 
@@ -61,7 +73,7 @@ macro_rules! export_node {
 
         $crate::__paste::paste! {
             $crate::__postcard_stringify::declare! {
-                #[link_section = "cubedaw:nodelist"]
+                #[link_section = "cubedaw:node_list"]
                 static [<_CUBEDAWPLUGIN_ $function:upper>] = $name, stringify!($function);
             }
         }

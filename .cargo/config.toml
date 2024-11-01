@@ -2,4 +2,6 @@
 codegen-backend = true
 
 [profile.dev]
-codegen-backend = "cranelift"
+# can't use cranelift here bcuz wasmtime no likey :(
+# https://github.com/rust-lang/rustc_codegen_cranelift/issues/1204
+# codegen-backend = "cranelift"

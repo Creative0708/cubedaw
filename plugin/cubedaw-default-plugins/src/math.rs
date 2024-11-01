@@ -3,7 +3,7 @@ use core::f32::consts;
 use cubedaw_pluginlib::f32x16;
 
 const TABLE_SIZE: usize = 256;
-static SINE_TABLE: [f32; TABLE_SIZE + 2] = const {
+static SINE_TABLE: [f32; TABLE_SIZE + 2] = {
     /// Very slow but accurate sine function using the Taylor series.
     /// Good enough for a lookup table at compile time.
     const fn slow_const_sin(x: f32) -> f32 {

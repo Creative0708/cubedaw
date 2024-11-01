@@ -1,7 +1,7 @@
 use wasm_encoder::reencode::Reencode;
 
-use super::{
-    instructions::PreparedInstructionList,
+use crate::{
+    prepare::{PrepareContext, PreparedInstructionList},
     stitch::{ModuleStitch, ModuleStitchInfo},
 };
 
@@ -18,19 +18,19 @@ pub enum TableInit {
     Expr(PreparedInstructionList),
 }
 impl Table {
-    pub fn new(table: wasmparser::Table) -> anyhow::Result<Self> {
+    pub fn new(ctx: &PrepareContext, table: wasmparser::Table) -> anyhow::Result<Self> {
         Ok(Self {
             table_type: TableType::new(table.ty)?,
-            init: TableInit::new(table.init)?,
+            init: TableInit::new(ctx, table.init)?,
         })
     }
 
-    pub fn stitch(&self, module: &mut ModuleStitch, offsets: &ModuleStitchInfo) {
+    pub fn stitch(&self, module: &mut ModuleStitch, info: &ModuleStitchInfo) {
         match self.init {
             TableInit::RefNull => module.tables.table(self.table_type.encode()),
             TableInit::Expr(ref expr) => module
                 .tables
-                .table_with_init(self.table_type.encode(), &expr.encode(offsets)),
+                .table_with_init(self.table_type.encode(), &expr.encode(info)),
         };
     }
 }
@@ -56,10 +56,12 @@ impl TableType {
     }
 }
 impl TableInit {
-    pub fn new(table: wasmparser::TableInit) -> anyhow::Result<Self> {
+    pub fn new(ctx: &PrepareContext, table: wasmparser::TableInit) -> anyhow::Result<Self> {
         Ok(match table {
             wasmparser::TableInit::RefNull => Self::RefNull,
-            wasmparser::TableInit::Expr(expr) => Self::Expr(expr.try_into()?),
+            wasmparser::TableInit::Expr(expr) => {
+                Self::Expr(PreparedInstructionList::from_constexpr(ctx, &expr)?)
+            }
         })
     }
 }
@@ -78,18 +80,18 @@ pub enum ElementKind {
     },
 }
 impl ElementSegment {
-    pub fn new(elem: wasmparser::Element) -> anyhow::Result<Self> {
+    pub fn new(ctx: &PrepareContext, elem: wasmparser::Element) -> anyhow::Result<Self> {
         let wasmparser::ElementItems::Functions(funcs) = elem.items else {
             anyhow::bail!("reftype element passed to ElementSegment::new");
         };
         Ok(Self {
-            kind: ElementKind::new(elem.kind)?,
+            kind: ElementKind::new(ctx, elem.kind)?,
             items: funcs.into_iter().collect::<Result<Box<[u32]>, _>>()?,
         })
     }
 }
 impl ElementKind {
-    pub fn new(kind: wasmparser::ElementKind) -> anyhow::Result<Self> {
+    pub fn new(ctx: &PrepareContext, kind: wasmparser::ElementKind) -> anyhow::Result<Self> {
         Ok(match kind {
             wasmparser::ElementKind::Passive => Self::Passive,
             wasmparser::ElementKind::Active {
@@ -97,7 +99,7 @@ impl ElementKind {
                 offset_expr,
             } => Self::Active {
                 table_index: table_index.unwrap_or(0),
-                offset: offset_expr.try_into()?,
+                offset: PreparedInstructionList::from_constexpr(ctx, &offset_expr)?,
             },
             // Declared elements only occur with function types
             wasmparser::ElementKind::Declared => {
@@ -119,18 +121,20 @@ pub enum DataSegmentMode {
     Passive,
 }
 
+#[derive(Debug)]
 pub struct Global {
     pub ty: GlobalType,
     pub init: PreparedInstructionList,
 }
 impl Global {
-    pub fn new(global: wasmparser::Global) -> anyhow::Result<Self> {
+    pub fn new(ctx: &PrepareContext, global: wasmparser::Global) -> anyhow::Result<Self> {
         Ok(Self {
             ty: GlobalType::new(global.ty)?,
-            init: global.init_expr.try_into()?,
+            init: PreparedInstructionList::from_constexpr(ctx, &global.init_expr)?,
         })
     }
 }
+#[derive(Debug)]
 pub struct GlobalType {
     pub val_type: wasm_encoder::ValType,
     pub mutable: bool,

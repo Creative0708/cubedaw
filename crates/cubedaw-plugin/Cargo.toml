@@ -17,6 +17,10 @@ wasmparser = "0.215.0"
 wasm-encoder = { version = "0.215.0", features = ["wasmparser"] }
 anyhow = { workspace = true }
 semver = { workspace = true }
+unwrap_todo = { workspace = true }
+
+[dev-dependencies]
+wasmtime = "25.0.2"
 
 [features]
 

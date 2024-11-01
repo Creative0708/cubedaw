@@ -1,4 +1,4 @@
-use std::{fmt, ops, ptr::NonNull};
+use std::{fmt, ops};
 
 // TODO figure this out
 // fn resize_boxed_slice<T: Zeroable>(t: &mut Box<[T]>, length: usize) {

@@ -1,7 +1,7 @@
 use ahash::HashMap;
 use anyhow::{Context as _, Result};
 use cubedaw_plugin::ValType;
-use cubedaw_wasm::{Memory, Value};
+use cubedaw_wasm::Value;
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
@@ -20,7 +20,7 @@ pub struct StandalonePluginFactory {
 impl StandalonePluginFactory {
     pub fn new(plugin: &cubedaw_plugin::Plugin, options: &WorkerOptions) -> Self {
         let WorkerOptions { sample_rate, .. } = *options;
-        let module_stitch =
+        let mut module_stitch =
             cubedaw_plugin::ModuleStitch::new(cubedaw_plugin::ShimInfo::new(move |ctx| {
                 use cubedaw_plugin::{CubedawPluginImport as I, Instruction};
                 match ctx.import() {
@@ -28,13 +28,14 @@ impl StandalonePluginFactory {
                         let prev_instruction = ctx.prev_instruction.clone();
                         ctx.replace([prev_instruction, Instruction::I32Const(sample_rate as i32)]);
                     }
-                    _ => todo!(),
+                    _ => ctx.insert_original_instructions(),
                 }
             }));
         for node in plugin.exported_nodes() {
-            let func_stitch = cubedaw_plugin::FunctionStitch::new([ValType::I32, ValType::I32], []);
+            let mut func_stitch =
+                cubedaw_plugin::FunctionStitch::new([ValType::I32, ValType::I32], []);
             // TODO
-            // plugin.stitch_node(&mut func_stitch, &mut module_stitch);
+            plugin.stitch_node(node, &mut func_stitch, &mut module_stitch);
         }
         let wasm_module = module_stitch.finish();
         let module = cubedaw_wasm::Module::new(options.registry.engine(), &wasm_module).todo();

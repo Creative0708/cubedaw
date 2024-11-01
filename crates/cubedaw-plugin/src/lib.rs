@@ -1,14 +1,15 @@
-mod function;
-mod instructions;
 mod misc;
+pub mod prepare;
 mod stitch;
 pub use stitch::{FunctionStitch, ModuleStitch, ModuleStitchInfo, ShimContext, ShimInfo};
+mod util;
 
 use ahash::{HashMap, HashMapExt};
 use anyhow::Context;
-use function::PreparedFunction;
+use prepare::{PrepareContext, PreparedFunction};
 use resourcekey::{Namespace, ResourceKey};
 
+use unwrap_todo::UnwrapTodo;
 // TODO: currently we use wasm_encoder types (notably ValType), is it worth revealing implementation details
 // about the crate?
 pub use wasm_encoder::{Instruction, ValType};
@@ -20,9 +21,12 @@ pub struct Plugin {
     plugin_manifest: PluginManifest,
     tys: Box<[wasm_encoder::FuncType]>,
 
-    cubedaw_imports: [Option<u32>; CubedawPluginImport::SIZE],
-    exported_modules: ahash::HashMap<ResourceKey, u32>,
+    import_indices: [Option<u32>; CubedawPluginImport::SIZE],
+    exported_nodes: ahash::HashMap<ResourceKey, u32>,
     funcs: Box<[PreparedFunction]>,
+    /// The index that the module's functions start at.
+    /// This is equal to the number of `Some(_)`s in `cubedaw_imports`.
+    func_offset: u32,
     tables: Box<[misc::Table]>,
     memory: wasm_encoder::MemoryType,
     globals: Box<[misc::Global]>,
@@ -39,6 +43,7 @@ fn plugin_wasm_features() -> wasmparser::WasmFeatures {
         | WasmFeatures::MULTI_VALUE
         | WasmFeatures::MUTABLE_GLOBAL
         | WasmFeatures::RELAXED_SIMD
+        | WasmFeatures::REFERENCE_TYPES // idk why this is necessary but cubedaw-default-plugins requires it
         | WasmFeatures::SATURATING_FLOAT_TO_INT
         | WasmFeatures::SIGN_EXTENSION
         | WasmFeatures::SIMD
@@ -61,7 +66,7 @@ impl Plugin {
     pub fn new(buf: &[u8]) -> anyhow::Result<Self> {
         let plugin_version = Self::module_version_from(buf)?;
 
-        if !plugin_version
+        if plugin_version
             .cmp_precedence(&MAX_SUPPORTED_VERSION)
             .is_gt()
         {
@@ -72,10 +77,11 @@ impl Plugin {
             );
         }
 
-        let mut validator = wasmparser::Validator::new_with_features(plugin_wasm_features());
         if buf.len() > u32::MAX as usize {
             anyhow::bail!("WASM module too big: {} (max {})", buf.len(), u32::MAX);
         }
+
+        let mut validator = wasmparser::Validator::new_with_features(plugin_wasm_features());
 
         // good enough for now. shove this into the parser loop if performance is an issue
         let _types = validator.validate_all(buf)?;
@@ -87,8 +93,13 @@ impl Plugin {
 
         let mut plugin_manifest: Option<PluginManifest> = None;
 
+        // prepare_ctx only contains data from the type and import sections.
+        // since those two sections come first in the module (see https://webassembly.github.io/spec/core/binary/modules.html#binary-module)
+        // this will be Some(_) for everything afterwards (tables, memories, globals, etc.)
+        let mut prepare_ctx: Option<PrepareContext> = None;
+
         let mut tys: Vec<wasm_encoder::FuncType> = Vec::new();
-        let mut plugin_imports = [None; CubedawPluginImport::SIZE];
+        let mut cubedaw_imports = [None; CubedawPluginImport::SIZE];
         let mut funcs: Vec<PreparedFunction> = Vec::new();
         let mut tables: Box<[misc::Table]> = Box::new([]);
         let mut memory: Option<wasm_encoder::MemoryType> = None;
@@ -156,18 +167,22 @@ impl Plugin {
                             .expect("validation didn't validate??");
 
                         if &plugin_import.ty() != ty
-                            || plugin_imports[plugin_import as usize].is_some()
+                            || cubedaw_imports[plugin_import as usize].is_some()
                         {
                             anyhow::bail!(
                                 "import {:?} has invalid type: {:?}, expected {:?}",
                                 import.name,
-                                import.ty,
+                                ty,
                                 plugin_import.ty()
                             );
                         }
 
-                        plugin_imports[plugin_import as usize] = Some(func_idx as u32);
+                        cubedaw_imports[plugin_import as usize] = Some(func_idx as u32);
                     }
+
+                    prepare_ctx = Some(PrepareContext {
+                        import_function_indices: cubedaw_imports,
+                    });
                 }
                 wasmparser::Payload::FunctionSection(r) => {
                     assert!(
@@ -185,7 +200,14 @@ impl Plugin {
 
                     tables = r
                         .into_iter()
-                        .map(|table| Ok(misc::Table::new(table?)?))
+                        .map(|table| {
+                            Ok(misc::Table::new(
+                                prepare_ctx
+                                    .as_ref()
+                                    .expect("unreachable; see declaration of prepare_ctx"),
+                                table?,
+                            )?)
+                        })
                         .collect::<anyhow::Result<_>>()?;
                 }
                 wasmparser::Payload::MemorySection(r) => {
@@ -217,7 +239,14 @@ impl Plugin {
 
                     globals = r
                         .into_iter()
-                        .map(|global| Ok(misc::Global::new(global?)?))
+                        .map(|global| {
+                            Ok(misc::Global::new(
+                                prepare_ctx
+                                    .as_ref()
+                                    .expect("unreachable; see declaration of prepare_ctx"),
+                                global?,
+                            )?)
+                        })
                         .collect::<anyhow::Result<_>>()?;
                 }
                 wasmparser::Payload::ExportSection(r) => {
@@ -236,15 +265,23 @@ impl Plugin {
 
                     elems = r
                         .into_iter()
-                        .map(|elem| Ok(misc::ElementSegment::new(elem?)?))
+                        .map(|elem| {
+                            Ok(misc::ElementSegment::new(
+                                prepare_ctx
+                                    .as_ref()
+                                    .expect("unreachable; see declaration of prepare_ctx"),
+                                elem?,
+                            )?)
+                        })
                         .collect::<anyhow::Result<_>>()?;
                 }
                 wasmparser::Payload::DataCountSection { count, range } => todo!(),
                 wasmparser::Payload::DataSection(r) => {
                     assert!(datas.is_empty(), "module has more than one data section");
 
+                    // TODO
                     for data in r {
-                        dbg!(data?.kind);
+                        // dbg!(data?.kind);
                     }
                 }
                 wasmparser::Payload::CodeSectionStart {
@@ -255,10 +292,15 @@ impl Plugin {
                     assert_eq!(count as usize, func_tys.len());
                 }
                 wasmparser::Payload::CodeSectionEntry(r) => {
+                    let ty_index = func_tys[current_function as usize];
                     funcs.insert(
                         current_function,
                         PreparedFunction::new(
-                            func_tys[current_function as usize],
+                            prepare_ctx
+                                .as_ref()
+                                .expect("unreachable; see declaration of prepare_ctx"),
+                            ty_index,
+                            tys[ty_index as usize].clone(),
                             r,
                             &mut reencoder,
                         )?,
@@ -281,21 +323,50 @@ impl Plugin {
                 }
 
                 wasmparser::Payload::CustomSection(section) => {
+                    fn postcard_deserialize<'de, T: serde::Deserialize<'de>>(
+                        bytes: &mut &'de [u8],
+                    ) -> anyhow::Result<T> {
+                        let val: T;
+                        (val, *bytes) = postcard::take_from_bytes(bytes)?;
+                        Ok(val)
+                    }
                     match CubedawSectionType::from_name(section.name()) {
-                        Some(CubedawSectionType::PluginList) => {
-                            #[derive(serde::Deserialize)]
-                            struct PluginEntry<'a> {
-                                key: ResourceKey,
-                                export_name: &'a str,
-                            }
+                        Some(CubedawSectionType::NodeList) => {
                             let mut bytes = section.data();
                             while !bytes.is_empty() {
-                                let entry: PluginEntry;
-                                (entry, bytes) = postcard::take_from_bytes(bytes)
-                                    .context("invalid plugin entry")?;
-                                function_names_of_exported_modules
-                                    .insert(entry.key, entry.export_name);
+                                let (key, export_name): (ResourceKey, &str) =
+                                    postcard_deserialize(&mut bytes).with_context(|| {
+                                        format!(
+                                            "can't deserialize plugin entry from {:#?}",
+                                            util::ByteString(bytes)
+                                        )
+                                    })?;
+                                function_names_of_exported_modules.insert(key, export_name);
                             }
+                        }
+                        Some(CubedawSectionType::PluginMeta) => {
+                            let mut bytes = section.data();
+                            let mut id: Option<Namespace> = None;
+                            let mut name: Option<String> = None;
+                            let mut description: Option<String> = None;
+                            while !bytes.is_empty() {
+                                match postcard_deserialize::<&str>(&mut bytes)? {
+                                    "id" => id = Some(postcard_deserialize(&mut bytes)?),
+                                    "name" => name = Some(postcard_deserialize(&mut bytes)?),
+                                    "description" => {
+                                        description = Some(postcard_deserialize(&mut bytes)?)
+                                    }
+                                    other => anyhow::bail!("invalid key {other} in PluginManifest"),
+                                }
+                            }
+                            plugin_manifest = Some(PluginManifest {
+                                id: id.context("id doesn't exist in plugin manifest")?,
+                                name: name.context("name doesn't exist in plugin manifest")?,
+                                description,
+                            });
+                        }
+                        Some(CubedawSectionType::NodeList) => {
+                            panic!();
                         }
                         _ => (),
                     }
@@ -320,17 +391,21 @@ impl Plugin {
             plugin_manifest: plugin_manifest.context("plugin manifest doesn't exist")?,
             tys: tys.into_boxed_slice(),
 
-            cubedaw_imports: plugin_imports,
-            exported_modules: function_names_of_exported_modules
+            import_indices: cubedaw_imports,
+            exported_nodes: function_names_of_exported_modules
                 .into_iter()
                 .map(|(k, v)| {
-                    let func_idx = *func_exports
-                        .get(k.as_str())
-                        .context("module references nonexistent function")?;
+                    let func_idx = *func_exports.get(v).with_context(|| {
+                        format!(
+                            "module references nonexistent function {v}; available functions: {:?}",
+                            func_exports.keys()
+                        )
+                    })?;
                     Ok((k, func_idx))
                 })
                 .collect::<anyhow::Result<HashMap<_, _>>>()?,
             funcs: funcs.into_boxed_slice(),
+            func_offset: cubedaw_imports.iter().filter(|i| i.is_some()).count() as u32,
             tables,
             memory: memory.ok_or_else(|| anyhow::anyhow!("plugin has no memory section"))?,
             globals,
@@ -342,7 +417,7 @@ impl Plugin {
     }
 
     pub fn exported_nodes(&self) -> impl Iterator<Item = &ResourceKey> {
-        self.exported_modules.keys()
+        self.exported_nodes.keys()
     }
 
     pub fn memory(&self) -> wasm_encoder::MemoryType {
@@ -351,37 +426,47 @@ impl Plugin {
 
     pub fn stitch_node(
         &self,
-        node: ResourceKey,
+        node: &ResourceKey,
         func: &mut stitch::FunctionStitch,
         module: &mut stitch::ModuleStitch,
     ) {
-        let offsets = self.get_offsets_or_stitch(module);
+        let info = self.get_stitch_info_or_insert(module);
+
+        let func_idx = *self
+            .exported_nodes
+            .get(node)
+            .with_context(|| format!("node {node} doesn't exist in plugin"))
+            .unwrap();
+
+        self.funcs[func_idx as usize - self.func_offset as usize].stitch(func, &info);
     }
 
-    /// Gets the offsets for this module, stitching if not present.
-    fn get_offsets_or_stitch(&self, module: &mut stitch::ModuleStitch) -> stitch::ModuleStitchInfo {
+    /// Gets the `ModuleStitchInfo` for this module, stitching if not present.
+    fn get_stitch_info_or_insert(
+        &self,
+        module: &mut stitch::ModuleStitch,
+    ) -> stitch::ModuleStitchInfo {
         if let Some(offsets) = module.offset_map.get(&self.hash) {
             return offsets.clone();
         }
 
-        let offsets = module.get_current_offsets_for(&self);
-        module.offset_map.insert(self.hash, offsets.clone());
+        let info = module.get_current_offsets_for(&self);
+        module.offset_map.insert(self.hash, info.clone());
 
         for ty in &self.tys {
             module.tys.func_type(ty);
         }
         for func in &self.funcs {
-            module.funcs.function(func.ty());
-            module.code.function(&func.encode_empty(&offsets));
+            module.add_function(func.encode_standalone(&info));
         }
         for table in &self.tables {
-            table.stitch(module, &offsets);
+            table.stitch(module, &info);
         }
         module.memories.memory(self.memory);
         for global in &self.globals {
             module
                 .globals
-                .global(global.ty.encode(), &global.init.encode(&offsets));
+                .global(global.ty.encode(), &global.init.encode(&info));
         }
         for elem in &self.elems {
             match elem.kind {
@@ -390,7 +475,7 @@ impl Plugin {
                     ref offset,
                 } => module.elems.active(
                     Some(table_index),
-                    &offset.encode(&offsets),
+                    &offset.encode(&info),
                     wasm_encoder::Elements::Functions(&elem.items),
                 ),
                 misc::ElementKind::Passive => module
@@ -409,7 +494,7 @@ impl Plugin {
                 } => {
                     module.datas.active(
                         memory_index,
-                        &offset.encode(&offsets),
+                        &offset.encode(&info),
                         data.data.iter().cloned(),
                     );
                 }
@@ -417,10 +502,10 @@ impl Plugin {
         }
 
         if let Some(ref start_function) = self.start_function {
-            start_function.stitch(&mut module.start_function, &offsets);
+            start_function.stitch(&mut module.start_function, &info);
         }
 
-        offsets
+        info
     }
 
     pub fn module_version_from(buf: &[u8]) -> anyhow::Result<semver::Version> {
@@ -511,11 +596,11 @@ impl CubedawPluginImport {
             ),
             Self::Output => wasm_encoder::FuncType::new(
                 [
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
                     wasm_encoder::ValType::I32,
-                    wasm_encoder::ValType::V128,
-                    wasm_encoder::ValType::V128,
-                    wasm_encoder::ValType::V128,
-                    wasm_encoder::ValType::V128,
                 ],
                 [],
             ),
@@ -525,14 +610,16 @@ impl CubedawPluginImport {
 
 enum CubedawSectionType {
     PluginVersion,
-    PluginManifest,
-    PluginList,
+    PluginMeta,
+    NodeList,
 }
 
 impl CubedawSectionType {
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "cubedaw:plugin_version" => Self::PluginVersion,
+            "cubedaw:plugin_meta" => Self::PluginMeta,
+            "cubedaw:node_list" => Self::NodeList,
             _ => return None,
         })
     }
@@ -541,12 +628,16 @@ impl CubedawSectionType {
 struct PluginManifest {
     id: Namespace,
     name: String,
-    description: String,
+    description: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::CubedawPluginImport;
+
     use super::stitch;
+    use wasm_encoder::{FuncType, Instruction, ValType};
+    use wasmtime::{Config, Engine, Linker, Module, Store};
 
     #[test]
     fn sanity_check_plugin_imports() {
@@ -562,26 +653,63 @@ mod tests {
 
     #[test]
     fn test_basic_plugin() {
-        let mut plugin = super::Plugin::new(
+        let plugin = super::Plugin::new(
             &std::fs::read({
+                // TODO not do this
                 let mut path = std::env::var_os("CARGO_MANIFEST_DIR").unwrap();
                 path.push(
-                    "/../../plugin/target/wasm32-unknown-unknown/debug/deps/cubedaw_default_plugins.wasm",
+                    "/../../plugin/target/wasm32-unknown-unknown/release/cubedaw_test_plugin.wasm",
                 );
-                println!("plugin path: {path:?}");
                 path
             })
             .unwrap(),
         )
         .unwrap();
 
-        let mut module = stitch::ModuleStitch::new();
-        let mut func = stitch::FunctionStitch::new();
-        plugin.stitch_node(&mut func, &mut module);
+        let mut module = stitch::ModuleStitch::with_imports(
+            crate::ShimInfo::new(|mut ctx| {
+                use crate::CubedawPluginImport;
+                use wasm_encoder::Instruction;
+                match ctx.import() {
+                    CubedawPluginImport::SampleRate => {
+                        ctx.replace_only_current([Instruction::I32Const(44100)]);
+                    }
+                    CubedawPluginImport::Input => {
+                        ctx.replace_only_current([]);
+                        ctx.add_instruction_raw(Instruction::Call(0));
+                    }
+                    CubedawPluginImport::Output => {
+                        ctx.replace_only_current([]);
+                        ctx.add_instruction_raw(Instruction::Call(1));
+                    }
+                }
+            }),
+            [CubedawPluginImport::Input, CubedawPluginImport::Output]
+                .into_iter()
+                .map(|import| (import.name(), import.ty())),
+        );
+        let mut func = stitch::FunctionStitch::new(FuncType::new([ValType::I32, ValType::I32], []));
+        func.add_instruction_raw(&Instruction::LocalGet(0));
+        func.add_instruction_raw(&Instruction::LocalGet(1));
+        plugin.stitch_node(&resourcekey::literal!("test:test"), &mut func, &mut module);
 
-        dbg!(func);
-        // dbg!(module);
+        let func_idx = module.add_function(func);
+        module.export_function("standalone_entrypoint", func_idx);
 
-        panic!();
+        let bytes = module.finish();
+
+        std::fs::write("/tmp/a.wasm", &bytes).unwrap();
+
+        let mut config = Config::new();
+        config
+            .wasm_bulk_memory(true)
+            .wasm_multi_value(true)
+            .wasm_reference_types(true)
+            .wasm_simd(true)
+            .wasm_relaxed_simd(true)
+            .wasm_tail_call(true);
+
+        let engine = Engine::new(&config).unwrap();
+        let module = Module::new(&engine, &bytes).unwrap();
     }
 }

@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>WebAssembly Tester</title>
+
+        <style>
+            body {
+                margin: 3em;
+                font: 1em monospace;
+                background: #111;
+                color: #eee;
+            }
+            textarea {
+                background: #222;
+                color: inherit;
+                resize: none;
+            }
+            #copied {
+                color: #aaa;
+            }
+            noscript,
+            textarea,
+            #result {
+                display: block;
+                margin-block: 1em;
+                max-width: 80ch;
+            }
+
+            #result {
+                color: #aaa;
+                text-wrap: auto;
+            }
+            #result.error {
+                color: #f88;
+            }
+            #result.success {
+                color: #8f8;
+            }
+        </style>
+    </head>
+    <body>
+        <noscript>js is disabled, this code no worky :(</noscript>
+        <code id="copy">base64 -w0 /tmp/a.wasm | wl-copy</code>
+        <code id="copied"><- click to copy</code>
+        <textarea
+            id="textarea"
+            rows="30"
+            cols="80"
+            placeholder="base64 goes here"
+        ></textarea>
+        <pre id="result">error goes here</pre>
+
+        <script>
+            const id = (id) => document.getElementById(id);
+            const copy = id("copy"),
+                copied = id("copied");
+            copy.addEventListener("click", async (e) => {
+                await navigator.clipboard.writeText(copy.textContent);
+                copied.textContent = "copied!";
+                setTimeout(() => (copied.textContent = ""), 1000);
+            });
+            copied.addEventListener("click", () => {
+                if (copied.textContent.startsWith("<-"))
+                    copied.textContent = "<- not here idiot";
+            });
+            const textarea = id("textarea"),
+                result = id("result");
+            const handler = async () => {
+                await new Promise((res) => setTimeout(res));
+                let value = textarea.value;
+                if (value === "") return;
+                try {
+                    value = atob(value);
+                } catch (_) {
+                    result.className = "error";
+                    result.textContent = "invalid base64 string";
+                    return;
+                }
+                const buf = Uint8Array.from(value, (ch) => ch.codePointAt(0));
+                try {
+                    await WebAssembly.compile(buf);
+                    result.className = "success";
+                    result.textContent = "module compiled successfully!";
+                } catch (e) {
+                    result.className = "error";
+                    result.textContent = e.toString();
+                }
+            };
+            textarea.addEventListener("change", handler);
+            textarea.addEventListener("keydown", handler);
+            window.addEventListener("load", handler);
+        </script>
+    </body>
+</html>

@@ -9,9 +9,7 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-cubedaw-pluginlib = { path = "../cubedaw-pluginlib", features = [
-    "portable_simd",
-] }
+cubedaw-pluginlib = { path = "../cubedaw-pluginlib", features = ["inline"] }
 
 [lints]
 workspace = true

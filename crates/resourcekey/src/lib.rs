@@ -153,21 +153,7 @@ impl fmt::Debug for ResourceKey {
 }
 
 #[cfg(feature = "serde")]
-mod serde_impls {
-    use crate::ResourceKey;
-
-    impl<'de> serde::Deserialize<'de> for ResourceKey {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            let str = <std::borrow::Cow<'_, str>>::deserialize(deserializer)?;
-            Ok(Self::new(&str).map_err(|err| {
-                serde::de::Error::custom(format!("{str:?} isn't a valid resource key: {err:?}"))
-            })?)
-        }
-    }
-}
+mod serde;
 
 #[derive(Clone)]
 pub struct Namespace(Arc<ResourceKeyInner>);
@@ -211,6 +197,20 @@ impl std::fmt::Debug for Namespace {
 #[derive(Clone)]
 pub struct Item(Arc<ResourceKeyInner>);
 impl Item {
+    pub fn new(str: &str) -> Result<Self, ResourceKeyParseError> {
+        let bytes = str.as_bytes();
+        if bytes.len() > i32::MAX as usize {
+            bail!(str, ResourceKeyParseErrorKind::TooLong);
+        };
+
+        Ok(Self(Arc::new(ResourceKeyInner {
+            str: str.into(),
+            divider_pos: !0,
+            hash: None,
+            namespace_hash: Some(ResourceKeyHash::new(str)),
+            item_hash: None,
+        })))
+    }
     pub fn as_str(&self) -> &str {
         // SAFETY: self.0 is a valid ResourceKeyInner
         unsafe { &self.0.str.get_unchecked(0..self.0.divider_pos as usize) }
@@ -300,15 +300,16 @@ macro_rules! literal {
     }};
 }
 
-macro_rules! hash {
-    ($str:expr) => {
-        static HASH_CACHE: AtomicU64 = AtomicU64::new(0);
-        let loaded = HASH_CACHE.load(Ordering::Relaxed);
-        if loaded != 0 {
-            return loaded;
-        }
-    };
-}
+// TODO
+// macro_rules! hash {
+//     ($str:expr) => {
+//         static HASH_CACHE: AtomicU64 = AtomicU64::new(0);
+//         let loaded = HASH_CACHE.load(Ordering::Relaxed);
+//         if loaded != 0 {
+//             return loaded;
+//         }
+//     };
+// }
 
 #[cfg(test)]
 mod tests {
