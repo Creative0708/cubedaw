@@ -101,7 +101,8 @@ impl ElementKind {
                 table_index: table_index.unwrap_or(0),
                 offset: PreparedInstructionList::from_constexpr(ctx, &offset_expr)?,
             },
-            // Declared elements only occur with function types
+            // Declared elements use a WASM feature that plugins don't have access to
+            // so this is unreachable
             wasmparser::ElementKind::Declared => {
                 panic!("declared element segments are not allowed")
             }
@@ -110,15 +111,37 @@ impl ElementKind {
 }
 
 pub struct DataSegment {
-    pub mode: DataSegmentMode,
+    pub mode: DataSegmentKind,
     pub data: Box<[u8]>,
 }
-pub enum DataSegmentMode {
+pub enum DataSegmentKind {
     Active {
         offset: PreparedInstructionList,
         memory_index: u32,
     },
     Passive,
+}
+impl DataSegment {
+    pub fn new(ctx: &PrepareContext, data: wasmparser::Data) -> anyhow::Result<Self> {
+        Ok(Self {
+            mode: DataSegmentKind::new(ctx, data.kind)?,
+            data: data.data.into(),
+        })
+    }
+}
+impl DataSegmentKind {
+    pub fn new(ctx: &PrepareContext, kind: wasmparser::DataKind) -> anyhow::Result<Self> {
+        Ok(match kind {
+            wasmparser::DataKind::Active {
+                memory_index,
+                offset_expr,
+            } => Self::Active {
+                offset: PreparedInstructionList::from_constexpr(ctx, &offset_expr)?,
+                memory_index,
+            },
+            wasmparser::DataKind::Passive => Self::Passive,
+        })
+    }
 }
 
 #[derive(Debug)]

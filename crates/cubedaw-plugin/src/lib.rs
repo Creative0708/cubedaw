@@ -1,6 +1,7 @@
 mod misc;
 pub mod prepare;
 mod stitch;
+use cubedaw_wasm::WasmFeatures;
 pub use stitch::{FunctionStitch, ModuleStitch, ModuleStitchInfo, ShimContext, ShimInfo};
 mod util;
 
@@ -9,7 +10,6 @@ use anyhow::Context;
 use prepare::{PrepareContext, PreparedFunction};
 use resourcekey::{Namespace, ResourceKey};
 
-use unwrap_todo::UnwrapTodo;
 // TODO: currently we use wasm_encoder types (notably ValType), is it worth revealing implementation details
 // about the crate?
 pub use wasm_encoder::{Instruction, ValType};
@@ -36,21 +36,15 @@ pub struct Plugin {
     start_function: Option<PreparedFunction>,
 }
 
-fn plugin_wasm_features() -> wasmparser::WasmFeatures {
-    use wasmparser::WasmFeatures;
+pub fn plugin_wasm_features() -> WasmFeatures {
     WasmFeatures::BULK_MEMORY
-        | WasmFeatures::FLOATS
         | WasmFeatures::MULTI_VALUE
-        | WasmFeatures::MUTABLE_GLOBAL
         | WasmFeatures::RELAXED_SIMD
         | WasmFeatures::REFERENCE_TYPES // idk why this is necessary but cubedaw-default-plugins requires it
-        | WasmFeatures::SATURATING_FLOAT_TO_INT
-        | WasmFeatures::SIGN_EXTENSION
         | WasmFeatures::SIMD
         | WasmFeatures::TAIL_CALL
 }
-fn executing_wasm_features() -> wasmparser::WasmFeatures {
-    use wasmparser::WasmFeatures;
+pub fn executing_wasm_features() -> WasmFeatures {
     plugin_wasm_features() | WasmFeatures::MULTI_MEMORY
 }
 
@@ -81,7 +75,7 @@ impl Plugin {
             anyhow::bail!("WASM module too big: {} (max {})", buf.len(), u32::MAX);
         }
 
-        let mut validator = wasmparser::Validator::new_with_features(plugin_wasm_features());
+        let mut validator = wasmparser::Validator::new_with_features(plugin_wasm_features().into());
 
         // good enough for now. shove this into the parser loop if performance is an issue
         let _types = validator.validate_all(buf)?;
@@ -89,7 +83,7 @@ impl Plugin {
         use wasm_encoder::reencode::Reencode;
 
         let mut parser = wasmparser::Parser::new(0);
-        parser.set_features(plugin_wasm_features());
+        parser.set_features(plugin_wasm_features().into());
 
         let mut plugin_manifest: Option<PluginManifest> = None;
 
@@ -275,14 +269,21 @@ impl Plugin {
                         })
                         .collect::<anyhow::Result<_>>()?;
                 }
-                wasmparser::Payload::DataCountSection { count, range } => todo!(),
+                wasmparser::Payload::DataCountSection { .. } => (),
                 wasmparser::Payload::DataSection(r) => {
                     assert!(datas.is_empty(), "module has more than one data section");
 
-                    // TODO
-                    for data in r {
-                        // dbg!(data?.kind);
-                    }
+                    datas = r
+                        .into_iter()
+                        .map(|data| {
+                            Ok(misc::DataSegment::new(
+                                prepare_ctx
+                                    .as_ref()
+                                    .expect("unreachable; see declaration of prepare_ctx"),
+                                data?,
+                            )?)
+                        })
+                        .collect::<anyhow::Result<_>>()?;
                 }
                 wasmparser::Payload::CodeSectionStart {
                     count,
@@ -365,16 +366,13 @@ impl Plugin {
                                 description,
                             });
                         }
-                        Some(CubedawSectionType::NodeList) => {
-                            panic!();
-                        }
                         _ => (),
                     }
                 }
                 wasmparser::Payload::UnknownSection {
                     id,
-                    contents,
-                    range,
+                    contents: _contents,
+                    range: _range,
                 } => {
                     log::warn!("unknown section with id {id}");
                 }
@@ -414,6 +412,13 @@ impl Plugin {
 
             start_function,
         })
+    }
+
+    pub fn version(&self) -> &semver::Version {
+        &self.plugin_version
+    }
+    pub fn manifest(&self) -> &PluginManifest {
+        &self.plugin_manifest
     }
 
     pub fn exported_nodes(&self) -> impl Iterator<Item = &ResourceKey> {
@@ -485,10 +490,10 @@ impl Plugin {
         }
         for data in &self.datas {
             match data.mode {
-                misc::DataSegmentMode::Passive => {
+                misc::DataSegmentKind::Passive => {
                     module.datas.passive(data.data.iter().cloned());
                 }
-                misc::DataSegmentMode::Active {
+                misc::DataSegmentKind::Active {
                     memory_index,
                     ref offset,
                 } => {
@@ -625,19 +630,21 @@ impl CubedawSectionType {
     }
 }
 
-struct PluginManifest {
-    id: Namespace,
-    name: String,
-    description: Option<String>,
+pub struct PluginManifest {
+    pub id: Namespace,
+    pub name: String,
+    pub description: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::CubedawPluginImport;
+    use crate::{executing_wasm_features, CubedawPluginImport};
 
     use super::stitch;
+    use cubedaw_wasm::wasmtime::V128 as OtherV128; // TODO: see cubedaw-wasm on reexporting wasmtime
+    use cubedaw_wasm::{Engine, Linker, Module, Store, Value, WasmConfig, V128};
+    use std::sync::{Arc, Mutex};
     use wasm_encoder::{FuncType, Instruction, ValType};
-    use wasmtime::{Config, Engine, Linker, Module, Store};
 
     #[test]
     fn sanity_check_plugin_imports() {
@@ -694,22 +701,122 @@ mod tests {
         plugin.stitch_node(&resourcekey::literal!("test:test"), &mut func, &mut module);
 
         let func_idx = module.add_function(func);
-        module.export_function("standalone_entrypoint", func_idx);
+        module.export_function("entrypoint", func_idx);
+        module.export_memory("mem", 0);
 
         let bytes = module.finish();
 
         std::fs::write("/tmp/a.wasm", &bytes).unwrap();
 
-        let mut config = Config::new();
-        config
-            .wasm_bulk_memory(true)
-            .wasm_multi_value(true)
-            .wasm_reference_types(true)
-            .wasm_simd(true)
-            .wasm_relaxed_simd(true)
-            .wasm_tail_call(true);
+        let config = WasmConfig::new().set_features(executing_wasm_features());
 
         let engine = Engine::new(&config).unwrap();
         let module = Module::new(&engine, &bytes).unwrap();
+
+        let mut linker = Linker::new(&engine);
+
+        // (input(0), input(1), output(0)
+        type StoreData = Arc<(Mutex<[V128; 4]>, Mutex<[V128; 4]>, Mutex<[V128; 4]>)>;
+        let store_data: StoreData = Arc::new((
+            Mutex::new([V128::f32x4_splat(9.0); 4]),
+            Mutex::new([V128::f32x4_splat(10.0); 4]),
+            Mutex::new([V128::ZERO; 4]),
+        ));
+        linker
+            .func_wrap(
+                "host",
+                CubedawPluginImport::Input.name(),
+                |caller: cubedaw_wasm::wasmtime::Caller<'_, StoreData>, input_idx: u32| {
+                    let data = caller.data();
+
+                    let arr = match input_idx {
+                        0 => *data.0.lock().unwrap(),
+                        1 => *data.1.lock().unwrap(),
+                        _ => [V128::ZERO; 4],
+                    };
+                    let [a, b, c, d] = arr;
+                    (
+                        OtherV128::from(a),
+                        OtherV128::from(b),
+                        OtherV128::from(c),
+                        OtherV128::from(d),
+                    )
+                },
+            )
+            .unwrap();
+        linker
+            .func_wrap(
+                "host",
+                CubedawPluginImport::Output.name(),
+                |caller: cubedaw_wasm::wasmtime::Caller<'_, StoreData>,
+                 a: OtherV128,
+                 b: OtherV128,
+                 c: OtherV128,
+                 d: OtherV128,
+                 output_idx: u32| {
+                    let arr: [V128; 4] = [a.into(), b.into(), c.into(), d.into()];
+
+                    let data = caller.data();
+
+                    match output_idx {
+                        0 => *data.2.lock().unwrap() = arr,
+                        1 => drop(Box::new(())), // to shut clippy up
+                        _ => (),
+                    };
+                },
+            )
+            .unwrap();
+
+        let mut store = Store::new(&engine, store_data.clone());
+
+        let instance = linker.instantiate(&mut store, &module).unwrap();
+
+        let memory = instance
+            .get_memory(&mut store, &module.get_export("mem").unwrap())
+            .unwrap();
+
+        let args_offset = memory.size(&store);
+        let state_offset = args_offset + 64;
+        let num_pages = 65536 >> memory.page_size_log2(&store);
+
+        memory.grow(&mut store, num_pages).unwrap();
+
+        let mut run = |args: u8, state: &mut [V128; 4]| {
+            // TestPluginArgs
+            memory.write(&mut store, args_offset, &[args]).unwrap();
+            // TestPluginState
+            memory
+                .write(&mut store, state_offset, bytemuck::must_cast_slice(state))
+                .unwrap();
+
+            let func = instance
+                .get_func(&mut store, &module.get_export("entrypoint").unwrap())
+                .unwrap();
+
+            func.call(
+                &mut store,
+                &[
+                    Value::I32(args_offset as i32),
+                    Value::I32(state_offset as i32),
+                ],
+                &mut [],
+            )
+            .unwrap();
+
+            memory
+                .read(&store, state_offset, bytemuck::must_cast_slice_mut(state))
+                .unwrap();
+        };
+
+        let mut v128s: [V128; 4] = [V128::ZERO; 4];
+
+        run(0u8, &mut v128s);
+        assert_eq!(v128s, [V128::f32x4_splat(19.0); 4]);
+
+        run(1u8, &mut v128s);
+        assert_eq!(v128s, [V128::f32x4_splat(90.0); 4]);
+
+        run(2u8, &mut v128s);
+        assert_eq!(v128s, [V128::f32x4_splat(44100.0); 4]);
     }
 }

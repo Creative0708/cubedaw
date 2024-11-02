@@ -1,9 +1,15 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
-use crate::Value;
+use crate::{config, Value};
 
 #[derive(Default)]
 pub struct Engine(wasmtime::Engine);
+impl Engine {
+    pub fn new(config: &crate::WasmConfig) -> Result<Self> {
+        let config: wasmtime::Config = config.clone().into();
+        Ok(Self(wasmtime::Engine::new(&config)?))
+    }
+}
 
 #[derive(Clone)]
 pub struct Module(wasmtime::Module);
@@ -22,6 +28,16 @@ impl<T> Linker<T> {
     pub fn new(engine: &Engine) -> Self {
         Self(wasmtime::Linker::new(&engine.0))
     }
+    // TODO we shouldn't expose implementation details like this but i am NOT implementing a custom IntoFunc trait for the MVP
+    pub fn func_wrap<Params, Results>(
+        &mut self,
+        module: &str,
+        name: &str,
+        func: impl wasmtime::IntoFunc<T, Params, Results>,
+    ) -> Result<&mut Self> {
+        self.0.func_wrap(module, name, func)?;
+        Ok(self)
+    }
     pub fn instantiate(&self, store: &mut Store<T>, module: &Module) -> Result<Instance> {
         Ok(Instance(self.0.instantiate(&mut store.0, &module.0)?))
     }
@@ -32,20 +48,15 @@ pub struct ExportLocation(wasmtime::ModuleExport);
 
 pub struct Instance(wasmtime::Instance);
 impl Instance {
-    fn get_export<T>(
-        &self,
-        store: &mut Store<T>,
-        export: &ExportLocation,
-    ) -> Option<wasmtime::Extern> {
-        self.0.get_module_export(&mut store.0, &export.0)
-    }
     pub fn get_memory<T>(&self, store: &mut Store<T>, export: &ExportLocation) -> Option<Memory> {
-        self.get_export(store, export)
+        self.0
+            .get_module_export(&mut store.0, &export.0)
             .and_then(|exp| exp.into_memory())
             .map(Memory)
     }
     pub fn get_func<T>(&self, store: &mut Store<T>, export: &ExportLocation) -> Option<Func> {
-        self.get_export(store, export)
+        self.0
+            .get_module_export(&mut store.0, &export.0)
             .and_then(|exp| exp.into_func())
             .map(Func)
     }
@@ -80,8 +91,10 @@ impl Memory {
             .map_err(MemoryAccessError)
     }
     /// Grows the memory by a given number of pages.
-    pub fn grow<T>(&self, store: &mut Store<T>, pages: u32) -> Result<u64, ()> {
-        self.0.grow(&mut store.0, pages as u64).map_err(|_| ())
+    pub fn grow<T>(&self, store: &mut Store<T>, pages: u32) -> Result<u64> {
+        self.0
+            .grow(&mut store.0, pages as u64)
+            .context("failed to grow memory")
     }
     pub fn size<T>(&self, store: &Store<T>) -> u32 {
         self.0.size(&store.0) as u32
@@ -106,10 +119,12 @@ impl Func {
         for _ in 0..results.len() {
             vec.push(wasmtime::Val::null_any_ref());
         }
-        for param in params {
+        // wasmtime reverses its argument order for some reason??
+        for param in params.iter().rev() {
             vec.push(param.clone().into());
         }
         let (wasmtime_results, wasmtime_params) = vec.split_at_mut(results.len());
+
         self.0
             .call(&mut store.0, wasmtime_params, wasmtime_results)?;
         for (wasmtime_result, result) in vec.into_iter().zip(results) {
@@ -164,5 +179,46 @@ impl TryFrom<wasmtime::Val> for Value {
             wasmtime::Val::V128(v128) => Self::V128(u128::from(v128).to_ne_bytes()),
             other => anyhow::bail!("can't convert {other:?} to cubedaw_wasm::Value"),
         })
+    }
+}
+
+impl config::WasmFeatures {
+    pub fn apply_to_config(self, config: &mut wasmtime::Config) {
+        config.wasm_tail_call(self.contains(Self::TAIL_CALL));
+        config.wasm_custom_page_sizes(self.contains(Self::CUSTOM_PAGE_SIZES));
+        config.wasm_threads(self.contains(Self::THREADS));
+        config.wasm_reference_types(self.contains(Self::REFERENCE_TYPES));
+        config.wasm_function_references(self.contains(Self::FUNCTION_REFERENCES));
+        config.wasm_gc(self.contains(Self::GC));
+        config.wasm_simd(self.contains(Self::SIMD));
+        config.wasm_relaxed_simd(self.contains(Self::RELAXED_SIMD));
+        config.wasm_bulk_memory(self.contains(Self::BULK_MEMORY));
+        config.wasm_multi_value(self.contains(Self::MULTI_VALUE));
+        config.wasm_multi_memory(self.contains(Self::MULTI_MEMORY));
+        config.wasm_memory64(self.contains(Self::MEMORY64));
+        config.wasm_extended_const(self.contains(Self::EXTENDED_CONST));
+    }
+}
+impl From<config::WasmConfig> for wasmtime::Config {
+    fn from(value: config::WasmConfig) -> Self {
+        let mut config = Self::new();
+        value.features.apply_to_config(&mut config);
+        config
+    }
+}
+
+#[cfg(feature = "v128")]
+mod v128_impls {
+    use crate::V128;
+
+    impl From<V128> for wasmtime::V128 {
+        fn from(value: V128) -> Self {
+            Self::from(u128::from_ne_bytes(value.into_u8x16()))
+        }
+    }
+    impl From<wasmtime::V128> for V128 {
+        fn from(value: wasmtime::V128) -> Self {
+            Self::from_u8x16(value.as_u128().to_ne_bytes())
+        }
     }
 }

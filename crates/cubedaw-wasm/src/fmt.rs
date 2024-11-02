@@ -33,3 +33,16 @@ impl std::fmt::Debug for crate::ExportLocation {
         f.debug_struct("ExportLocation").finish_non_exhaustive()
     }
 }
+
+#[cfg(feature = "v128")]
+impl std::fmt::Debug for crate::V128 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let u32s = self.as_u32x4();
+        f.debug_tuple("V128")
+            .field(&format_args!(
+                "0x{:08x}_{:08x}_{:08x}_{:08x}",
+                u32s[0], u32s[1], u32s[2], u32s[3]
+            ))
+            .finish()
+    }
+}

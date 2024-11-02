@@ -8,10 +8,22 @@ version = "0.1.0"
 [dependencies]
 smallvec = { workspace = true }
 anyhow = { workspace = true }
+bytemuck = { workspace = true, features = [
+    "must_cast",
+    "min_const_generics",
+    "const_zeroed",
+] }
+bitflags = "2.6.0"
+paste = "^1.0"
+cfg-if = "1.0.0"
+wasmparser = { version = "0.215.0", optional = true }
 
 [features]
-default = ["fmt"]
+default = ["runtime", "v128", "fmt"]
 fmt = []
+v128 = []
+runtime = []
+wasmparser = ["dep:wasmparser"]
 
 [target.'cfg(not(target_os = "wasm"))'.dependencies]
 wasmtime = { version = "25.0.2", features = [

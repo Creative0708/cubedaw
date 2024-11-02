@@ -63,7 +63,7 @@ impl ModuleStitch {
             let func_idx = this.tys.len();
             this.tys.func_type(&ty);
             this.imports
-                .import("env", name, wasm_encoder::EntityType::Function(func_idx));
+                .import("host", name, wasm_encoder::EntityType::Function(func_idx));
         }
         this
     }
@@ -98,6 +98,11 @@ impl ModuleStitch {
     pub fn export_function(&mut self, name: &str, func_idx: u32) {
         self.exports
             .export(name, wasm_encoder::ExportKind::Func, func_idx);
+    }
+    /// Utility function. Equivalent to `self.exports.export(name, wasm_encoder::ExportKind::Memory, idx)`
+    pub fn export_memory(&mut self, name: &str, memory_idx: u32) {
+        self.exports
+            .export(name, wasm_encoder::ExportKind::Memory, memory_idx);
     }
     pub fn finish(mut self) -> Vec<u8> {
         let mut encoder = wasm_encoder::Module::new();
@@ -433,23 +438,6 @@ impl FunctionStitch {
         };
 
         return Cow::Owned(modified_inst);
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ImportStitchInfo {
-    mappings: [Option<u32>; CubedawPluginImport::SIZE],
-}
-impl ImportStitchInfo {
-    pub fn new() -> Self {
-        Default::default()
-    }
-    pub fn transform(&self, func_idx: u32) -> u32 {
-        self.mappings
-            .into_iter()
-            .zip(CubedawPluginImport::ALL)
-            .find_map(|(idx, ty)| (idx == Some(func_idx)).then_some(ty))
-            .map_or(func_idx, |ty| ty as u32)
     }
 }
 

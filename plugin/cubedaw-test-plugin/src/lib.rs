@@ -18,9 +18,9 @@ cubedaw_pluginlib::declare_plugin!(
 
 #[repr(C)]
 pub enum TestPluginArgs {
-    Add,
-    Multiply,
-    SampleRate,
+    Add = 0,
+    Multiply = 1,
+    SampleRate = 2,
 }
 #[repr(C)]
 pub struct TestPluginState {
@@ -41,17 +41,17 @@ pub extern "C" fn test_plugin(args: &TestPluginArgs, state: &mut TestPluginState
 
 cubedaw_pluginlib::export_node!("test:test", test_plugin);
 
-// #[no_mangle]
-// pub extern "C" fn add() {
-//     let i0 = input::<0>();
-//     let i1 = input::<1>();
-//     output::<0>(i0 + i1);
-// }
-// #[no_mangle]
-// pub extern "C" fn mul() {
-//     let i0 = input::<0>();
-//     let i1 = input::<1>();
-//     output::<0>(i0 * i1);
-// }
-// cubedaw_pluginlib::export_node!("test:add", add);
-// cubedaw_pluginlib::export_node!("test:mul", mul);
+#[no_mangle]
+pub extern "C" fn add() {
+    let i0 = input::<0>();
+    let i1 = input::<1>();
+    output::<0>(i0 + i1);
+}
+#[no_mangle]
+pub extern "C" fn mul() {
+    let i0 = input::<0>();
+    let i1 = input::<1>();
+    output::<0>(i0 * i1);
+}
+cubedaw_pluginlib::export_node!("test:add", add);
+cubedaw_pluginlib::export_node!("test:mul", mul);

@@ -1143,6 +1143,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "bytemuck",
+ "cubedaw-wasm",
  "log",
  "postcard",
  "resourcekey",
@@ -1152,7 +1153,6 @@ dependencies = [
  "unwrap_todo",
  "wasm-encoder 0.215.0",
  "wasmparser 0.215.0",
- "wasmtime",
 ]
 
 [[package]]
@@ -1160,7 +1160,12 @@ name = "cubedaw-wasm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitflags 2.6.0",
+ "bytemuck",
+ "cfg-if",
+ "paste",
  "smallvec",
+ "wasmparser 0.215.0",
  "wasmtime",
 ]
 

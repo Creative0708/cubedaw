@@ -9,7 +9,6 @@ version = "0.1.0"
 resourcekey = { path = "../resourcekey", features = ["serde"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }
-bytemuck = { workspace = true }
 log = { workspace = true }
 postcard = "1.0.10"
 serde = { workspace = true }
@@ -18,11 +17,17 @@ wasm-encoder = { version = "0.215.0", features = ["wasmparser"] }
 anyhow = { workspace = true }
 semver = { workspace = true }
 unwrap_todo = { workspace = true }
+cubedaw-wasm = { path = "../cubedaw-wasm", default-features = false, features = [
+    "v128",
+    "wasmparser",
+] }
 
 [dev-dependencies]
-wasmtime = "25.0.2"
+cubedaw-wasm = { path = "../cubedaw-wasm", features = ["v128"] }
+bytemuck = { workspace = true, features = ["must_cast"] }
 
 [features]
+v128 = ["cubedaw-wasm/v128"]
 
 [lints]
 workspace = true

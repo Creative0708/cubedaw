@@ -1,4 +1,4 @@
-use wasm_encoder::{reencode, Encode};
+use wasm_encoder::reencode;
 
 use crate::{
     stitch::{FunctionStitch, ModuleStitchInfo},
@@ -10,7 +10,6 @@ use super::PrepareContext;
 // Used in functions and ConstExprs.
 #[derive(Clone, Debug)]
 pub struct PreparedInstructionList {
-    import_function_indices: [Option<u32>; CubedawPluginImport::SIZE],
     instructions: Box<[wasm_encoder::Instruction<'static>]>,
     special_instructions: Box<[(u32, CubedawPluginImport)]>,
 }
@@ -51,7 +50,6 @@ impl PreparedInstructionList {
             }
         }
         Ok(Self {
-            import_function_indices,
             instructions: instructions.into_boxed_slice(),
             special_instructions: special_instructions.into_boxed_slice(),
         })

@@ -18,13 +18,13 @@
   "lsp": {
     "rust-analyzer": {
       "initialization_options": {
-        // "check": {
-        //   "command": "clippy"
-        // },
-        // "cargo": {
-        // "target": "wasm32-unknown-unknown"
-        // "allFeatures": true
-        // }
+        "check": {
+          "command": "clippy"
+        },
+        "cargo": {
+          // "target": "wasm32-unknown-unknown",
+          "allFeatures": true
+        }
       }
     }
   }
