@@ -1,6 +1,7 @@
 use std::{borrow::Cow, mem, rc::Rc};
 
-use wasm_encoder::{Encode, FuncType, Instruction, ValType};
+use cubedaw_wasm::{FuncType, ValType};
+use wasm_encoder::{Encode, Instruction};
 
 use crate::CubedawPluginImport;
 
@@ -87,7 +88,7 @@ impl ModuleStitch {
     pub fn add_function(&mut self, func: FunctionStitch) -> u32 {
         let (func_type, code) = func.finish();
         let type_idx = self.tys.len();
-        self.tys.func_type(&func_type);
+        self.tys.func_type(&func_type.into());
         let func_idx = self.funcs.len();
         self.funcs.function(type_idx);
         self.code.function(&code);
@@ -243,9 +244,10 @@ impl FunctionStitch {
         self.locals.extend(locals);
     }
 
-    pub fn finish(self) -> (wasm_encoder::FuncType, wasm_encoder::Function) {
-        let mut locals_vec: Vec<(u32, ValType)> = Vec::new();
+    pub fn finish(self) -> (FuncType, wasm_encoder::Function) {
+        let mut locals_vec: Vec<(u32, wasm_encoder::ValType)> = Vec::new();
         for local_ty in self.locals {
+            let local_ty = local_ty.into();
             if let Some((num, ty)) = locals_vec.last_mut() {
                 if *ty == local_ty {
                     *num += 1;

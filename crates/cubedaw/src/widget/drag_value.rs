@@ -1,7 +1,8 @@
-//! like `egui::DragValue`, but imitating the blender version.
+//! Like `egui::DragValue`, but imitating the Blender version. Because it looks cool.
 
-use cubedaw_lib::ValueHandler;
 use egui::{emath::inverse_lerp, text_edit::TextEditState, *};
+
+use crate::node::ValueHandler;
 
 /// A Blender-like draggable slider.
 pub struct DragValue<'a> {

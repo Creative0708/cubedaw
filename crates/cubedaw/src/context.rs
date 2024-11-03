@@ -5,6 +5,7 @@ use cubedaw_lib::{Id, IdMap, PreciseSongPos, State};
 use crate::{
     app::Tab,
     command::{IntoUiStateCommand, UiStateCommand, UiStateCommandWrapper},
+    registry::NodeRegistry,
     EphemeralState, Screen, UiState,
 };
 
@@ -26,7 +27,7 @@ pub struct Context<'a> {
     pub tabs: &'a mut Tabs,
 
     // App-associated node registry. See [`cubedaw_lib::NodeRegistry`] for more information.
-    pub node_registry: &'a cubedaw_lib::NodeRegistry,
+    pub node_registry: &'a NodeRegistry,
 
     // State tracker to track events that mutate state or ui_state.
     pub tracker: UiStateTracker,
@@ -45,7 +46,7 @@ impl<'a> Context<'a> {
         ui_state: &'a UiState,
         ephemeral_state: &'a mut EphemeralState,
         tabs: &'a mut Tabs,
-        node_registry: &'a cubedaw_lib::NodeRegistry,
+        node_registry: &'a NodeRegistry,
         focused_tab: Option<Id<Tab>>,
         time_since_last_frame: f32,
         currently_playing_playhead_pos: Option<PreciseSongPos>,

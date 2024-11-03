@@ -1,6 +1,7 @@
 use std::{sync::mpsc, thread};
 
 use cubedaw_command::StateCommandWrapper;
+use cubedaw_lib::Buffer;
 use cubedaw_worker::WorkerOptions;
 
 pub struct WorkerHostHandle {
@@ -143,6 +144,8 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
 
     let mut playhead_pos = Default::default();
 
+    let mut output_buffer = Buffer::new_box_zeroed(idle_host.options().buffer_size);
+
     'outer: loop {
         // process events first
         loop {
@@ -193,7 +196,11 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 None
             },
             live_playhead_pos,
+            &mut output_buffer,
         );
+
+        do_stuff_with(&output_buffer);
+
         time_to_wait_until += duration_per_frame;
 
         let now = Instant::now();
@@ -215,4 +222,20 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             }
         }
     }
+}
+
+// TODO replace
+fn do_stuff_with(buffer: &Buffer) {
+    let max = buffer
+        .iter()
+        .copied()
+        .map(f32::abs)
+        .reduce(f32::max)
+        .unwrap();
+    let current_time = std::time::SystemTime::now();
+    let millis = current_time
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .subsec_millis();
+    println!("{millis:03}ms: max {max}");
 }

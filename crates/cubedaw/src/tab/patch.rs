@@ -1,6 +1,10 @@
+use anyhow::Result;
+
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{Cable, CableTag, Id, IdMap, NodeData, NodeEntry, Track};
 use egui::{emath::TSTransform, pos2, Pos2, Rect, Vec2};
+use resourcekey::ResourceKey;
+use unwrap_todo::UnwrapTodo;
 
 use crate::{
     command::node::{UiNodeAddOrRemove, UiNodeMove, UiNodeSelect},
@@ -129,7 +133,7 @@ impl PatchTab {
         ui: &mut egui::Ui,
         viewport: Rect,
         viewport_interaction: egui::Response,
-    ) {
+    ) -> Result<()> {
         // setup
         let Some(track_id) = self.track_id else {
             unreachable!()
@@ -154,32 +158,29 @@ impl PatchTab {
         );
         viewport_interaction.context_menu(|ui| {
             ui.menu_button("Add...", |ui| {
-                let mut node_added: Option<Box<dyn NodeStateWrapper>> = None;
+                let mut node_added: Option<ResourceKey> = None;
                 // TODO make this a search bar
                 if ui.button("Math").clicked() {
-                    node_added = Some(Box::new(crate::node::math::MathNode::new_state(
-                        Default::default(),
-                    )));
+                    node_added = Some(resourcekey::literal!("cubedaw:math"));
                 }
                 if ui.button("Oscillator").clicked() {
-                    node_added = Some(Box::new(
-                        crate::node::oscillator::OscillatorNode::new_state(Default::default()),
-                    ));
+                    node_added = Some(resourcekey::literal!("cubedaw:math"));
                 }
                 if ui.button("Note Output").clicked() {
-                    node_added = Some(Box::new(
-                        cubedaw_lib::builtin_nodes::NoteOutputNode::new_state(Default::default()),
-                    ));
+                    node_added = Some(resourcekey::literal!("builtin:note_output"));
                 }
                 if ui.button("Track Output").clicked() {
-                    node_added = Some(Box::new(
-                        cubedaw_lib::builtin_nodes::TrackOutputNode::new_state(Default::default()),
-                    ));
+                    node_added = Some(resourcekey::literal!("builtin:track_output"));
                 }
 
-                if let Some(node_added) = node_added {
-                    let key = ctx.node_registry.get_resource_key_of(node_added.as_ref());
-                    self.currently_held_node = Some(NodeData::new_disconnected(key, node_added));
+                if let Some(key) = node_added {
+                    let entry = ctx.node_registry.get(&key).expect("wut");
+                    self.currently_held_node = Some(NodeData::new_disconnected(
+                        key,
+                        entry
+                            .node_thingy
+                            .create(&crate::node::NodeCreationContext::default()),
+                    ));
                     ui.close_menu();
                 }
             });
@@ -243,7 +244,7 @@ impl PatchTab {
         let result = ctx
             .ephemeral_state
             .drag
-            .handle(Id::new("nodes"), |prepared| {
+            .handle(Id::new("nodes"), |prepared| -> Result<_> {
                 // nodes
 
                 struct NodeSlotData {
@@ -271,7 +272,8 @@ impl PatchTab {
                      node_data: &NodeEntry,
                      node_id: Option<Id<NodeEntry>>,
                      node_ui: &NodeUiState,
-                     tracker: &mut UiStateTracker| {
+                     tracker: &mut UiStateTracker|
+                     -> Result<CubedawNodeUiContextResult> {
                         let real_node_data = node_id.map(|node_id| {
                             (
                                 node_id,
@@ -352,20 +354,33 @@ impl PatchTab {
                                 );
                             }
                             let node_state = node_data.data.inner.as_ref();
-                            let mut inner_node_ui = node_state.clone();
+                            let mut node_state_copy: Box<[u8]> = node_state.into();
 
                             // TODO add header colors
-                            frame_prepared.content_ui.label(inner_node_ui.title());
-                            frame_prepared.content_ui.separator();
-                            inner_node_ui.ui(&mut frame_prepared.content_ui, &mut ui_ctx);
+                            let node_thingy = ctx
+                                .node_registry
+                                .get(&node_data.data.key)
+                                .todo()
+                                .node_thingy
+                                .as_ref();
 
-                            if *inner_node_ui != *node_state
+                            frame_prepared
+                                .content_ui
+                                .label(node_thingy.title(node_state)?);
+                            frame_prepared.content_ui.separator();
+                            node_thingy.ui(
+                                &mut node_state_copy,
+                                &mut frame_prepared.content_ui,
+                                &mut ui_ctx,
+                            );
+
+                            if *node_state_copy != *node_state
                                 && let Some(node_id) = node_id
                             {
                                 tracker.add(NodeStateUpdate::new(
                                     node_id,
                                     track_id,
-                                    inner_node_ui,
+                                    node_state_copy,
                                     ui_ctx.inputs.iter().map(|i| i.value).collect(),
                                     node_data.inputs().iter().map(|i| i.bias).collect(),
                                     ui_ctx.outputs.len() as u32,
@@ -471,7 +486,7 @@ impl PatchTab {
                             );
                         }
 
-                        ui_ctx.finish()
+                        Ok(ui_ctx.finish())
                     };
                 for (node_id, node_data) in patch.nodes() {
                     let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
@@ -503,7 +518,7 @@ impl PatchTab {
                                 width: 128.0,
                             },
                             &mut ctx.tracker,
-                        );
+                        )?;
                         let node_data = fake_entry.data;
                         if primary_clicked {
                             // place the node
@@ -527,7 +542,7 @@ impl PatchTab {
                     }
                 }
 
-                node_slot_data
+                Ok(node_slot_data)
             });
         {
             let should_deselect_everything =
@@ -571,7 +586,7 @@ impl PatchTab {
             }
         }
 
-        let node_slots = result.inner;
+        let node_slots = result.inner?;
 
         // cables
 
@@ -700,6 +715,8 @@ impl PatchTab {
 
         ui.painter()
             .set(cable_shapeidx, egui::Shape::Vec(cable_shapes));
+
+        Ok(())
     }
 }
 
@@ -755,8 +772,13 @@ impl<'a> CubedawNodeUiContext<'a> {
     }
 }
 
-impl cubedaw_lib::NodeUiContext for CubedawNodeUiContext<'_> {
-    fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions) {
+impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
+    fn input_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        name: &str,
+        options: crate::node::NodeInputUiOptions,
+    ) {
         let num_inputs = self.inputs.len();
         let input = self.node_data.inputs().get(num_inputs);
 

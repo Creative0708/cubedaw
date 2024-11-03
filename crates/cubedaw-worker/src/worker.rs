@@ -1,13 +1,12 @@
-use std::{cell::RefCell, sync::Arc};
+use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt};
-use cubedaw_lib::{Buffer, State};
-use cubedaw_wasm::Engine;
+use cubedaw_lib::Buffer;
 use resourcekey::ResourceKey;
 
 use crate::{
     common::{HostToWorkerEvent, WorkerToHostEvent},
-    plugin::standalone::{StandalonePlugin, StandalonePluginFactory, StandalonePluginParameters},
+    plugin::standalone::StandalonePluginFactory,
     registry::NodeRegistry,
     WorkerJob, WorkerState,
 };
@@ -31,8 +30,19 @@ pub fn run_forever(
                     match work_rx.recv() {
                         Ok(WorkerJob::Finalize) => break,
                         Ok(job) => {
-                            let result =
-                                job.process(state, &options, &mut worker_state, &mut scratch);
+                            let result = match job.process(
+                                state,
+                                start_pos,
+                                options,
+                                &mut worker_state,
+                                &mut scratch,
+                            ) {
+                                Ok(res) => res,
+                                Err(err) => {
+                                    let _ = tx.send(WorkerToHostEvent::Error(err));
+                                    return;
+                                }
+                            };
 
                             if let Some(job_descriptor) = result.finished_job_descriptor {
                                 tx.send(WorkerToHostEvent::FinishJob(job_descriptor))
@@ -66,10 +76,6 @@ pub fn run_forever(
             }
         }
     }
-}
-
-pub fn process_job(job: &WorkerJob, state: &State, options: &WorkerOptions) -> Box<[f32]> {
-    todo!()
 }
 
 #[derive(Debug)]

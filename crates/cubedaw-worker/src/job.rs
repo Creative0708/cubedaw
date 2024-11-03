@@ -1,14 +1,11 @@
-use std::ops::Deref;
-
-use cubedaw_lib::{Buffer, Id, Note, Track};
-use unwrap_todo::UnwrapTodo;
+use anyhow::Result;
+use cubedaw_lib::{Buffer, Id, Note, PreciseSongPos, Track};
 
 use crate::{
-    host::WorkerGroupTrackState,
     node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
     sync,
     worker::WorkerScratch,
-    PreparedNodeGraph, WorkerState,
+    WorkerState,
 };
 
 #[derive(Debug)]
@@ -42,11 +39,12 @@ impl WorkerJob {
     pub fn process(
         self,
         state: &cubedaw_lib::State,
+        start_pos: PreciseSongPos,
         worker_options: &crate::WorkerOptions,
         worker_state: &mut WorkerState,
         scratch: &mut WorkerScratch,
-    ) -> WorkerJobResult {
-        match self {
+    ) -> Result<WorkerJobResult> {
+        Ok(match self {
             Self::NoteProcess {
                 track_id,
                 note_descriptor,
@@ -58,7 +56,7 @@ impl WorkerJob {
                     NoteDescriptor::Live { note, .. } => note,
                 };
 
-                let buffer = nodes.process(worker_options, worker_state);
+                let buffer = nodes.process(worker_options, worker_state)?;
 
                 let job_to_add = output.lock(|output_buf| {
                     output_buf.accumulate(buffer);
@@ -75,7 +73,7 @@ impl WorkerJob {
                 input,
                 output,
             } => {
-                let buffer = nodes.process(worker_options, worker_state, input.wait());
+                let buffer = nodes.process(worker_options, worker_state, input.wait())?;
 
                 let job_to_add = output.lock(|output_buf| {
                     output_buf.accumulate(&buffer);
@@ -92,10 +90,10 @@ impl WorkerJob {
                 input,
                 output,
             } => {
-                let buffer = nodes.process(worker_options, worker_state, input.wait());
+                let buffer = nodes.process(worker_options, worker_state, input.wait())?;
 
                 let job_to_add = output.lock(|output_buf| {
-                    output_buf.accumulate(&buffer);
+                    output_buf.accumulate(buffer);
                 });
 
                 WorkerJobResult {
@@ -104,7 +102,7 @@ impl WorkerJob {
                 }
             }
             Self::Finalize => unimplemented!("can't call process() on WorkerJob::Finalize"),
-        }
+        })
     }
     // pub fn track_id(&self) -> Id<Track> {
     //     match *self {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::registry::NodeRegistry;
 use cubedaw_lib::{Id, IdMap};
 use egui_dock::{DockArea, DockState};
 
@@ -17,7 +18,7 @@ pub struct CubedawApp {
     ephemeral_state: crate::EphemeralState,
     tabs: crate::context::Tabs,
 
-    node_registry: Arc<cubedaw_lib::NodeRegistry>,
+    node_registry: Arc<NodeRegistry>,
 
     last_frame_time: std::time::Instant,
 
@@ -54,30 +55,27 @@ impl CubedawApp {
             }
 
             let node_registry = Arc::new({
-                let mut registry = cubedaw_lib::NodeRegistry::default();
+                let mut registry = NodeRegistry::default();
                 node::register_cubedaw_nodes(&mut registry);
                 registry
             });
 
             execute(
-                crate::command::track::UiTrackAddOrRemove::addition(
+                crate::command::track::UiTrackAddOrRemove::add_generic_group_track(
                     Id::arbitrary(),
-                    cubedaw_lib::Track::new_group(cubedaw_lib::Patch::default()),
-                    crate::state::ui::TrackUiState {
-                        name: "Master".into(),
-                        ..Default::default()
-                    },
                     None,
                     0,
+                    &node_registry,
                 ),
                 &mut state,
                 &mut ui_state,
                 &mut ephemeral_state,
             );
+            // execute(crate::command::, state, ui_state, ephemeral_state);
 
             for i in 1..=6 {
                 execute(
-                    crate::command::track::UiTrackAddOrRemove::add_generic_track(
+                    crate::command::track::UiTrackAddOrRemove::add_generic_section_track(
                         Id::arbitrary(),
                         Some(state.root_track),
                         i - 1,
@@ -320,6 +318,8 @@ impl eframe::App for CubedawApp {
                 self.worker_host.stop_processing();
             }
         }
+
+        // undo system
         if egui_ctx.memory(|mem| mem.focused().is_none())
             && let Some(is_redo) = egui_ctx.input(|i| {
                 (i.modifiers.ctrl && i.key_pressed(egui::Key::Z)).then_some(i.modifiers.shift)

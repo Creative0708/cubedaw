@@ -13,6 +13,12 @@ pub enum WorkerToHostEvent {
     /// Used for synchronization purposes.
     /// Workers must guarantee that they have dropped all references to the state/worker state before sending `WorkerToHostEvent::Idle`.
     Idle,
+
+    /// The worker encountered an error while processing.
+    /// This (unless there are bugs) always means that something has gone wrong that the app can't control; e.g. corrupted project files, abnormal plugin behavior, etc.
+    ///
+    /// Since errors may leave worker state in a poisoned state, this means that the worker host has to be reloaded.
+    Error(anyhow::Error),
 }
 pub enum JobDescriptor {
     NoteProcess {
@@ -25,10 +31,4 @@ pub enum JobDescriptor {
     TrackGroup {
         track_id: Id<cubedaw_lib::Track>,
     },
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum WorkerStatus {
-    Processing,
-    Idle,
 }

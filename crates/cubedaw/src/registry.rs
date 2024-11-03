@@ -1,23 +1,38 @@
-use std::{any::TypeId, ops};
+use std::{any::TypeId, ops, sync::Arc};
 
 use ahash::{HashMap, HashMapExt};
+use anyhow::Result;
 use cubedaw_lib::{Id, IdMap, NodeData, ResourceKey};
 
-pub struct DynNodeFactory(pub Box<dyn Send + Sync + Fn() -> Box<u8>>);
-impl ops::Deref for DynNodeFactory {
-    type Target = dyn Send + Sync + Fn() -> Box<u8>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+use crate::node::{NodeCreationContext, NodeUiContext};
+
+// pub struct DynNodeThingy(pub Box<dyn Send + Sync + Fn(&NodeCreationContext) -> Box<[u8]>>);
+// impl ops::Deref for DynNodeThingy {
+//     type Target = dyn Send + Sync + Fn(&NodeCreationContext) -> Box<[u8]>;
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
+// impl ops::DerefMut for DynNodeThingy {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
+// impl std::fmt::Debug for DynNodeThingy {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "DynNodeFactory {{ <{:?}> }}", self as *const _)
+//     }
+// }
+
+// TODO get a better name
+pub trait NodeThingy: 'static + Send + Sync {
+    fn create(&self, ctx: &NodeCreationContext) -> Box<[u8]>;
+    fn title(&self, state: &[u8]) -> Result<std::borrow::Cow<'_, str>>;
+    fn ui(&self, state: &mut [u8], ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) -> Result<()>;
 }
-impl ops::DerefMut for DynNodeFactory {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl std::fmt::Debug for DynNodeFactory {
+impl std::fmt::Debug for dyn NodeThingy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DynNodeFactory {{ <{:?}> }}", self as *const _)
+        f.debug_struct("dyn NodeThingy").finish_non_exhaustive()
     }
 }
 
@@ -41,47 +56,115 @@ impl std::fmt::Debug for DynNodeFactory {
 
 #[derive(Debug)]
 pub struct NodeRegistry {
-    type_id_to_resource_key: HashMap<TypeId, ResourceKey>,
-    entries: IdMap<ResourceKey, NodeRegistryEntry>,
+    inner: Arc<cubedaw_worker::NodeRegistry>,
+
+    entries: HashMap<ResourceKey, NodeRegistryEntry>,
     name_entries: Vec<NameEntry>,
 }
+
+const fn _assert_send_sync<T: Send + Sync>() {}
+const _: () = _assert_send_sync::<NodeRegistry>();
 
 impl NodeRegistry {
     pub fn new() -> Self {
         let mut this = Self {
-            type_id_to_resource_key: HashMap::new(),
-            entries: IdMap::new(),
+            inner: Default::default(),
+            entries: HashMap::new(),
             name_entries: Vec::new(),
         };
-        this.register_node::<nodes::TrackInputNode>(
-            ResourceKey::new("builtin:track_input"),
+
+        struct TrackInputNodeThingy;
+        impl NodeThingy for TrackInputNodeThingy {
+            fn create(&self, _creation_context: &NodeCreationContext) -> Box<[u8]> {
+                Box::new([])
+            }
+            fn title(&self, _: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
+                Ok("Track Input".into())
+            }
+            fn ui(
+                &self,
+                _: &mut [u8],
+                ui: &mut egui::Ui,
+                node_ui: &mut dyn NodeUiContext,
+            ) -> Result<()> {
+                node_ui.output_ui(ui, "Track Input");
+                Ok(())
+            }
+        }
+        this.register_node_dyn(
+            resourcekey::literal!("builtin:track_input"),
             "Track Input".into(),
+            Box::new(TrackInputNodeThingy),
         );
-        this.register_node::<nodes::TrackOutputNode>(
-            ResourceKey::new("builtin:track_output"),
+        struct TrackOutputNodeThingy;
+        impl NodeThingy for TrackOutputNodeThingy {
+            fn create(&self, _creation_context: &NodeCreationContext) -> Box<[u8]> {
+                Box::new([])
+            }
+            fn title(&self, _: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
+                Ok("Track Output".into())
+            }
+            fn ui(
+                &self,
+                _: &mut [u8],
+                ui: &mut egui::Ui,
+                node_ui: &mut dyn NodeUiContext,
+            ) -> Result<()> {
+                node_ui.input_ui(ui, "Track Output", Default::default());
+                Ok(())
+            }
+        }
+        this.register_node_dyn(
+            resourcekey::literal!("builtin:track_output"),
             "Track Output".into(),
+            Box::new(TrackOutputNodeThingy),
         );
-        this.register_node::<nodes::NoteOutputNode>(
-            ResourceKey::new("builtin:note_output"),
+        struct NoteInputNodeThingy;
+        impl NodeThingy for NoteInputNodeThingy {
+            fn create(&self, _creation_context: &NodeCreationContext) -> Box<[u8]> {
+                Box::new([])
+            }
+            fn title(&self, _: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
+                Ok("Note Input".into())
+            }
+            fn ui(
+                &self,
+                _: &mut [u8],
+                ui: &mut egui::Ui,
+                node_ui: &mut dyn NodeUiContext,
+            ) -> Result<()> {
+                node_ui.input_ui(ui, "Note Output", Default::default());
+                node_ui.output_ui(ui, "Track Input");
+                Ok(())
+            }
+        }
+        this.register_node_dyn(
+            resourcekey::literal!("builtin:note_output"),
             "Note Output".into(),
+            Box::new(NoteInputNodeThingy),
         );
         this
     }
 
-    pub fn register_node(&mut self, key: ResourceKey) {
-        let key_id = key.id();
-        self.type_id_to_resource_key
-            .insert(TypeId::of::<N::State>(), key_id);
+    pub fn register_node(&mut self, key: ResourceKey, name: &str, node_thingy: impl NodeThingy) {
+        self.register_node_dyn(key, name.into(), Box::new(node_thingy));
+    }
+    pub fn register_node_dyn(
+        &mut self,
+        key: ResourceKey,
+        name: Box<str>,
+        node_thingy: Box<dyn NodeThingy>,
+    ) {
         self.entries.insert(
-            key_id,
+            key.clone(),
             NodeRegistryEntry {
-                key,
-                node_factory: DynNodeFactory(Box::new(|| Box::new(N::new()))),
+                key: key.clone(),
+                node_thingy,
             },
         );
         self.name_entries.push(NameEntry {
             name,
-            node_key: key_id,
+            node_key: key,
             entry_type: NameEntryType::Name,
         });
     }
@@ -92,58 +175,13 @@ impl NodeRegistry {
             entry_type: NameEntryType::Alias,
         });
     }
-    pub fn get_resource_key_of(&self, node: &dyn crate::NodeStateWrapper) -> ResourceKey {
-        *self
-            .type_id_to_resource_key
-            .get(&node.type_id())
-            .expect("node of unregistered type passed to get_resource_key_of")
-    }
-
-    pub fn create_node(&self, key_id: ResourceKey) -> DynNode {
-        let Some(entry) = self.entries.get(key_id) else {
-            panic!("invalid key id passed to create_node");
-        };
-        (entry.node_factory)()
-    }
-    pub fn create_state(
-        &self,
-        key_id: ResourceKey,
-        creation_context: NodeCreationContext<'_>,
-    ) -> DynNodeState {
-        let Some(entry) = self.entries.get(key_id) else {
-            panic!("invalid key id passed to create_state: {key_id:?}");
-        };
-        (entry.node_state_factory)(creation_context)
-    }
-    pub fn create_data(
-        &self,
-        key_id: ResourceKey,
-        creation_context: NodeCreationContext<'_>,
-    ) -> NodeData {
-        NodeData {
-            key_id,
-            inner: self.create_state(key_id, creation_context),
-        }
-    }
-
-    pub fn create_node_and_state(
-        &self,
-        key_id: ResourceKey,
-        creation_context: NodeCreationContext<'_>,
-    ) -> (DynNode, DynNodeState) {
-        let Some(entry) = self.entries.get(key_id) else {
-            panic!("invalid key id passed to create_state");
-        };
-        let state = (entry.node_state_factory)(creation_context);
-        ((entry.node_factory)(), state)
-    }
 
     pub fn name_entries(&self) -> &[NameEntry] {
         &self.name_entries
     }
 
-    pub fn get(&self, key_id: ResourceKey) -> Option<&NodeRegistryEntry> {
-        self.entries.get(key_id)
+    pub fn get(&self, key: &ResourceKey) -> Option<&NodeRegistryEntry> {
+        self.entries.get(key)
     }
 }
 
@@ -156,7 +194,7 @@ impl Default for NodeRegistry {
 #[derive(Debug)]
 pub struct NodeRegistryEntry {
     pub key: ResourceKey,
-    pub node_factory: DynNodeFactory,
+    pub node_thingy: Box<dyn NodeThingy>,
 }
 
 #[derive(Debug)]

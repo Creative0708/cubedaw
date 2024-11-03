@@ -6,7 +6,7 @@ use ahash::HashSetExt;
 use cubedaw_lib::{Buffer, Id, IdMap, IdSet, NodeEntry, Patch};
 use resourcekey::ResourceKey;
 
-use crate::{host::WorkerHostState, WorkerOptions, WorkerState};
+use crate::{WorkerOptions, WorkerState};
 
 mod group;
 pub use group::GroupNodeGraph;
@@ -61,6 +61,7 @@ impl PreparedNodeGraph {
         {
             let mut stack = vec![output_node];
             let mut visited = IdSet::new();
+            visited.insert(output_node);
             while let Some(node_id) = stack.pop() {
                 let node = patch
                     .node_entry(node_id)
@@ -86,6 +87,13 @@ impl PreparedNodeGraph {
                             }
                         }
                     }
+                }
+            }
+
+            if let Some(input_node) = input_node {
+                if !visited.contains(&input_node) {
+                    dbg!(patch, input_node, output_node);
+                    todo!();
                 }
             }
         }

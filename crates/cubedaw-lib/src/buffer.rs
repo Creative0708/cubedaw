@@ -101,7 +101,7 @@ impl Buffer {
         }
     }
 }
-impl<'a> Default for &'a mut Buffer {
+impl Default for &mut Buffer {
     fn default() -> Self {
         Buffer::new_mut(&mut [])
     }
@@ -133,6 +133,14 @@ impl Clone for Box<Buffer> {
     fn clone(&self) -> Self {
         let b: Box<[InternalBufferType]> = self.0.into();
         Buffer::new_box(b)
+    }
+}
+
+impl From<&'_ Buffer> for Box<Buffer> {
+    fn from(value: &Buffer) -> Self {
+        Buffer::new_box(bytemuck::cast_slice_box(Box::<[InternalBufferType]>::from(
+            value.as_internal(),
+        )))
     }
 }
 

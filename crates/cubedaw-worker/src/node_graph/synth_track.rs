@@ -1,9 +1,9 @@
-use anyhow::Context;
-use cubedaw_lib::{Buffer, Id, NodeEntry, Patch};
+use anyhow::{Context, Result};
+use cubedaw_lib::{Buffer, Id, Patch};
 
 use crate::WorkerOptions;
 
-use super::{NodeGraphEntry, PreparedNodeGraph, WorkerState};
+use super::{PreparedNodeGraph, WorkerState};
 
 #[derive(Debug, Clone)]
 pub struct SynthTrackNodeGraph(PreparedNodeGraph);
@@ -33,12 +33,16 @@ impl SynthTrackNodeGraph {
             }
         }
 
-        self.0.sync_with(
-            patch,
-            options,
-            Some(note_output.context("no note output exists")?),
-            track_output.context("no track output exists")?,
-        );
+        let note_output = note_output.context("no note output exists")?;
+        let track_output = track_output.context("no track output exists")?;
+
+        self.0
+            .sync_with(patch, options, Some(note_output), track_output);
+
+        self.0
+            .get_node_mut(track_output)
+            .expect("unreachable")
+            .outputs = vec![Buffer::new_box_zeroed(options.buffer_size)];
 
         Ok(())
     }
@@ -48,7 +52,7 @@ impl SynthTrackNodeGraph {
         options: &WorkerOptions,
         state: &mut WorkerState,
         input: &Buffer,
-    ) -> &mut Buffer {
+    ) -> Result<&mut Buffer> {
         let input_node = self
             .0
             .get_node_mut(self.0.input_node().expect("unreachable"))
@@ -61,6 +65,6 @@ impl SynthTrackNodeGraph {
             .0
             .get_node_mut(self.0.output_node())
             .expect("unreachable");
-        &mut output_node.outputs[0]
+        Ok(&mut output_node.outputs[0])
     }
 }

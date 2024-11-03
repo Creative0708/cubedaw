@@ -215,7 +215,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
             }
         }
 
-        if let Some(raw_movement_y) = ctx.ephemeral_state.track_drag.raw_movement_y() {
+        if let Some(raw_movement_y) = ctx.ephemeral_state.drag.raw_movement_y() {
             assert!(
                 track_list.len() <= u32::MAX as usize,
                 "there are more than u32::MAX tracks. wat"
@@ -275,7 +275,8 @@ impl<'a, 'b> Prepared<'a, 'b> {
     fn update(&mut self, ui: &mut egui::Ui) {
         let ctx = &mut *self.ctx;
         egui::SidePanel::left(egui::Id::new(self.tab.id)).show_inside(ui, |ui| {
-            let result = ctx.ephemeral_state.track_drag.handle(
+            let result = ctx.ephemeral_state.drag.handle(
+                Id::new("tracks"),
                 |prepared: &mut crate::util::Prepared<'_, Id<Track>>| {
                     for track_entry in &mut self.track_list {
                         let rect = egui::Rect {
@@ -314,13 +315,12 @@ impl<'a, 'b> Prepared<'a, 'b> {
                         // if not for the `!prepared.is_something_being_dragged()`,
                         // egui would think the rect at this position is hovered during dragging (which it's not)
                         // so this is a workaround.
-                        track_entry.is_highlighted = !prepared.is_something_being_dragged()
+                        track_entry.is_highlighted = !prepared.is_being_dragged()
                             && (track_entry.track_ui.selected)
                             || response.hovered();
 
                         ui.add_enabled_ui(
-                            !(prepared.is_something_being_dragged()
-                                && track_entry.track_ui.selected),
+                            !(prepared.is_being_dragged() && track_entry.track_ui.selected),
                             |ui| {
                                 track_entry.track_header(
                                     &mut ctx.tracker,
@@ -354,7 +354,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                             //     dbg!(track_entry.track_ui.selected, track_entry.actual_pos);
                             // }
 
-                            ui.with_layer_id(track_header_drag_layer_id, |ui| {
+                            ui.with_layer_id(todo!(), |ui| {
                                 ui.set_clip_rect(ui.ctx().screen_rect());
                                 track_entry.track_header(
                                     &mut ctx.tracker,
@@ -460,7 +460,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                     for track_entry in &self.track_list {
                         let highlighted = track_entry.is_highlighted;
                         let visuals = if track_entry.track_ui.selected
-                            && ctx.ephemeral_state.track_drag.is_something_being_dragged()
+                            && ctx.ephemeral_state.drag.is_being_dragged(Id::new("tracks"))
                         {
                             ui.visuals().widgets.noninteractive
                         } else if highlighted {

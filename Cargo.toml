@@ -23,7 +23,7 @@ needless_question_mark = "allow" # makes code harder to read in long question ma
 unusual_byte_groupings = "allow" # misunderstands floating-point binary representation
 
 [workspace.dependencies]
-egui = "0.28.1"
+egui = "0.29.1"
 log = "0.4.22"
 anyhow = "1.0.89"
 ahash = "0.8.11"

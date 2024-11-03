@@ -5,7 +5,6 @@ use std::{
     cell::{Cell, UnsafeCell},
     mem::MaybeUninit,
     sync::{Condvar, Mutex},
-    usize,
 };
 
 /// It's kinda hard to explain.
@@ -163,7 +162,7 @@ impl<'a, T, E> SyncAccessibleReadHandle<'a, T, E> {
 
     /// Waits on this handle, returning `None` if the lock hasn't finished yet. Returns the finished value otherwise.
     pub fn try_wait(&self) -> Option<&'a T> {
-        let mut lock = self.inner.mutex.lock().expect("mutex poisoned");
+        let lock = self.inner.mutex.lock().expect("mutex poisoned");
         if lock.0 == UNPRIMED {
             panic!("SyncAccessibleReadHandle::wait called before SyncBuffer::prime");
         }

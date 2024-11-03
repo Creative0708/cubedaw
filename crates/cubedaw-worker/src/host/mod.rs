@@ -1,9 +1,12 @@
 use std::{fmt::Debug, sync::Arc, thread};
 
-use cubedaw_lib::{IdMap, InternalBufferType, PreciseSongPos, Range, State};
+use anyhow::Context;
+use cubedaw_lib::{Buffer, IdMap, InternalBufferType, PreciseSongPos, Range, State};
+use unwrap_todo::UnwrapTodo;
 
 use crate::{
     common::{HostToWorkerEvent, JobDescriptor, WorkerToHostEvent},
+    sync::SyncBuffer,
     worker, WorkerJob, WorkerOptions,
 };
 mod state;
@@ -67,7 +70,10 @@ impl WorkerHost {
             ..
         } = self;
 
-        self.worker_state.sync_with(state, worker_options);
+        self.worker_state
+            .sync_with(state, worker_options)
+            .with_context(|| format!("state is {state:?}"))
+            .todo();
     }
 
     /// Delete all currently processing jobs. This will result in silence
@@ -76,10 +82,16 @@ impl WorkerHost {
         todo!()
     }
 
+    pub fn options(&self) -> &WorkerOptions {
+        &self.worker_options
+    }
+
     pub fn process(
         mut self,
         mut start_pos: Option<&mut PreciseSongPos>,
         live_pos: PreciseSongPos,
+
+        output: &mut Buffer,
     ) -> Self {
         self.sync_with_state();
 
@@ -105,7 +117,7 @@ impl WorkerHost {
         let state = allocator.alloc(ManuallyDrop::new(UnsafeCell::new(state)));
         let worker_state = allocator.alloc(ManuallyDrop::new(UnsafeCell::new(worker_state)));
 
-        {
+        let master_output = {
             // SAFETY: `state` and `worker_state` are not borrowed at all after the end of this block (until the workers finish ofc)
             let (state, worker_state) = unsafe { (&*state.get(), &mut *worker_state.get()) };
 
@@ -116,8 +128,9 @@ impl WorkerHost {
                 worker_state,
                 &worker_options,
                 start_pos.as_deref_mut(),
-            );
-        }
+                live_pos,
+            )
+        };
 
         // tell the workers to start with all the infomation they need
         for handle in worker_handles.iter_mut() {
@@ -161,8 +174,17 @@ impl WorkerHost {
                         todo!("{track_id:?}");
                     }
                 },
+                WorkerToHostEvent::Error(err) => {
+                    // TODO
+                    panic!("error encountered in worker host: {err}");
+                }
             }
         }
+
+        let final_buffer = master_output
+            .try_wait()
+            .expect("the jobs are finished; this shouldn't need to block");
+        output.copy_from(final_buffer);
 
         // SAFETY: Several things going on here:
         // - `state` and `worker_state` are shadowed, preventing further use of the `ManuallyDrop`.
@@ -282,6 +304,9 @@ impl WorkerHandle {
     }
 }
 
+type WorkerJobSyncBuffer = SyncBuffer<&'static mut cubedaw_lib::Buffer, WorkerJob>;
+
+#[must_use = "you should do something with the master output returned from this function"]
 fn add_jobs(
     allocator: &'static bumpalo::Bump,
     work_tx: &crossbeam_channel::Sender<WorkerJob>,
@@ -289,11 +314,8 @@ fn add_jobs(
     worker_state: &'static mut WorkerHostState,
     worker_options: &WorkerOptions,
     start_pos_ref: Option<&mut PreciseSongPos>,
-) {
-    use crate::sync::SyncBuffer;
-
-    type WorkerJobSyncBuffer = SyncBuffer<&'static mut cubedaw_lib::Buffer, WorkerJob>;
-
+    _live_pos: PreciseSongPos, // TODO
+) -> crate::sync::SyncAccessibleReadHandle<'static, &'static mut cubedaw_lib::Buffer, WorkerJob> {
     let allocate_sync_buffer = |alloc: &'static bumpalo::Bump| -> &'static WorkerJobSyncBuffer {
         let slice = alloc.alloc_slice_fill_copy(
             worker_options.buffer_size as usize / InternalBufferType::N,
@@ -316,31 +338,24 @@ fn add_jobs(
     let mut group_track_id_to_mutable_reference_to_group_track_data: IdMap<_, &'static mut _> =
         IdMap::new();
 
-    let (start_pos, end_pos, song_range_that_we_will_process) = match start_pos_ref {
-        Some(start_pos_ref) => {
-            let start_pos = *start_pos_ref;
-            let end_pos = start_pos
-                + PreciseSongPos::from_song_pos_f32({
-                    // samples / (samples/second) / (60 seconds/minute) * beats/minute * units/beat
-                    worker_options.buffer_size as f32 / worker_options.sample_rate as f32 / 60.0
-                        * state.bpm
-                        * Range::UNITS_PER_BEAT as f32
-                });
-            // each consecutive range of start_pos to end_pos must result in consecutive song ranges
-            // so don't use end_pos.ceil_to_song_pos() or whatever since that could result in overlap
-            // which is very very bad and will cause very very bad things
-            let song_range_that_we_will_process = Range::new(start_pos.song_pos, end_pos.song_pos);
+    let song_range_that_we_will_process = start_pos_ref.map(|start_pos_ref| {
+        let start_pos = *start_pos_ref;
+        let end_pos = start_pos
+            + PreciseSongPos::from_song_pos_f32({
+                // samples / (samples/second) / (60 seconds/minute) * beats/minute * units/beat
+                worker_options.buffer_size as f32 / worker_options.sample_rate as f32 / 60.0
+                    * state.bpm
+                    * Range::UNITS_PER_BEAT as f32
+            });
+        // each consecutive range of start_pos to end_pos must result in consecutive song ranges
+        // so don't use end_pos.ceil_to_song_pos() or whatever since that could result in overlap
+        // which is very very bad and will cause very very bad things
+        let song_range_that_we_will_process = Range::new(start_pos.song_pos, end_pos.song_pos);
 
-            *start_pos_ref = end_pos;
+        *start_pos_ref = end_pos;
 
-            (
-                Some(start_pos),
-                Some(end_pos),
-                Some(song_range_that_we_will_process),
-            )
-        }
-        None => (None, None, None),
-    };
+        song_range_that_we_will_process
+    });
 
     for (&track_id, section_track_data) in &mut worker_state.section_tracks {
         section_track_id_to_mutable_reference_to_section_track_data
@@ -466,5 +481,10 @@ fn add_jobs(
             work_tx.send(job).unwrap();
         }
     }
+
+    let master_read_handle = master_output.get_read_handle();
+
     master_output.prime(WorkerJob::Finalize);
+
+    master_read_handle
 }

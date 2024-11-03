@@ -1,3 +1,4 @@
+use cubedaw_wasm::ValType;
 use wasm_encoder::reencode::Reencode;
 
 use crate::{
@@ -14,7 +15,7 @@ use super::PrepareContext;
 pub struct PreparedFunction {
     ty_index: u32,
     ty: wasm_encoder::FuncType,
-    locals: Box<[wasm_encoder::ValType]>,
+    locals: Box<[ValType]>,
     instructions: PreparedInstructionList,
 }
 
@@ -34,7 +35,8 @@ impl PreparedFunction {
                 locals.push(
                     reencoder
                         .val_type(ty)
-                        .expect("non-ref types can't panic when reencoding"),
+                        .expect("non-ref types can't panic when reencoding")
+                        .into(),
                 );
             }
         }
@@ -66,12 +68,12 @@ impl PreparedFunction {
         self.instructions.stitch(func, offsets);
 
         // allocate locals for the parameters
-        func.extend_locals(self.ty.params().iter().cloned());
+        func.extend_locals(self.ty.params().iter().cloned().map(Into::into));
         func.extend_locals(self.locals.iter().cloned());
     }
 
     pub fn encode_standalone(&self, offsets: &ModuleStitchInfo) -> FunctionStitch {
-        let mut func = FunctionStitch::standalone(self.ty.clone());
+        let mut func = FunctionStitch::standalone(self.ty.clone().into());
         // no need to do anything fancy here, just encode the locals and instructions without needing extra locals
         self.instructions.stitch(&mut func, offsets);
         func.extend_locals(self.locals.iter().cloned());

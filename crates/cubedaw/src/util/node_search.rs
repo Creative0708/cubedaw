@@ -1,3 +1,5 @@
+use crate::registry::NodeRegistry;
+
 #[derive(Debug, Default)]
 pub struct NodeSearch {
     pub inner: String,

@@ -9,11 +9,11 @@ pub use id::{Id, IdMap, IdSet};
 mod state;
 pub use state::State;
 mod track;
+#[deprecated(note = "use resourcekey directly")]
 pub use resourcekey::ResourceKey;
 pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
 mod patch;
 pub use patch::{Cable, CableTag, NodeData, NodeEntry, NodeInput, NodeOutput, NodeTag, Patch};
-mod node;
 // pub use node::{
 //     DataDrain, DataSource, DynNode, DynNodeState, Node, NodeCreationContext, NodeState,
 //     NoteProperty,

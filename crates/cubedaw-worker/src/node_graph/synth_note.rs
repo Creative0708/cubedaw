@@ -1,9 +1,9 @@
-use anyhow::Context;
-use cubedaw_lib::{Buffer, Id, NodeEntry, Patch};
+use anyhow::{Context, Result};
+use cubedaw_lib::{Buffer, Id, Patch};
 
 use crate::WorkerOptions;
 
-use super::{NodeGraphEntry, PreparedNodeGraph, WorkerState};
+use super::{PreparedNodeGraph, WorkerState};
 
 #[derive(Debug, Clone)]
 pub struct SynthNoteNodeGraph(PreparedNodeGraph);
@@ -38,13 +38,17 @@ impl SynthNoteNodeGraph {
         Ok(())
     }
 
-    pub fn process(&mut self, options: &WorkerOptions, state: &mut WorkerState) -> &mut Buffer {
-        self.0.process(options, state);
+    pub fn process(
+        &mut self,
+        options: &WorkerOptions,
+        state: &mut WorkerState,
+    ) -> Result<&mut Buffer> {
+        self.0.process(options, state)?;
 
         let output_node = self
             .0
             .get_node_mut(self.0.output_node())
             .expect("unreachable");
-        &mut output_node.outputs[0]
+        Ok(&mut output_node.outputs[0])
     }
 }

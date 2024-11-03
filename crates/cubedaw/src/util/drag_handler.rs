@@ -40,7 +40,7 @@ impl DragHandler {
     pub fn is_something_being_dragged(&self) -> bool {
         self.dragged_id.is_some()
     }
-    pub fn is_dragged(&self, id: Id) -> bool {
+    pub fn is_being_dragged(&self, id: Id) -> bool {
         self.dragged_id.is_some_and(|ids| ids.id == id)
     }
 
@@ -58,13 +58,13 @@ impl DragHandler {
     }
 
     pub fn raw_movement_for(&self, id: Id) -> Option<Vec2> {
-        self.is_dragged(id).then_some(self.raw_movement)
+        self.is_being_dragged(id).then_some(self.raw_movement)
     }
     pub fn raw_movement_x_for(&self, id: Id) -> Option<f32> {
-        self.is_dragged(id).then_some(self.raw_movement.x)
+        self.is_being_dragged(id).then_some(self.raw_movement.x)
     }
     pub fn raw_movement_y_for(&self, id: Id) -> Option<f32> {
-        self.is_dragged(id).then_some(self.raw_movement.y)
+        self.is_being_dragged(id).then_some(self.raw_movement.y)
     }
 
     pub fn handle<T: SelectablePath, R>(

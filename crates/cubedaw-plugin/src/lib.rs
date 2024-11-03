@@ -10,9 +10,9 @@ use anyhow::Context;
 use prepare::{PrepareContext, PreparedFunction};
 use resourcekey::{Namespace, ResourceKey};
 
-// TODO: currently we use wasm_encoder types (notably ValType), is it worth revealing implementation details
+// TODO: currently we use wasm_encoder types, is it worth revealing implementation details
 // about the crate?
-pub use wasm_encoder::{Instruction, ValType};
+pub use wasm_encoder::Instruction;
 
 pub struct Plugin {
     hash: u64,

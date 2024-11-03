@@ -5,7 +5,7 @@
 # You can also check bacon's own bacon.toml file
 #  as an example: https://github.com/Canop/bacon/blob/main/bacon.toml
 
-default_job = "test-plugin"
+# default_job = "run"
 
 [jobs.check]
 command = ["cargo", "check", "--color", "always", "--workspace"]
@@ -59,6 +59,20 @@ command = [
     "test",
     "-p",
     "cubedaw-plugin",
+    "--color",
+    "always",
+    "--",
+    "--color",
+    "always",         # see https://github.com/Canop/bacon/issues/124
+]
+need_stdout = true
+
+[jobs.test-worker]
+command = [
+    "cargo",
+    "test",
+    "-p",
+    "cubedaw-worker",
     "--color",
     "always",
     "--",

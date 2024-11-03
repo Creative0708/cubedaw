@@ -6,6 +6,11 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
+cubedaw-wasm = { path = "../cubedaw-wasm", default-features = false, features = [
+    "v128",
+    "wasmparser",
+    "wasm-encoder",
+] }
 resourcekey = { path = "../resourcekey", features = ["serde"] }
 ahash = { workspace = true }
 smallvec = { workspace = true }
@@ -17,10 +22,6 @@ wasm-encoder = { version = "0.215.0", features = ["wasmparser"] }
 anyhow = { workspace = true }
 semver = { workspace = true }
 unwrap_todo = { workspace = true }
-cubedaw-wasm = { path = "../cubedaw-wasm", default-features = false, features = [
-    "v128",
-    "wasmparser",
-] }
 
 [dev-dependencies]
 cubedaw-wasm = { path = "../cubedaw-wasm", features = ["v128"] }

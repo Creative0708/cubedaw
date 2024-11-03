@@ -9,14 +9,7 @@ use std::{
 use ahash::{AHasher, HashMap, HashSet, RandomState};
 
 fn new_hasher() -> AHasher {
-    // `printf cubedaw | sha256sum`
-    RandomState::with_seeds(
-        0x7631_a132_54ea_fc47,
-        0xff44_f51d_93bf_9bb0,
-        0x4d08_8811_297a_42f4,
-        0x2367_3b90_f1e9_b53c,
-    )
-    .build_hasher()
+    RandomState::new().build_hasher()
 }
 
 // Due to this being a u64, birthday attacks are _technically_ possible but fairly unlikely.

@@ -7,17 +7,18 @@ version = "0.1.0"
 [dependencies]
 cubedaw-command = { path = "../cubedaw-command" }
 egui = { workspace = true }
-eframe = "0.28.1"
+anyhow = { workspace = true }
+eframe = "0.29.1"
 egui_dock = "0.14.0"
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-worker = { path = "../cubedaw-worker" }
+resourcekey = { path = "../resourcekey" }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }
 log = { workspace = true }
-# TODO implement jit compilation of patches (see notes.md)
-# wasmtime-cranelift = "22.0.0"
+unwrap_todo = { workspace = true }
 
 [lints]
 workspace = true

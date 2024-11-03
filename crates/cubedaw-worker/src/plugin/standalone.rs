@@ -1,7 +1,6 @@
 use ahash::HashMap;
-use anyhow::{Context as _, Result};
-use cubedaw_plugin::ValType;
-use cubedaw_wasm::Value;
+use anyhow::Result;
+use cubedaw_wasm::{ValType, Value};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
@@ -21,19 +20,28 @@ impl StandalonePluginFactory {
     pub fn new(plugin: &cubedaw_plugin::Plugin, options: &WorkerOptions) -> Self {
         let WorkerOptions { sample_rate, .. } = *options;
         let mut module_stitch =
-            cubedaw_plugin::ModuleStitch::new(cubedaw_plugin::ShimInfo::new(move |ctx| {
-                use cubedaw_plugin::{CubedawPluginImport as I, Instruction};
+            cubedaw_plugin::ModuleStitch::new(cubedaw_plugin::ShimInfo::new(move |mut ctx| {
+                use cubedaw_plugin::CubedawPluginImport;
+                use cubedaw_plugin::Instruction;
                 match ctx.import() {
-                    I::SampleRate => {
-                        let prev_instruction = ctx.prev_instruction.clone();
-                        ctx.replace([prev_instruction, Instruction::I32Const(sample_rate as i32)]);
+                    CubedawPluginImport::SampleRate => {
+                        ctx.replace_only_current([Instruction::I32Const(sample_rate as i32)]);
                     }
-                    _ => ctx.insert_original_instructions(),
+                    CubedawPluginImport::Input => {
+                        ctx.replace_only_current([]);
+                        ctx.add_instruction_raw(Instruction::Call(0));
+                    }
+                    CubedawPluginImport::Output => {
+                        ctx.replace_only_current([]);
+                        ctx.add_instruction_raw(Instruction::Call(1));
+                    }
                 }
             }));
         for node in plugin.exported_nodes() {
-            let mut func_stitch =
-                cubedaw_plugin::FunctionStitch::new([ValType::I32, ValType::I32], []);
+            let mut func_stitch = cubedaw_plugin::FunctionStitch::new(cubedaw_wasm::FuncType::new(
+                [ValType::I32, ValType::I32],
+                [],
+            ));
             // TODO
             plugin.stitch_node(node, &mut func_stitch, &mut module_stitch);
         }
@@ -56,24 +64,6 @@ impl StandalonePluginFactory {
                     )
                 })
                 .collect(),
-            // exported_nodes: plugin
-            //     .exported_nodes()
-            //     .map(|key| {
-            //         Ok((
-            //             key.clone(),
-            //             instance
-            //                 .get_func(
-            //                     &mut store,
-            //                     &module.get_export(key.item_str()).with_context(|| {
-            //                         format!("function {key} doesn't exist in plugin")
-            //                     })?,
-            //                 )
-            //                 .expect("unreachable"),
-            //         ))
-            //     })
-            //     .collect::<Result<_>>()?,
-            // store,
-            // instance,
             module,
         }
     }
@@ -81,12 +71,12 @@ impl StandalonePluginFactory {
     pub fn create(&self, options: &WorkerOptions) -> StandalonePlugin {
         let mut store =
             StandalonePluginStore::new(options.registry.engine(), StandalonePluginParameters {});
-        let mut instance = options
+        let instance = options
             .registry
             .standalone_linker()
             .instantiate(&mut store, &self.module)
             .expect("failed to instantiate module");
-        let mut memory = instance
+        let memory = instance
             .get_memory(&mut store, &self.memory_location)
             .expect("no memory in module or not exported");
 
@@ -106,7 +96,7 @@ impl StandalonePluginFactory {
                 .collect(),
 
             store,
-            instance,
+            _instance: instance,
             memory,
         }
     }
@@ -115,7 +105,7 @@ impl StandalonePluginFactory {
 #[derive(Debug)]
 pub struct StandalonePlugin {
     store: StandalonePluginStore,
-    instance: cubedaw_wasm::Instance,
+    _instance: cubedaw_wasm::Instance,
     memory: cubedaw_wasm::Memory,
     exported_nodes: HashMap<ResourceKey, cubedaw_wasm::Func>,
 
@@ -190,7 +180,7 @@ impl StandalonePlugin {
                 Value::I32(state_start as i32),
             ],
             &mut [],
-        );
+        )?;
 
         Ok(())
     }

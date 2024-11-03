@@ -1,15 +1,10 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
-
-use ahash::{HashMap, HashMapExt};
 use cubedaw_lib::{
     GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track, TrackInner,
 };
-use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
 use crate::{
-    node_graph::{GroupNodeGraph, PreparedNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
-    plugin::standalone::StandalonePlugin,
+    node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
     WorkerOptions,
 };
 
@@ -160,7 +155,7 @@ impl WorkerSectionTrackState {
     pub fn sync_with(
         &mut self,
         track: &Track,
-        section_track: &SectionTrack,
+        _section_track: &SectionTrack,
         options: &WorkerOptions,
     ) -> anyhow::Result<()> {
         let patch = &track.patch;
