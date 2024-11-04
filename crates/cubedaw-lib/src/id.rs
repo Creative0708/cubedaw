@@ -195,12 +195,12 @@ impl<T, V> IdMap<T, V> {
         }
     }
     pub fn insert(&mut self, id: Id<T>, val: V) {
-        // if let Some(ref mut events) = self.events {
-        //     events.push(TrackingMapEvent::Create(id));
-        // }
         if self.map.insert(id, val).is_some() {
             panic!("tried to insert already existing id into IdMap");
         }
+    }
+    pub fn replace(&mut self, id: Id<T>, val: V) -> Option<V> {
+        self.map.insert(id, val)
     }
     pub fn insert_and_get_mut(&mut self, id: Id<T>, val: V) -> &mut V {
         // TODO currently there's no way to not have two hashmap accesses, change this when entry_insert is stabilized
@@ -240,6 +240,9 @@ impl<T, V> IdMap<T, V> {
     }
     pub fn values(&self) -> hash_map::Values<'_, Id<T>, V> {
         self.map.values()
+    }
+    pub fn values_mut(&mut self) -> hash_map::ValuesMut<'_, Id<T>, V> {
+        self.map.values_mut()
     }
     pub fn iter(&self) -> hash_map::Iter<'_, Id<T>, V> {
         self.map.iter()

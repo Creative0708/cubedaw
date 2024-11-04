@@ -96,6 +96,10 @@ impl Patch {
     pub fn node_entry_mut(&mut self, id: Id<NodeEntry>) -> Option<&mut NodeEntry> {
         self.nodes.get_mut(id)
     }
+    // for internal use. used when functions return a Id<NodeEntry> that _of course_ is already in the patch.
+    fn node_entry_infallible(&mut self, id: Id<NodeEntry>) -> &mut NodeEntry {
+        self.node_entry_mut(id).expect("unreachable")
+    }
 
     pub fn cables(&self) -> impl Iterator<Item = (Id<Cable>, &Cable)> {
         self.cables.iter().map(|(&id, data)| (id, data))
@@ -105,6 +109,21 @@ impl Patch {
     }
     pub fn cable_mut(&mut self, id: Id<Cable>) -> Option<&mut Cable> {
         self.cables.get_mut(id)
+    }
+
+    pub fn get_active_node(&self, key: &ResourceKey) -> Option<Id<NodeEntry>> {
+        let mut found = None;
+
+        for (node_id, node) in self.nodes() {
+            if &node.data.key == key {
+                let old = found.replace(node_id);
+                if old.is_some() {
+                    todo!("multiple nodes aren't implemented yet. (found multiple {key:?} nodes)");
+                }
+            }
+        }
+
+        found
     }
 
     /// If the provided cable was added, what would its tag be?
@@ -170,6 +189,8 @@ impl Patch {
         );
 
         self.cables.insert(cable_id, cable);
+
+        self.recalculate_tags();
     }
     pub fn remove_cable(&mut self, cable_id: Id<Cable>) -> Option<Cable> {
         let cable = self.cables.remove(cable_id)?;
@@ -195,11 +216,103 @@ impl Patch {
             self.cables.force_get_mut(conn.id).output_cable_index -= 1;
         }
 
+        self.recalculate_tags();
+
         Some(cable)
     }
     pub fn take_cable(&mut self, cable_id: Id<Cable>) -> Cable {
         self.remove_cable(cable_id)
             .expect("take_cable() failed: cable doesn't exist in patch")
+    }
+
+    // TODO: this is O(n). possibly change to incremental updates later?
+    // again, rendering is also O(n) so this isn't needed in most cases. this also isn't needed if the number of nodes is like < 10000.
+    fn recalculate_tags(&mut self) {
+        // also TODO: multiple of the same special nodes aren't implemented yet. we should be like blender where you can choose which node is actually "active"
+
+        let note_output = self.get_active_node(&resourcekey::literal!("builtin:note_output"));
+        let track_input = self.get_active_node(&resourcekey::literal!("builtin:track_input"));
+        let track_output = self.get_active_node(&resourcekey::literal!("builtin:track_output"));
+
+        assert!(
+            note_output.is_none() || track_input.is_none(),
+            "can't have both a note output and track input on the same patch"
+        );
+
+        #[derive(Clone, Copy)]
+        enum VisitedState {
+            Inactive,
+            Active,
+        }
+
+        let mut visited: IdMap<NodeEntry, VisitedState> = IdMap::new();
+
+        fn do_dfs(
+            patch: &mut Patch,
+            visited: &mut IdMap<NodeEntry, VisitedState>,
+
+            start_id: Id<NodeEntry>,
+            tag: NodeTag,
+        ) {
+            visited.replace(start_id, VisitedState::Active);
+            let node = patch.nodes.force_get_mut(start_id);
+            node.tag = tag;
+
+            let connections: Vec<CableConnection> = node
+                .inputs
+                .iter()
+                .flat_map(|input| input.connections.iter())
+                .cloned()
+                .collect();
+
+            for conn in connections {
+                let Cable {
+                    input_node,
+                    tag: ref mut cable_tag,
+                    ..
+                } = *patch.cables.force_get_mut(conn.id);
+
+                match visited.get(input_node).copied() {
+                    Some(VisitedState::Active) => {
+                        *cable_tag = CableTag::Invalid;
+                    }
+                    Some(VisitedState::Inactive) => {
+                        *cable_tag = CableTag::Valid;
+                    }
+                    None => {
+                        *cable_tag = CableTag::Valid;
+                        do_dfs(patch, visited, input_node, tag);
+                    }
+                }
+            }
+            visited.replace(start_id, VisitedState::Inactive);
+        }
+        if let Some(track_output) = track_output {
+            if let Some(note_output) = note_output {
+                do_dfs(self, &mut visited, note_output, NodeTag::Note);
+
+                for value in visited.values_mut() {
+                    *value = VisitedState::Active;
+                }
+                visited.replace(note_output, VisitedState::Inactive);
+            } else if let Some(track_input) = track_input {
+                visited.insert(track_input, VisitedState::Inactive);
+            }
+
+            do_dfs(self, &mut visited, track_output, NodeTag::Track);
+
+            for value in visited.values_mut() {
+                *value = VisitedState::Inactive;
+            }
+        }
+
+        let node_ids: Vec<Id<NodeEntry>> = self.nodes.keys().cloned().collect();
+        for node_id in node_ids {
+            if visited.replace(node_id, VisitedState::Inactive).is_some() {
+                continue;
+            }
+            do_dfs(self, &mut visited, node_id, NodeTag::Disconnected);
+        }
     }
 
     pub fn debug_assert_valid(&self) {
@@ -257,6 +370,9 @@ pub struct NodeOutput {
     pub connections: Vec<Id<Cable>>,
 }
 impl NodeOutput {
+    pub fn connected_cables(&self) -> impl Iterator<Item = Id<Cable>> + '_ {
+        self.connections.iter().copied()
+    }
     pub fn get_connections<'a>(
         &'a self,
         patch: &'a Patch,
@@ -501,9 +617,13 @@ impl NodeEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum NodeTag {
     #[default]
+    /// The node is disconnected from the rest of the patch and doesn't contribute anything.
     Disconnected,
+    /// The node is part of the per-note node graph. This only applies to section tracks.
     Note,
+    /// The node is part of the per-track node graph. This applies to both section and group tracks.
     Track,
+    /// The node is a special node! i.e. it's a note output, track input, or track output node.
     Special,
 }
 

@@ -24,7 +24,10 @@ impl WorkerHostState {
         for (&track_id, track) in &state.tracks {
             let mut node_map = IdMap::new();
             for (node_id, node) in track.patch.nodes() {
-                let entry = options.registry.get(&node.data.key).todo();
+                let entry = options
+                    .registry
+                    .get(&node.data.key)
+                    .unwrap_or_else(|| panic!("uh oh {node_id:?}"));
                 node_map.insert(node_id, (entry.node_factory)(&node.data.inner));
             }
             match track.inner {

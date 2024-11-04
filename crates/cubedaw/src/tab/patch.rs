@@ -667,7 +667,11 @@ impl PatchTab {
                 return;
             }
 
-            let control_point_distance = (input_pos.x - output_pos.x).abs() * 0.5;
+            let mut control_point_distance = (input_pos.x - output_pos.x).abs() * 0.5;
+            const MIN_BEZIER_DISTANCE: f32 = 70.0;
+            if control_point_distance.abs() < MIN_BEZIER_DISTANCE {
+                control_point_distance = MIN_BEZIER_DISTANCE.copysign(control_point_distance);
+            }
 
             cable_shapes.push(
                 egui::epaint::CubicBezierShape {
@@ -959,7 +963,8 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
             }
 
             cable_connections.reserve_exact(connections.len());
-            for (cable_index, (is_virtual, conn)) in connections.into_iter().enumerate() {
+            let mut indicator_top_y = 0.0;
+            for (cable_index, &(is_virtual, conn)) in connections.iter().enumerate() {
                 let cable_index = cable_index as u32;
 
                 let multiplier = conn.multiplier;
@@ -989,7 +994,12 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                     response_rect.right()..=ui.max_rect().right(),
                     response_rect.y_range(),
                 );
+                if cable_index == 0 {
+                    indicator_top_y = indicator_rect.top();
+                }
 
+                let indicator_stroke =
+                    egui::Stroke::new(1.5, ui.visuals().widgets.inactive.bg_fill);
                 ui.painter().with_clip_rect(indicator_rect).rect(
                     indicator_rect.translate(indicator_rect.size() * -0.5),
                     egui::Rounding {
@@ -997,7 +1007,7 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                         ..Default::default()
                     },
                     egui::Color32::TRANSPARENT,
-                    egui::Stroke::new(1.5, ui.visuals().widgets.inactive.bg_fill),
+                    indicator_stroke,
                 );
 
                 if let Some(id) = self.node_id {
@@ -1016,6 +1026,15 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                     } else if new_multiplier != multiplier {
                         self.tracker.add_weak(command);
                     }
+                }
+
+                // the bar connecting the ╯s
+                if cable_index == connections.len() as u32 - 1 && cable_index != 0 {
+                    ui.painter().vline(
+                        indicator_rect.center().x + 0.8, // why this constant? no idea, but it's what aligns the lines
+                        indicator_top_y..=indicator_rect.top(),
+                        indicator_stroke,
+                    );
                 }
 
                 cable_connections.push(CubedawNodeUiContextCableConnectionData {

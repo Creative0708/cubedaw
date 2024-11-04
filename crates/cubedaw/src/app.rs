@@ -123,10 +123,10 @@ impl CubedawApp {
             None,
         );
 
-        ctx.tabs
-            .create_tab::<crate::tab::pianoroll::PianoRollTab>(ctx.state, ctx.ui_state);
-        ctx.tabs
-            .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
+        // ctx.tabs
+        //     .create_tab::<crate::tab::pianoroll::PianoRollTab>(ctx.state, ctx.ui_state);
+        // ctx.tabs
+        //     .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
         ctx.tabs
             .create_tab::<crate::tab::patch::PatchTab>(ctx.state, ctx.ui_state);
         // ctx.create_tab::<PatchTab>();

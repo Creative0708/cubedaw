@@ -13,28 +13,12 @@ impl GroupNodeGraph {
         Self(PreparedNodeGraph::empty(None, Id::invalid()))
     }
     pub fn sync_with(&mut self, patch: &Patch, options: &WorkerOptions) -> anyhow::Result<()> {
-        let mut track_input = None;
-        let mut track_output = None;
-
-        for (id, node) in patch.nodes() {
-            if node.tag() == cubedaw_lib::NodeTag::Special {
-                let res = &node.data.key;
-                if res == &resourcekey::literal!("builtin:track_input") {
-                    assert!(
-                        track_input.replace(id).is_none(),
-                        "TODO handle multiple track outputs"
-                    );
-                } else if res == &resourcekey::literal!("builtin:track_output") {
-                    assert!(
-                        track_output.replace(id).is_none(),
-                        "TODO handle multiple note outputs"
-                    );
-                }
-            }
-        }
-
-        let track_input = track_input.context("no track output exists")?;
-        let track_output = track_output.context("no note output exists")?;
+        let track_input = patch
+            .get_active_node(&resourcekey::literal!("builtin:track_input"))
+            .context("no track input exists")?;
+        let track_output = patch
+            .get_active_node(&resourcekey::literal!("builtin:track_output"))
+            .context("no note output exists")?;
 
         self.0
             .sync_with(patch, options, Some(track_input), track_output);

@@ -14,26 +14,11 @@ impl SynthNoteNodeGraph {
         Self(PreparedNodeGraph::empty(None, Id::invalid()))
     }
     pub fn sync_with(&mut self, patch: &Patch, options: &WorkerOptions) -> anyhow::Result<()> {
-        let mut note_output = None;
+        let mut note_output = patch
+            .get_active_node(&resourcekey::literal!("builtin:note_output"))
+            .context("no note output exists")?;
 
-        for (id, node) in patch.nodes() {
-            if node.tag() == cubedaw_lib::NodeTag::Special {
-                let res = &node.data.key;
-                if res == &resourcekey::literal!("builtin:note_output") {
-                    assert!(
-                        note_output.replace(id).is_none(),
-                        "TODO handle multiple note outputs"
-                    );
-                }
-            }
-        }
-
-        self.0.sync_with(
-            patch,
-            options,
-            None,
-            note_output.context("no note output exists")?,
-        );
+        self.0.sync_with(patch, options, None, note_output);
 
         Ok(())
     }
