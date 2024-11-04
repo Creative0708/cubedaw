@@ -7,6 +7,13 @@ pub struct UiState {
     pub show_root_track: bool,
 
     pub playhead_pos: i64,
+
+    _private: private::Private,
+}
+
+mod private {
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub struct Private;
 }
 
 impl UiState {
@@ -34,6 +41,8 @@ impl Default for UiState {
             show_root_track: false,
 
             playhead_pos: 0,
+
+            _private: private::Private,
         }
     }
 }

@@ -4,7 +4,7 @@ use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 use cubedaw_lib::{Id, IdMap, NodeData, ResourceKey};
 
-use crate::node::{NodeCreationContext, NodeUiContext};
+use crate::node::{NodeCreationContext, NodeInputUiOptions, NodeUiContext};
 
 // pub struct DynNodeThingy(pub Box<dyn Send + Sync + Fn(&NodeCreationContext) -> Box<[u8]>>);
 // impl ops::Deref for DynNodeThingy {
@@ -110,7 +110,7 @@ impl NodeRegistry {
                 ui: &mut egui::Ui,
                 node_ui: &mut dyn NodeUiContext,
             ) -> Result<()> {
-                node_ui.input_ui(ui, "Track Output", Default::default());
+                node_ui.input_ui(ui, "Track Output", NodeInputUiOptions::uninteractable());
                 Ok(())
             }
         }
@@ -133,7 +133,7 @@ impl NodeRegistry {
                 ui: &mut egui::Ui,
                 node_ui: &mut dyn NodeUiContext,
             ) -> Result<()> {
-                node_ui.input_ui(ui, "Note Output", Default::default());
+                node_ui.input_ui(ui, "Note Output", NodeInputUiOptions::uninteractable());
                 node_ui.output_ui(ui, "Track Input");
                 Ok(())
             }

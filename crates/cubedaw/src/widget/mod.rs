@@ -1,2 +1,2 @@
 mod drag_value;
-pub use drag_value::DragValue;
+pub use drag_value::{DefaultValueDisplay, DragValue};

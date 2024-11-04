@@ -1,6 +1,7 @@
 use core::f32;
 use std::collections::VecDeque;
 
+use anyhow::Result;
 use cubedaw_lib::{Id, Range, Track};
 use egui::{vec2, Widget};
 
@@ -45,12 +46,14 @@ impl crate::Screen for TrackTab {
         "Tracks".into()
     }
 
-    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
+    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
         let mut prepared = Prepared::new(ctx, ui, self);
 
         // egui::ScrollArea::vertical().show(ui, |ui| {
         prepared.update(ui);
         // });
+
+        Ok(())
     }
 }
 
@@ -58,6 +61,10 @@ struct Prepared<'a, 'b> {
     ctx: &'a mut crate::Context<'b>,
     tab: &'a mut TrackTab,
 
+    /// If the user is dragging and released the drag, would the drag succeed?
+    ///
+    /// Basically, is the drag in range of the track headers.
+    dragging_would_succeed: bool,
     track_list: Vec<TrackListEntry<'b>>,
 }
 
@@ -192,6 +199,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                 // and ctx.ui_state.show_root_track is false
                 if depth >= 0 {
                     let height = 48.0; // TODO make configurable
+                    let track_ui = ctx.ui_state.tracks.force_get(track_id);
                     track_list.push(TrackListEntry {
                         actual_pos: current_y,
 
@@ -199,7 +207,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
 
                         track_id,
                         track,
-                        track_ui: ctx.ui_state.tracks.force_get(track_id),
+                        track_ui,
                         position: current_y,
                         height,
                         indentation: depth as f32 * 16.0,
@@ -215,7 +223,20 @@ impl<'a, 'b> Prepared<'a, 'b> {
             }
         }
 
-        if let Some(raw_movement_y) = ctx.ephemeral_state.drag.raw_movement_y() {
+        let mut dragging_would_succeed = false;
+
+        let drag = &ctx.ephemeral_state.drag;
+        let width_of_track_header_panel = ui.max_rect().width();
+        if drag.is_being_dragged(Id::new("tracks"))
+            && let Some(egui::Vec2 {
+                x: raw_movement_x,
+                y: raw_movement_y,
+            }) = drag.raw_movement()
+            && (-width_of_track_header_panel..=width_of_track_header_panel)
+                .contains(&raw_movement_x)
+        {
+            dragging_would_succeed = true;
+
             assert!(
                 track_list.len() <= u32::MAX as usize,
                 "there are more than u32::MAX tracks. wat"
@@ -268,6 +289,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
         Self {
             ctx,
             tab,
+            dragging_would_succeed,
             track_list,
         }
     }
@@ -304,23 +326,31 @@ impl<'a, 'b> Prepared<'a, 'b> {
                         );
 
                         if response.double_clicked() {
-                            ctx.tabs
-                                .get_or_create_tab::<super::pianoroll::PianoRollTab>(
-                                    ctx.state,
-                                    ctx.ui_state,
-                                )
-                                .select_track(Some(track_entry.track_id));
+                            // group tracks don't have sections (yet!) and selecting a group track is invalid
+                            if track_entry.track.inner.is_section() {
+                                ctx.tabs
+                                    .get_or_create_tab::<super::pianoroll::PianoRollTab>(
+                                        ctx.state,
+                                        ctx.ui_state,
+                                    )
+                                    .select_track(Some(track_entry.track_id));
+                            }
+                            if let Some(patch_tab) = ctx.tabs.get_tab::<super::patch::PatchTab>() {
+                                patch_tab.select_track(Some(track_entry.track_id));
+                            }
                         }
 
                         // if not for the `!prepared.is_something_being_dragged()`,
                         // egui would think the rect at this position is hovered during dragging (which it's not)
                         // so this is a workaround.
                         track_entry.is_highlighted = !prepared.is_being_dragged()
-                            && (track_entry.track_ui.selected)
+                            && track_entry.track_ui.selected
                             || response.hovered();
 
                         ui.add_enabled_ui(
-                            !(prepared.is_being_dragged() && track_entry.track_ui.selected),
+                            !(prepared.is_being_dragged()
+                                && track_entry.track_ui.selected
+                                && self.dragging_would_succeed),
                             |ui| {
                                 track_entry.track_header(
                                     &mut ctx.tracker,
@@ -334,6 +364,10 @@ impl<'a, 'b> Prepared<'a, 'b> {
                         );
                     }
                     if let Some(movement) = prepared.movement() {
+                        let dragged_layer_id = egui::LayerId::new(
+                            egui::Order::Foreground,
+                            ui.layer_id().id.with("track drag"),
+                        );
                         for track_entry in &self.track_list {
                             if !track_entry.track_ui.selected {
                                 continue;
@@ -354,7 +388,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                             //     dbg!(track_entry.track_ui.selected, track_entry.actual_pos);
                             // }
 
-                            ui.with_layer_id(todo!(), |ui| {
+                            ui.with_layer_id(dragged_layer_id, |ui| {
                                 ui.set_clip_rect(ui.ctx().screen_rect());
                                 track_entry.track_header(
                                     &mut ctx.tracker,

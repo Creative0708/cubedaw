@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use crate::registry::NodeRegistry;
 
 mod ui;
-pub use ui::{NodeInputUiOptions, NodeUiContext, ValueHandler};
+pub use ui::{NodeInputUiOptions, NodeUiContext, ValueHandler, ValueHandlerContext};
 
 mod impls;
 

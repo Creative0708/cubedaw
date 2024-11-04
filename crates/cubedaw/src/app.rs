@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::registry::NodeRegistry;
-use cubedaw_lib::{Id, IdMap};
+use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
 
 use crate::{
@@ -40,6 +40,7 @@ impl CubedawApp {
         let mut app = {
             let mut state = cubedaw_lib::State::default();
             let mut ui_state = crate::UiState::default();
+            ui_state.show_root_track = true;
             let mut ephemeral_state = crate::EphemeralState::default();
 
             fn execute(
@@ -71,7 +72,12 @@ impl CubedawApp {
                 &mut ui_state,
                 &mut ephemeral_state,
             );
-            // execute(crate::command::, state, ui_state, ephemeral_state);
+            execute(
+                crate::command::track::UiTrackSelect::new(state.root_track, true),
+                &mut state,
+                &mut ui_state,
+                &mut ephemeral_state,
+            );
 
             for i in 1..=6 {
                 execute(
@@ -121,6 +127,8 @@ impl CubedawApp {
             .create_tab::<crate::tab::pianoroll::PianoRollTab>(ctx.state, ctx.ui_state);
         ctx.tabs
             .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
+        ctx.tabs
+            .create_tab::<crate::tab::patch::PatchTab>(ctx.state, ctx.ui_state);
         // ctx.create_tab::<PatchTab>();
 
         let result = ctx.finish();
@@ -388,7 +396,9 @@ impl<'a> egui_dock::TabViewer for CubedawTabViewer<'a> {
 
     fn ui(&mut self, ui: &mut egui::Ui, &mut id: &mut Self::Tab) {
         let mut tab = self.ctx.tabs.map.remove(id).unwrap();
-        tab.update(&mut self.ctx, ui);
+        if let Err(err) = tab.update(&mut self.ctx, ui) {
+            todo!("unhandled error in tab ui: {err}");
+        }
         self.ctx.ephemeral_state.selection_rect.draw(ui, id);
         self.ctx.tabs.map.insert(tab.id(), tab);
     }

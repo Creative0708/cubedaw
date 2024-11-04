@@ -3,6 +3,9 @@ use std::{any::TypeId, borrow::Cow};
 use egui::{Rangef, WidgetText};
 
 pub trait NodeUiContext {
+    // TODO: currently this only takes into account the position of the inputs to determine what inputs are the same across frames.
+    // This means that, say, if a node has an input named "Pitch", then switches it next frame to "Volume", the same cables will persist the next frame, causing the user to get their speakers blown out, probably.
+    // Instead, each input should have an Id<Input> or something that identifies it.
     fn input_ui(&mut self, ui: &mut egui::Ui, name: &str, options: NodeInputUiOptions);
     fn output_ui(&mut self, ui: &mut egui::Ui, name: &str);
 }
@@ -29,20 +32,8 @@ pub struct NodeInputUiOptions<'a> {
 
 impl Default for NodeInputUiOptions<'_> {
     fn default() -> Self {
-        struct DefaultValueDisplay;
-        impl ValueHandler for DefaultValueDisplay {
-            fn to_input(&self, val: f32) -> String {
-                format!("{val:.2}")
-            }
-            fn parse_input(&self, str: &str) -> Option<f32> {
-                str.parse().ok()
-            }
-            fn snap(&self, val: f32) -> f32 {
-                (val * 100.0).round() * 0.01
-            }
-        }
         Self {
-            display: &DefaultValueDisplay,
+            display: &crate::widget::DefaultValueDisplay,
             display_range: Rangef::new(0.0, 1.0),
             range: Rangef::new(0.0, 1.0),
             base_drag_speed: None,
@@ -86,16 +77,15 @@ impl NodeInputUiOptions<'_> {
             }
         }
         impl ValueHandler for PitchDisplay {
-            fn to_display(&self, val: f32) -> WidgetText {
-                let (note_name, difference) = self.get_parts(val);
-
-                (note_name + &difference).into()
+            fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String {
+                if ctx.is_relative() {
+                    format!("{:+.2}", val * 12.0).into()
+                } else {
+                    let (note_name, difference) = self.get_parts(val);
+                    (note_name + &difference).into()
+                }
             }
-            fn to_input(&self, val: f32) -> String {
-                let (note_name, difference) = self.get_parts(val);
-                note_name + &difference
-            }
-            fn parse_input(&self, str: &str) -> Option<f32> {
+            fn parse_input(&self, str: &str, _ctx: &ValueHandlerContext) -> Option<f32> {
                 if let Ok(val) = str.parse::<f32>() {
                     Some(val / 12.0)
                 } else {
@@ -156,13 +146,25 @@ impl NodeInputUiOptions<'_> {
     }
 }
 
-pub trait ValueHandler {
-    fn to_display(&self, val: f32) -> WidgetText {
-        self.to_input(val).into()
+pub struct ValueHandlerContext {
+    is_relative: bool,
+}
+impl ValueHandlerContext {
+    pub fn new(is_relative: bool) -> Self {
+        Self { is_relative }
     }
-    fn to_input(&self, val: f32) -> String;
+    pub fn is_relative(&self) -> bool {
+        self.is_relative
+    }
+}
+
+pub trait ValueHandler {
+    fn to_display(&self, val: f32, ctx: &ValueHandlerContext) -> WidgetText {
+        self.to_input(val, ctx).into()
+    }
+    fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String;
     // TODO implement expression evaluator based off of https://crates.io/crates/meval or the like
-    fn parse_input(&self, str: &str) -> Option<f32>;
+    fn parse_input(&self, str: &str, ctx: &ValueHandlerContext) -> Option<f32>;
 
     fn snap(&self, val: f32) -> f32;
 

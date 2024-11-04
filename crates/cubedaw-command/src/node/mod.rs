@@ -205,19 +205,19 @@ impl StateCommand for NodeAddOrRemove {
 }
 
 #[derive(Clone)]
-pub struct NodeInputChange {
+pub struct NodeBiasChange {
     id: Id<NodeEntry>,
     track_id: Id<Track>,
-    input_index: usize,
+    input_index: u32,
     old_value: f32,
     new_value: f32,
 }
 
-impl NodeInputChange {
+impl NodeBiasChange {
     pub fn new(
         id: Id<NodeEntry>,
         track_id: Id<Track>,
-        input_index: usize,
+        input_index: u32,
         old_value: f32,
         new_value: f32,
     ) -> Self {
@@ -241,12 +241,12 @@ impl NodeInputChange {
                 .patch
                 .node_entry_mut(self.id)?
                 .inputs_mut()
-                .get_mut(self.input_index)?,
+                .get_mut(self.input_index as usize)?,
         )
     }
 }
 
-impl StateCommand for NodeInputChange {
+impl StateCommand for NodeBiasChange {
     fn execute(&mut self, state: &mut cubedaw_lib::State) {
         let Some(input) = self.get_input(state) else {
             return;
@@ -258,6 +258,75 @@ impl StateCommand for NodeInputChange {
             return;
         };
         input.bias = self.old_value;
+    }
+
+    fn try_merge(&mut self, other: &Self) -> bool {
+        if (self.id, self.track_id) == (other.id, other.track_id) {
+            self.new_value = other.new_value;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeMultiplierChange {
+    id: Id<NodeEntry>,
+    track_id: Id<Track>,
+    input_index: u32,
+    cable_index: u32,
+    old_value: f32,
+    new_value: f32,
+}
+
+impl NodeMultiplierChange {
+    pub fn new(
+        id: Id<NodeEntry>,
+        track_id: Id<Track>,
+        input_index: u32,
+        cable_index: u32,
+        old_value: f32,
+        new_value: f32,
+    ) -> Self {
+        Self {
+            id,
+            track_id,
+            input_index,
+            cable_index,
+            old_value,
+            new_value,
+        }
+    }
+
+    fn get_multiplier<'a>(&self, state: &'a mut cubedaw_lib::State) -> Option<&'a mut f32> {
+        Some(
+            &mut state
+                .tracks
+                .get_mut(self.track_id)?
+                .patch
+                .node_entry_mut(self.id)?
+                .inputs_mut()
+                .get_mut(self.input_index as usize)?
+                .connections
+                .get_mut(self.cable_index as usize)?
+                .multiplier,
+        )
+    }
+}
+
+impl StateCommand for NodeMultiplierChange {
+    fn execute(&mut self, state: &mut cubedaw_lib::State) {
+        let Some(multiplier) = self.get_multiplier(state) else {
+            return;
+        };
+        *multiplier = self.new_value;
+    }
+    fn rollback(&mut self, state: &mut cubedaw_lib::State) {
+        let Some(multiplier) = self.get_multiplier(state) else {
+            return;
+        };
+        *multiplier = self.old_value;
     }
 
     fn try_merge(&mut self, other: &Self) -> bool {

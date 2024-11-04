@@ -13,7 +13,9 @@ mod track;
 pub use resourcekey::ResourceKey;
 pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
 mod patch;
-pub use patch::{Cable, CableTag, NodeData, NodeEntry, NodeInput, NodeOutput, NodeTag, Patch};
+pub use patch::{
+    Cable, CableConnection, CableTag, NodeData, NodeEntry, NodeInput, NodeOutput, NodeTag, Patch,
+};
 // pub use node::{
 //     DataDrain, DataSource, DynNode, DynNodeState, Node, NodeCreationContext, NodeState,
 //     NoteProperty,

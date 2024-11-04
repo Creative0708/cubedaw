@@ -145,3 +145,10 @@ pub enum UiActionType {
     Execute,
     Rollback,
 }
+
+pub struct Noop;
+
+impl UiStateCommand for Noop {
+    fn ui_execute(&mut self, _ui_state: &mut UiState, _ephemeral_state: &mut EphemeralState) {}
+    fn ui_rollback(&mut self, _ui_state: &mut UiState, _ephemeral_state: &mut EphemeralState) {}
+}

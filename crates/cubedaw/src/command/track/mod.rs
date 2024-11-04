@@ -49,7 +49,7 @@ impl UiTrackAddOrRemove {
                 patch.insert_node(
                     id_note_output,
                     NodeData::new_disconnected(
-                        resourcekey::literal!("builtin:track_input"),
+                        resourcekey::literal!("builtin:note_output"),
                         Box::new([]),
                     ),
                     vec![0.0],
@@ -66,7 +66,7 @@ impl UiTrackAddOrRemove {
                 );
                 patch.insert_cable(
                     Id::arbitrary(),
-                    cubedaw_lib::Cable::new(id_note_output, 0, id_track_output, 0),
+                    cubedaw_lib::Cable::one(id_note_output, id_track_output),
                 );
 
                 patch
@@ -135,7 +135,7 @@ impl UiTrackAddOrRemove {
                 );
                 patch.insert_cable(
                     Id::arbitrary(),
-                    cubedaw_lib::Cable::new(id_track_input, 0, id_track_output, 0),
+                    cubedaw_lib::Cable::one(id_track_input, id_track_output),
                 );
 
                 patch

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, PreciseSongPos, Range, Section, Track};
 use egui::{pos2, vec2, Color32, Pos2, Rangef, Rect, Rounding};
@@ -44,7 +45,14 @@ impl crate::Screen for PianoRollTab {
         Self {
             id: Id::arbitrary(),
 
-            track_id: ui_state.get_single_selected_track(),
+            track_id: ui_state.get_single_selected_track().and_then(|track_id| {
+                state
+                    .tracks
+                    .force_get(track_id)
+                    .inner
+                    .is_section()
+                    .then_some(track_id)
+            }),
 
             units_per_pitch: 16.0,
             units_per_tick: 0.5,
@@ -63,7 +71,7 @@ impl crate::Screen for PianoRollTab {
         "Piano Roll".into()
     }
 
-    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
+    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::both().show_viewport(ui, |ui, viewport| {
                 if let Some(track_id) = self.track_id
@@ -75,6 +83,7 @@ impl crate::Screen for PianoRollTab {
                 }
             })
         });
+        Ok(())
     }
 }
 

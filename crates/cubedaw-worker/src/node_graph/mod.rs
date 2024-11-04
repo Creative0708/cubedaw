@@ -77,9 +77,9 @@ impl PreparedNodeGraph {
                 } else {
                     indegrees.insert(node_id, node.inputs().len() as u32);
                     for input in node.inputs() {
-                        for (_cable_id, cable) in input
+                        for cable in input
                             .get_connections(patch)
-                            .filter(|(_, cable)| cable.tag.is_valid())
+                            .filter_map(|(_, cable)| cable.tag.is_valid().then_some(cable))
                         {
                             let new_node_id = cable.input_node;
                             if visited.insert(new_node_id) {
@@ -124,9 +124,8 @@ impl PreparedNodeGraph {
                     .map(|input| NodeGraphInput {
                         connections: {
                             input
-                                .connections
-                                .iter()
-                                .map(|&cable_id| {
+                                .connected_cables()
+                                .map(|cable_id| {
                                     let cable = patch
                                         .cable(cable_id)
                                         .expect("node connected to nonexistent cable");

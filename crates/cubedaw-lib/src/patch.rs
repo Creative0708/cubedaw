@@ -128,7 +128,7 @@ impl Patch {
                 return CableTag::Invalid;
             }
             for input in &self.nodes.force_get(id).inputs {
-                for &cable_id in &input.connections {
+                for cable_id in input.connected_cables() {
                     let cable = self.cables.force_get(cable_id);
                     if !cable.tag.is_valid() {
                         continue;
@@ -155,12 +155,24 @@ impl Patch {
 
         let output_node = self.nodes.force_get_mut(cable.output_node);
         let output_input = &mut output_node.inputs[cable.output_input_index as usize];
-        output_input.connections.push(cable_id);
+
+        for cable_connection in &output_input.connections[cable.output_cable_index as usize..] {
+            self.cables
+                .force_get_mut(cable_connection.id)
+                .output_cable_index += 1;
+        }
+        output_input.connections.insert(
+            cable.output_cable_index as usize,
+            CableConnection {
+                id: cable_id,
+                multiplier: 1.0,
+            },
+        );
 
         self.cables.insert(cable_id, cable);
     }
-    pub fn take_cable(&mut self, cable_id: Id<Cable>) -> Cable {
-        let cable = self.cables.take(cable_id);
+    pub fn remove_cable(&mut self, cable_id: Id<Cable>) -> Option<Cable> {
+        let cable = self.cables.remove(cable_id)?;
 
         let input_node = self.nodes.force_get_mut(cable.input_node);
         let input_output = &mut input_node.outputs[cable.input_output_index as usize];
@@ -170,23 +182,24 @@ impl Patch {
             .position(|&x| x == cable_id)
             .expect("node output doesn't have an entry for connected cable");
         input_output.connections.remove(cable_index);
-        for &cable in &input_output.connections[cable_index..] {
-            self.cables.force_get_mut(cable).input_output_index -= 1;
-        }
 
         let output_node = self.nodes.force_get_mut(cable.output_node);
         let output_input = &mut output_node.inputs[cable.output_input_index as usize];
         let cable_index = output_input
             .connections
             .iter()
-            .position(|&x| x == cable_id)
+            .position(|conn| conn.id == cable_id)
             .expect("node input doesn't have an entry for connected cable");
         output_input.connections.remove(cable_index);
-        for &cable in &output_input.connections[cable_index..] {
-            self.cables.force_get_mut(cable).output_input_index -= 1;
+        for conn in &output_input.connections[cable_index..] {
+            self.cables.force_get_mut(conn.id).output_cable_index -= 1;
         }
 
-        cable
+        Some(cable)
+    }
+    pub fn take_cable(&mut self, cable_id: Id<Cable>) -> Cable {
+        self.remove_cable(cable_id)
+            .expect("take_cable() failed: cable doesn't exist in patch")
     }
 
     pub fn debug_assert_valid(&self) {
@@ -207,23 +220,36 @@ impl Patch {
 #[derive(Debug, Clone, Default)]
 pub struct NodeInput {
     pub bias: f32,
-    // the connections are additive to the value
-    pub connections: Vec<Id<Cable>>,
+    // connections are additive to the value
+    // Vec<(cable_id, multiplier)>
+    pub connections: Vec<CableConnection>,
 }
 impl NodeInput {
+    pub fn connected_cables(&self) -> impl Iterator<Item = Id<Cable>> + '_ {
+        self.connections
+            .iter()
+            .map(|cable_connection| cable_connection.id)
+    }
+    /// Convenience function.
     pub fn get_connections<'a>(
         &'a self,
         patch: &'a Patch,
-    ) -> impl Iterator<Item = (Id<Cable>, &'a Cable)> {
-        self.connections.iter().map(move |&cable_id| {
+    ) -> impl Iterator<Item = (&'a CableConnection, &'a Cable)> {
+        self.connections.iter().map(move |cable_connection| {
             (
-                cable_id,
+                cable_connection,
                 patch
-                    .cable(cable_id)
+                    .cable(cable_connection.id)
                     .expect("cable doesn't exist on patch??"),
             )
         })
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct CableConnection {
+    pub id: Id<Cable>,
+    pub multiplier: f32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -248,14 +274,14 @@ impl NodeOutput {
 
 #[derive(Debug, Clone)]
 pub struct Cable {
-    // fyi the "input node" is the node to which the _output_ is connected to this cable.
+    // fyi the "input node" is the node to which its _output_ is connected to this cable.
     // it's called this way because it's the node which is the input to this cable. confusing
     pub input_node: Id<NodeEntry>,
-    // TODO rename
     pub input_output_index: u32,
 
     pub output_node: Id<NodeEntry>,
     pub output_input_index: u32,
+    pub output_cable_index: u32,
 
     pub output_multiplier_fac: f32,
 
@@ -267,6 +293,7 @@ impl Cable {
         input_output_index: u32,
         output_node: Id<NodeEntry>,
         output_input_index: u32,
+        output_cable_index: u32,
     ) -> Self {
         Self {
             input_node,
@@ -274,12 +301,31 @@ impl Cable {
 
             output_node,
             output_input_index,
+            output_cable_index,
 
             output_multiplier_fac: 1.0,
 
             tag: CableTag::Disconnected,
         }
     }
+    pub fn one(input_node: Id<NodeEntry>, output_node: Id<NodeEntry>) -> Self {
+        Self::new(input_node, 0, output_node, 0, 0)
+    }
+
+    pub fn input_node<'a>(&self, patch: &'a Patch) -> &'a NodeEntry {
+        patch
+            .node_entry(self.input_node)
+            .expect("cable doesn't belong to patch")
+    }
+    pub fn output_node<'a>(&self, patch: &'a Patch) -> &'a NodeEntry {
+        patch
+            .node_entry(self.output_node)
+            .expect("cable doesn't belong to patch")
+    }
+    pub fn node_input<'a>(&self, patch: &'a Patch) -> &'a NodeInput {
+        &self.output_node(patch).inputs[self.output_input_index as usize]
+    }
+
     pub fn assert_valid(&self, patch: &Patch) {
         let (input_node, output_node) = (
             patch
@@ -377,7 +423,7 @@ impl NodeEntry {
                 input.bias.is_finite(),
                 "i'm impressed you got this panic tbh. (node input value is infinite or NaN)"
             );
-            for &cable_id in &input.connections {
+            for cable_id in input.connected_cables() {
                 assert!(
                     patch.cables.has(cable_id),
                     "node connected with nonexistent cable"

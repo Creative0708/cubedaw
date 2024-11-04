@@ -2,7 +2,7 @@
 
 use egui::{emath::inverse_lerp, text_edit::TextEditState, *};
 
-use crate::node::ValueHandler;
+use crate::node::{ValueHandler, ValueHandlerContext};
 
 /// A Blender-like draggable slider.
 pub struct DragValue<'a> {
@@ -10,22 +10,27 @@ pub struct DragValue<'a> {
 
     show_number_text: bool,
     interactable: bool,
+    relative: bool,
     range: Rangef,
     display_range: Rangef,
     display: &'a dyn ValueHandler,
     name: Option<&'a str>,
 }
 
-struct DefaultValueDisplay;
+pub struct DefaultValueDisplay;
 impl ValueHandler for DefaultValueDisplay {
-    fn to_input(&self, val: f32) -> String {
-        format!("{val:.2}")
+    fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String {
+        if ctx.is_relative() {
+            format!("{val:+.2}")
+        } else {
+            format!("{val:.2}")
+        }
     }
-    fn parse_input(&self, str: &str) -> Option<f32> {
+    fn parse_input(&self, str: &str, _ctx: &ValueHandlerContext) -> Option<f32> {
         str.parse().ok()
     }
     fn snap(&self, val: f32) -> f32 {
-        (val * 12.0).round() / 12.0
+        (val * 100.0).round() * 0.01
     }
 }
 
@@ -36,6 +41,7 @@ impl<'a> DragValue<'a> {
 
             show_number_text: true,
             interactable: true,
+            relative: false,
             range: Rangef::EVERYTHING,
             display_range: Rangef::new(0.0, 1.0),
             display: &DefaultValueDisplay,
@@ -53,6 +59,9 @@ impl<'a> DragValue<'a> {
             interactable,
             ..self
         }
+    }
+    pub fn relative(self, relative: bool) -> Self {
+        Self { relative, ..self }
     }
     pub fn range(self, range: Rangef) -> Self {
         Self { range, ..self }
@@ -78,11 +87,14 @@ impl<'a> Widget for DragValue<'a> {
 
             show_number_text,
             interactable,
+            relative,
             range,
             display_range,
             display,
             name,
         } = self;
+
+        let ctx = ValueHandlerContext::new(relative);
 
         let padding = ui.spacing().button_padding;
 
@@ -129,7 +141,7 @@ impl<'a> Widget for DragValue<'a> {
                 .unwrap_or_else(|| {
                     // this shouldn't ever happen (we set the data when transitioning to kb editing)
                     // but it's not a catastrophic issue if it does. default value go brrrrr
-                    display.to_input(value)
+                    display.to_input(value, &ctx)
                 });
             let response = ui.add(
                 TextEdit::singleline(&mut value_text)
@@ -144,7 +156,7 @@ impl<'a> Widget for DragValue<'a> {
             );
 
             if response.lost_focus() {
-                if let Some(parsed_value) = display.parse_input(value_text.trim()) {
+                if let Some(parsed_value) = display.parse_input(value_text.trim(), &ctx) {
                     *reference = parsed_value;
                 }
             } else {
@@ -156,7 +168,7 @@ impl<'a> Widget for DragValue<'a> {
             let max_width = ui.max_rect().width();
 
             let number_galley = show_number_text.then(|| {
-                let value_text = display.to_display(value);
+                let value_text = display.to_display(value, &ctx);
                 value_text.into_galley(ui, None, max_width, TextStyle::Button)
             });
             let name_galley = name.map(|name| {
@@ -214,7 +226,7 @@ impl<'a> Widget for DragValue<'a> {
             if response.clicked() {
                 ui.memory_mut(|mem| mem.request_focus(id));
 
-                let input_text = display.to_input(value);
+                let input_text = display.to_input(value, &ctx);
                 let mut state = TextEditState::default();
                 state.cursor.set_char_range(Some(text::CCursorRange::two(
                     text::CCursor::default(),

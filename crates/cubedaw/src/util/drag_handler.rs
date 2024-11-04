@@ -15,7 +15,7 @@ pub struct DragHandler {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct DraggedId {
+pub struct DraggedId {
     id: Id,
     thing: Id,
 }
@@ -37,6 +37,9 @@ impl DragHandler {
         self.scale = scale.into();
     }
 
+    pub fn dragged_id(&self) -> Option<DraggedId> {
+        self.dragged_id
+    }
     pub fn is_something_being_dragged(&self) -> bool {
         self.dragged_id.is_some()
     }
@@ -116,7 +119,7 @@ pub struct Prepared<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2 = fn(Vec2) -> Vec
     snap_fn: F,
 }
 
-impl<'a, T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'a, T, F> {
+impl<T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'_, T, F> {
     pub fn set_scale(&mut self, scale: impl Into<Vec2>) {
         self.drag_handler.set_scale(scale)
     }

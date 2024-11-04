@@ -9,7 +9,10 @@ use std::{
 use ahash::{AHasher, HashMap, HashSet, RandomState};
 
 fn new_hasher() -> AHasher {
-    RandomState::new().build_hasher()
+    static RANDOM_STATE: std::sync::LazyLock<RandomState> =
+        std::sync::LazyLock::new(RandomState::new);
+
+    RANDOM_STATE.build_hasher()
 }
 
 // Due to this being a u64, birthday attacks are _technically_ possible but fairly unlikely.
@@ -38,7 +41,7 @@ fn with_impl(source: IdInner, child: impl Hash) -> IdInner {
 fn arbitrary_impl() -> IdInner {
     use std::cell::Cell;
     thread_local! {
-        static COUNTER: Cell<u64> = Cell::new(0);
+        static COUNTER: Cell<u64> = const { Cell::new(0) };
     }
 
     COUNTER.set(COUNTER.get() + 1);

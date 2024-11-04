@@ -55,6 +55,13 @@ impl TrackInner {
             _ => None,
         }
     }
+
+    pub fn is_section(&self) -> bool {
+        self.section().is_some()
+    }
+    pub fn is_group(&self) -> bool {
+        self.group().is_some()
+    }
 }
 
 #[derive(Debug, Clone)]

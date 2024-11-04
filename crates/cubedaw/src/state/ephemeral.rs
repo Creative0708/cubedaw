@@ -37,4 +37,9 @@ pub struct TrackEphemeralState {
 #[derive(Debug, Default)]
 pub struct NodeEphemeralState {
     pub size: Vec2,
+    pub input_state: Vec<InputEphemeralState>,
+}
+#[derive(Debug)]
+pub struct InputEphemeralState {
+    pub num_connected: u32,
 }
