@@ -150,6 +150,12 @@ impl<T> Store<T> {
     pub fn new(engine: &Engine, data: T) -> Self {
         Self(wasmtime::Store::new(&engine.0, data))
     }
+    pub fn data(&self) -> &T {
+        self.0.data()
+    }
+    pub fn data_mut(&mut self) -> &mut T {
+        self.0.data_mut()
+    }
     // fn get_memory(&self, &) -> ! {
     //     wasmtime::Instance::new(todo!(), todo!(), &[])
     //         .unwrap()
@@ -186,10 +192,10 @@ impl config::WasmFeatures {
     pub fn apply_to_config(self, config: &mut wasmtime::Config) {
         config.wasm_tail_call(self.contains(Self::TAIL_CALL));
         config.wasm_custom_page_sizes(self.contains(Self::CUSTOM_PAGE_SIZES));
-        config.wasm_threads(self.contains(Self::THREADS));
-        config.wasm_reference_types(self.contains(Self::REFERENCE_TYPES));
-        config.wasm_function_references(self.contains(Self::FUNCTION_REFERENCES));
-        config.wasm_gc(self.contains(Self::GC));
+        // config.wasm_threads(self.contains(Self::THREADS));
+        // config.wasm_reference_types(self.contains(Self::REFERENCE_TYPES));
+        // config.wasm_function_references(self.contains(Self::FUNCTION_REFERENCES));
+        // config.wasm_gc(self.contains(Self::GC));
         config.wasm_simd(self.contains(Self::SIMD));
         config.wasm_relaxed_simd(self.contains(Self::RELAXED_SIMD));
         config.wasm_bulk_memory(self.contains(Self::BULK_MEMORY));

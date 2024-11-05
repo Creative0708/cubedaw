@@ -96,10 +96,6 @@ impl Patch {
     pub fn node_entry_mut(&mut self, id: Id<NodeEntry>) -> Option<&mut NodeEntry> {
         self.nodes.get_mut(id)
     }
-    // for internal use. used when functions return a Id<NodeEntry> that _of course_ is already in the patch.
-    fn node_entry_infallible(&mut self, id: Id<NodeEntry>) -> &mut NodeEntry {
-        self.node_entry_mut(id).expect("unreachable")
-    }
 
     pub fn cables(&self) -> impl Iterator<Item = (Id<Cable>, &Cable)> {
         self.cables.iter().map(|(&id, data)| (id, data))
@@ -313,6 +309,13 @@ impl Patch {
             }
             do_dfs(self, &mut visited, node_id, NodeTag::Disconnected);
         }
+
+        // special nodes
+        for special_node in [note_output, track_input, track_output] {
+            if let Some(special_node) = special_node {
+                self.nodes.force_get_mut(special_node).tag = NodeTag::Special;
+            }
+        }
     }
 
     pub fn debug_assert_valid(&self) {
@@ -452,9 +455,12 @@ impl Cable {
                 .expect("nonexistent output node"),
         );
 
-        if self.tag.is_valid() {
-            assert_eq!(
-                input_node.tag, output_node.tag,
+        if self.tag.is_valid()
+            && !(input_node.tag == NodeTag::Special
+                || output_node.tag == NodeTag::Special
+                || input_node.tag == output_node.tag)
+        {
+            panic!(
                 "node tags connected to the same valid cable should be equal\nleft: {input_node:#?}\nright: {output_node:#?}"
             );
         }

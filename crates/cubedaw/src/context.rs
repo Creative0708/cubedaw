@@ -167,6 +167,8 @@ pub struct ContextResult {
 pub struct UiStateTracker {
     commands: Vec<Box<dyn UiStateCommandWrapper>>,
     strong: bool,
+    make_next_command_strong: bool,
+    delete_last_command: bool,
 }
 
 impl UiStateTracker {
@@ -174,6 +176,8 @@ impl UiStateTracker {
         Self {
             commands: Vec::new(),
             strong: false,
+            make_next_command_strong: false,
+            delete_last_command: false,
         }
     }
     pub fn add<I: UiStateCommand>(&mut self, command: impl IntoUiStateCommand<I>) {
@@ -191,6 +195,18 @@ impl UiStateTracker {
             }
         }
         self.commands.push(Box::new(command));
+
+        if self.make_next_command_strong {
+            self.make_next_command_strong = false;
+            self.strong = true;
+        }
+    }
+    pub fn make_next_command_strong(&mut self) {
+        self.make_next_command_strong = true;
+    }
+    /// Signals to the app that it should discard the last command. You better make sure you're deleting what you actually want to delete. You also better make sure that the deleted commands are a net no-op; that is, in sequence, they don't change the state in any way.
+    pub fn delete_last_command(&mut self) {
+        self.delete_last_command = true;
     }
     pub fn extend(&mut self, other: Self) {
         self.commands.extend(other.commands);
@@ -203,6 +219,8 @@ impl UiStateTracker {
         UiStateTrackerResult {
             commands: self.commands,
             strong: self.strong,
+            make_next_command_strong: self.make_next_command_strong,
+            delete_last_command: self.delete_last_command,
         }
     }
     pub fn len(&self) -> usize {
@@ -213,4 +231,6 @@ impl UiStateTracker {
 pub struct UiStateTrackerResult {
     pub commands: Vec<Box<dyn UiStateCommandWrapper>>,
     pub strong: bool,
+    pub make_next_command_strong: bool,
+    pub delete_last_command: bool,
 }

@@ -1,3 +1,5 @@
+pub mod builtin;
+
 mod math;
 pub use math::MathNode;
 mod oscillator;

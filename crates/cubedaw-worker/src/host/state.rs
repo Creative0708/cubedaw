@@ -1,7 +1,6 @@
 use cubedaw_lib::{
     GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track, TrackInner,
 };
-use unwrap_todo::UnwrapTodo;
 
 use crate::{
     node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
@@ -24,10 +23,12 @@ impl WorkerHostState {
         for (&track_id, track) in &state.tracks {
             let mut node_map = IdMap::new();
             for (node_id, node) in track.patch.nodes() {
-                let entry = options
-                    .registry
-                    .get(&node.data.key)
-                    .unwrap_or_else(|| panic!("uh oh {node_id:?}"));
+                let entry = options.registry.get(&node.data.key).unwrap_or_else(|| {
+                    panic!(
+                        "key {:?} doesn't exist in registry {:?}",
+                        &node.data.key, &options.registry
+                    )
+                });
                 node_map.insert(node_id, (entry.node_factory)(&node.data.inner));
             }
             match track.inner {

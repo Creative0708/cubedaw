@@ -42,13 +42,13 @@ pub extern "C" fn test_plugin(args: &TestPluginArgs, state: &mut TestPluginState
 cubedaw_pluginlib::export_node!("test:test", test_plugin);
 
 #[no_mangle]
-pub extern "C" fn add() {
+pub extern "C" fn add(_: *const (), _: *mut ()) {
     let i0 = input::<0>();
     let i1 = input::<1>();
     output::<0>(i0 + i1);
 }
 #[no_mangle]
-pub extern "C" fn mul() {
+pub extern "C" fn mul(_: *const (), _: *mut ()) {
     let i0 = input::<0>();
     let i1 = input::<1>();
     output::<0>(i0 * i1);

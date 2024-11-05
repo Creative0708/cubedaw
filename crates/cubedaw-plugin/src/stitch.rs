@@ -119,19 +119,19 @@ impl ModuleStitch {
         // https://webassembly.github.io/spec/core/binary/modules.html#binary-module
         encoder.section(&self.tys);
         encoder.section(&self.imports);
-        if self.funcs.len() > 0 {
+        if !self.funcs.is_empty() {
             encoder.section(&self.funcs);
         }
-        if self.tables.len() > 0 {
+        if !self.tables.is_empty() {
             encoder.section(&self.tables);
         }
-        if self.memories.len() > 0 {
+        if !self.memories.is_empty() {
             encoder.section(&self.memories);
         }
-        if self.globals.len() > 0 {
+        if !self.globals.is_empty() {
             encoder.section(&self.globals);
         }
-        if self.exports.len() > 0 {
+        if !self.exports.is_empty() {
             encoder.section(&self.exports);
         }
         if let Some(start_func_idx) = start_func_idx {
@@ -139,7 +139,7 @@ impl ModuleStitch {
                 function_index: start_func_idx,
             });
         }
-        if self.elems.len() > 0 {
+        if !self.elems.is_empty() {
             encoder.section(&self.elems);
         }
         encoder.section(&wasm_encoder::DataCountSection {
@@ -149,9 +149,8 @@ impl ModuleStitch {
                 .try_into()
                 .expect("how the heck do you have 4 billion data sections"),
         });
-        eprintln!("code offset: {}", encoder.as_slice().len());
         encoder.section(&self.code);
-        if self.datas.len() > 0 {
+        if !self.datas.is_empty() {
             encoder.section(&self.datas);
         }
 

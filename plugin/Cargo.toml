@@ -4,10 +4,14 @@ package.edition = "2021"
 package.rust-version = "1.76.0"
 members = [
     "cubedaw-test-plugin",
-    "cubedaw-default-plugins",
+    "cubedaw-default-nodes",
     "cubedaw-pluginlib",
     "postcard-stringify",
 ]
+
+[profile.release]
+strip = true
+opt-level = 3
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "forbid"

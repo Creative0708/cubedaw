@@ -3,6 +3,7 @@ name = "cubedaw"
 authors = ["Colin Cai <therealcreative0708@gmail.com>"]
 edition.workspace = true
 version = "0.1.0"
+default-run = "cubedaw"
 
 [dependencies]
 cubedaw-command = { path = "../cubedaw-command" }
@@ -13,6 +14,7 @@ egui_dock = "0.14.0"
 env_logger = "0.11.3"
 cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-worker = { path = "../cubedaw-worker" }
+cubedaw-plugin = { path = "../cubedaw-plugin" }
 resourcekey = { path = "../resourcekey" }
 ahash = { workspace = true }
 smallvec = { workspace = true }

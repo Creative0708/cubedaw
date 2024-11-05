@@ -24,9 +24,9 @@ use std::{fmt, ops};
 // (i.e. f32 is too imprecise and is changed to an f64)
 pub type BufferType = f32;
 
-#[repr(align(16))]
-#[derive(Clone, Copy, Debug)]
-pub struct InternalBufferType(pub [BufferType; 4]);
+#[repr(align(16))] // for optimization purposes
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InternalBufferType(pub [BufferType; 16]);
 unsafe impl bytemuck::Zeroable for InternalBufferType {}
 unsafe impl bytemuck::Pod for InternalBufferType {}
 

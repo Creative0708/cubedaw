@@ -26,10 +26,12 @@ pub struct CubedawApp {
 
     undo_stack: Vec<Vec<Box<dyn UiStateCommandWrapper>>>,
 
-    // The index where the next action will be placed.
-    // i.e. if the stack is
-    // [1, 2, 3]
-    // and the user just undid action 3, then undo_index == 2.
+    /// The index where the next action will be placed.
+    /// i.e. if the stack is
+    /// ```
+    /// [1, 2, 3]
+    /// ```
+    /// and the user just undid action `3`, then `undo_index == 2`.
     undo_index: usize,
 
     worker_host: crate::workerhost::WorkerHostHandle,
@@ -163,11 +165,30 @@ impl CubedawApp {
             }
         }
 
-        {
+        'handle_tracker: {
             let crate::context::UiStateTrackerResult {
                 mut commands,
                 strong,
+                make_next_command_strong: make_last_command_strong,
+                delete_last_command,
             } = result.tracker;
+
+            if make_last_command_strong
+                && self.undo_stack.last().is_some_and(|last| !last.is_empty())
+            {
+                self.undo_stack.truncate(self.undo_index);
+                self.undo_stack.push(Vec::new());
+                self.undo_index += 1;
+            }
+            if delete_last_command {
+                self.undo_index -= 1;
+                self.undo_stack.truncate(self.undo_index);
+            }
+
+            if commands.is_empty() {
+                break 'handle_tracker;
+            }
+
             let mut state_commands = Vec::new();
             for event in &mut commands {
                 event.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
@@ -183,35 +204,24 @@ impl CubedawApp {
                     .send_commands(state_commands.into_boxed_slice(), false);
             }
 
-            if !commands.is_empty() {
-                if self.undo_index < self.undo_stack.len() {
-                    self.undo_stack
-                        .resize_with(self.undo_index, || unreachable!());
+            if self.undo_index < self.undo_stack.len() {
+                self.undo_stack
+                    .resize_with(self.undo_index, || unreachable!());
+            }
+            if !strong && let Some(last) = self.undo_stack.last_mut() {
+                let mut starting_index = 0;
+                if let (Some(last_command), Some(first_command)) =
+                    (last.first_mut(), commands.first_mut())
+                {
+                    if last_command.try_merge(first_command.as_ref()) {
+                        starting_index = 1;
+                    }
                 }
-                if !strong && let Some(last) = self.undo_stack.last_mut() {
-                    let mut starting_index = 0;
-                    if let (Some(last_command), Some(first_command)) =
-                        (last.first_mut(), commands.first_mut())
-                    {
-                        if last_command.try_merge(first_command.as_ref()) {
-                            starting_index = 1;
-                        }
-                    }
-                    last.extend(commands.drain(starting_index..));
-                } else {
-                    // if let (Some(last), Some(first)) = (
-                    //     self.undo_stack.last_mut().and_then(|x| x.last_mut()),
-                    //     commands.first(),
-                    // ) {
-                    //     if last.try_merge(first.as_ref()) {
-                    //         commands.remove(0);
-                    //     }
-                    // }
-                    if !commands.is_empty() {
-                        commands.shrink_to_fit();
-                        self.undo_stack.push(commands);
-                        self.undo_index += 1;
-                    }
+                last.extend(commands.drain(starting_index..));
+            } else {
+                if !commands.is_empty() {
+                    self.undo_stack.push(commands);
+                    self.undo_index += 1;
                 }
             }
         }
@@ -310,8 +320,10 @@ impl eframe::App for CubedawApp {
         if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
             if !self.worker_host.is_init() {
                 // TODO change/make configurable/whatever
-                self.worker_host
-                    .init(self.state.clone(), cubedaw_worker::WorkerOptions::default());
+                self.worker_host.init(
+                    self.state.clone(),
+                    cubedaw_worker::WorkerOptions::new(self.node_registry.inner().clone()),
+                );
             }
             if !self.worker_host.is_playing() {
                 self.worker_host

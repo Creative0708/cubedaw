@@ -9,6 +9,7 @@ version = "0.1.0"
 egui = { workspace = true, optional = true }
 ahash = { workspace = true }
 smallvec = { workspace = true }
+bytemuck = { workspace = true }
 anyhow = { workspace = true }
 cubedaw-lib = { path = "../cubedaw-lib" }
 resourcekey = { path = "../resourcekey" }

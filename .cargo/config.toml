@@ -5,3 +5,6 @@ codegen-backend = true
 # can't use cranelift here bcuz wasmtime no likey :(
 # https://github.com/rust-lang/rustc_codegen_cranelift/issues/1204
 # codegen-backend = "cranelift"
+
+[alias]
+xtask = "run --package xtask --"

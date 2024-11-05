@@ -3,9 +3,29 @@ use std::num::NonZeroU32;
 use crate::registry::NodeRegistry;
 
 mod ui;
+use ahash::{HashMap, HashMapExt};
 pub use ui::{NodeInputUiOptions, NodeUiContext, ValueHandler, ValueHandlerContext};
 
 mod impls;
+pub mod registry;
+
+pub fn register_builtin_nodes(registry: &mut NodeRegistry) {
+    registry.register_node_no_inner(
+        resourcekey::literal!("builtin:track_input"),
+        "Track Input",
+        Box::new(impls::builtin::TrackInputNodeThingy),
+    );
+    registry.register_node_no_inner(
+        resourcekey::literal!("builtin:track_output"),
+        "Track Output",
+        Box::new(impls::builtin::TrackOutputNodeThingy),
+    );
+    registry.register_node_no_inner(
+        resourcekey::literal!("builtin:note_output"),
+        "Note Output",
+        Box::new(impls::builtin::NoteInputNodeThingy),
+    );
+}
 
 pub fn register_cubedaw_nodes(registry: &mut NodeRegistry) {
     registry.register_node(
@@ -17,6 +37,17 @@ pub fn register_cubedaw_nodes(registry: &mut NodeRegistry) {
         resourcekey::literal!("cubedaw:oscillator"),
         "Math",
         impls::OscillatorNode,
+    );
+    let inner = std::sync::Arc::get_mut(&mut registry.inner)
+        .expect("shared registry passed to register_cubedaw_nodes");
+
+    inner.register_plugin(
+        cubedaw_plugin::Plugin::new(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../plugin/target/wasm32-unknown-unknown/release/cubedaw_default_nodes.wasm"
+        )))
+        .expect("default cubedaw plugins aren't a valid plugin :("),
+        &mut registry.dyn_node_factories,
     );
 }
 

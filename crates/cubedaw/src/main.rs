@@ -15,11 +15,11 @@ pub use context::Context;
 mod state;
 pub mod tab;
 pub mod util;
+pub use node::registry;
 pub use state::{ephemeral::EphemeralState, ui::UiState};
 mod audio;
 mod command;
 mod node;
-mod registry;
 mod widget;
 mod workerhost;
 

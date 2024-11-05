@@ -3,7 +3,7 @@
 // mod section_track;
 
 use ahash::HashSetExt;
-use cubedaw_lib::{Buffer, Id, IdMap, IdSet, NodeEntry, Patch};
+use cubedaw_lib::{Buffer, Id, IdMap, IdSet, InternalBufferType, NodeEntry, Patch};
 use resourcekey::ResourceKey;
 
 use crate::{WorkerOptions, WorkerState};
@@ -67,19 +67,19 @@ impl PreparedNodeGraph {
                     .node_entry(node_id)
                     .expect("cable connected to nonexistent node???");
 
-                if node
+                let indegree = node
                     .inputs()
                     .iter()
-                    .all(|input| input.connections.is_empty())
-                    || Some(node_id) == input_node
-                {
+                    .map(|input| input.connections.len())
+                    .sum::<usize>() as u32;
+                if indegree == 0 || Some(node_id) == input_node {
                     zero_indegree_node_stack.push(node_id);
                 } else {
-                    indegrees.insert(node_id, node.inputs().len() as u32);
+                    indegrees.insert(node_id, indegree);
                     for input in node.inputs() {
-                        for cable in input
+                        for (_, cable) in input
                             .get_connections(patch)
-                            .filter_map(|(_, cable)| cable.tag.is_valid().then_some(cable))
+                            .filter(|(_, cable)| cable.tag.is_valid())
                         {
                             let new_node_id = cable.input_node;
                             if visited.insert(new_node_id) {
@@ -130,7 +130,14 @@ impl PreparedNodeGraph {
                                         .cable(cable_id)
                                         .expect("node connected to nonexistent cable");
                                     (
-                                        *node_id_to_vec_index_map.force_get(cable.input_node),
+                                        *node_id_to_vec_index_map
+                                            .get(cable.input_node)
+                                            .unwrap_or_else(|| {
+                                                panic!(
+                                                    "{:?} {:?}",
+                                                    cable, &node_id_to_vec_index_map
+                                                )
+                                            }),
                                         cable.input_output_index,
                                         cable.output_multiplier_fac,
                                     )
@@ -149,7 +156,7 @@ impl PreparedNodeGraph {
             });
 
             if node_id != output_node {
-                // decrement outdegrees
+                // decrement indegrees
                 for output in node.outputs() {
                     for (_cable_id, cable) in output
                         .get_connections(patch)
@@ -167,7 +174,10 @@ impl PreparedNodeGraph {
                 }
             }
         }
-        assert!(indegrees.is_empty(), "cycle detected in node graph");
+        assert!(
+            indegrees.is_empty() && zero_indegree_node_stack.is_empty(),
+            "cycle detected in node graph"
+        );
         assert!(
             self.nodes.len() <= u32::MAX as usize,
             "self.nodes.len() exceeds u32::MAX"
@@ -248,17 +258,36 @@ impl PreparedNodeGraph {
                 .get(&node.key)
                 .expect("desynced node graph");
             match registry_entry.plugin_data {
-                Some(ref plugin_data) => {
-                    let plugin = state
+                Some(ref _plugin_data) => {
+                    let mut plugin = state
                         .standalone_instances
                         .get(&node.key)
-                        .expect("desynced node graph");
-                    plugin
-                        .borrow_mut()
-                        .run(&node.key, &node.args, &mut node.state)?;
+                        .expect("desynced node graph")
+                        .borrow_mut();
+                    let data = plugin.store_mut().data_mut();
+
+                    data.inputs.resize_with(node.inputs.len(), Default::default);
+                    data.outputs
+                        .resize_with(node.outputs.len(), Default::default);
+
+                    for sample_idx in 0..options.buffer_size as usize / InternalBufferType::N {
+                        let data = plugin.store_mut().data_mut();
+
+                        for (input_idx, input) in node.inputs.iter().enumerate() {
+                            data.inputs[input_idx] = input.buffer.as_internal()[sample_idx];
+                        }
+
+                        plugin.run(&node.key, &node.args, &mut node.state)?;
+
+                        let data = plugin.store_mut().data_mut();
+
+                        for (output_idx, output) in node.outputs.iter_mut().enumerate() {
+                            output.as_internal_mut()[sample_idx] = data.outputs[output_idx];
+                        }
+                    }
                 }
                 None => {
-                    // special passthrough lopic
+                    // special passthrough logic
                     for (input, output) in node.inputs.iter().zip(node.outputs.iter_mut()) {
                         output.copy_from(&input.buffer);
                     }

@@ -173,8 +173,7 @@ impl Namespace {
         })))
     }
     pub fn as_str(&self) -> &str {
-        // SAFETY: self.0 is a valid ResourceKeyInner
-        unsafe { &self.0.str.get_unchecked(0..self.0.divider_pos as usize) }
+        &self.0.str
     }
 }
 impl PartialEq for Namespace {
@@ -212,8 +211,7 @@ impl Item {
         })))
     }
     pub fn as_str(&self) -> &str {
-        // SAFETY: self.0 is a valid ResourceKeyInner
-        unsafe { &self.0.str.get_unchecked(0..self.0.divider_pos as usize) }
+        &self.0.str
     }
 }
 impl PartialEq for Item {
@@ -234,6 +232,7 @@ impl std::fmt::Debug for Item {
 }
 
 // TODO optimize at some point in the future
+#[derive(Debug)]
 struct ResourceKeyInner {
     pub str: Box<str>,
     pub divider_pos: u32,

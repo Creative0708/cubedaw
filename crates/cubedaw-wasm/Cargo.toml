@@ -28,7 +28,7 @@ wasmparser = ["dep:wasmparser"]
 wasm-encoder = ["dep:wasm-encoder"]
 
 [target.'cfg(not(target_os = "wasm"))'.dependencies]
-wasmtime = { version = "25.0.2", features = [
+wasmtime = { version = "25.0.2", default-features = false, features = [
     "runtime",
     "cranelift",
     "cache",

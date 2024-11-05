@@ -8,10 +8,6 @@ version = "0.1.0"
 [lib]
 crate-type = ["cdylib"]
 
-[profile.release]
-strip = true
-opt-level = 3
-
 [dependencies]
 cubedaw-pluginlib = { path = "../cubedaw-pluginlib", features = ["inline"] }
 

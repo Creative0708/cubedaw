@@ -1,4 +1,5 @@
 use anyhow::Result;
+use cubedaw_worker::DynNodeFactory;
 
 use crate::registry::NodeThingy;
 

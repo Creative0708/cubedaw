@@ -10,16 +10,16 @@ enum MathNodeType {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(C)]
-pub struct MathNodeState {
+pub struct MathNodeArgs {
     node_type: MathNodeType,
 }
 
 #[no_mangle]
-extern "C" fn do_math(state: &MathNodeState) {
+extern "C" fn do_math(args: &MathNodeArgs, _state: *mut ()) {
     let in1 = cubedaw_pluginlib::input::<0>();
     let in2 = cubedaw_pluginlib::input::<1>();
 
-    let val = match state.node_type {
+    let val = match args.node_type {
         MathNodeType::Add => in1 + in2,
         MathNodeType::Subtract => in1 - in2,
         MathNodeType::Multiply => in1 * in2,

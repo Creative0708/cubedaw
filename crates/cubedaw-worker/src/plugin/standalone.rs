@@ -1,5 +1,7 @@
 use ahash::HashMap;
 use anyhow::Result;
+use cubedaw_lib::InternalBufferType;
+use cubedaw_plugin::{CubedawPluginImport, Instruction};
 use cubedaw_wasm::{ValType, Value};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
@@ -9,7 +11,6 @@ use crate::WorkerOptions;
 use super::PLUGIN_ALIGN;
 
 #[derive(Debug)]
-// dear god the oop is leaking
 pub struct StandalonePluginFactory {
     module: cubedaw_wasm::Module,
     memory_location: cubedaw_wasm::ExportLocation,
@@ -17,10 +18,10 @@ pub struct StandalonePluginFactory {
 }
 
 impl StandalonePluginFactory {
-    pub fn new(plugin: &cubedaw_plugin::Plugin, options: &WorkerOptions) -> Self {
+    pub fn new(plugin: &cubedaw_plugin::Plugin, options: &WorkerOptions) -> Result<Self> {
         let WorkerOptions { sample_rate, .. } = *options;
-        let mut module_stitch =
-            cubedaw_plugin::ModuleStitch::new(cubedaw_plugin::ShimInfo::new(move |mut ctx| {
+        let mut module = cubedaw_plugin::ModuleStitch::with_imports(
+            cubedaw_plugin::ShimInfo::new(move |mut ctx| {
                 use cubedaw_plugin::CubedawPluginImport;
                 use cubedaw_plugin::Instruction;
                 match ctx.import() {
@@ -36,41 +37,56 @@ impl StandalonePluginFactory {
                         ctx.add_instruction_raw(Instruction::Call(1));
                     }
                 }
-            }));
+            }),
+            [
+                ("input", CubedawPluginImport::Input.ty()),
+                ("output", CubedawPluginImport::Output.ty()),
+            ],
+        );
         for node in plugin.exported_nodes() {
-            let mut func_stitch = cubedaw_plugin::FunctionStitch::new(cubedaw_wasm::FuncType::new(
+            let mut func = cubedaw_plugin::FunctionStitch::new(cubedaw_wasm::FuncType::new(
                 [ValType::I32, ValType::I32],
                 [],
             ));
+            func.add_instruction_raw(&Instruction::LocalGet(0));
+            func.add_instruction_raw(&Instruction::LocalGet(1));
             // TODO
-            plugin.stitch_node(node, &mut func_stitch, &mut module_stitch);
+            plugin.stitch_node(node, &mut func, &mut module)?;
+
+            let func_idx = module.add_function(func);
+            module.export_function(node.as_str(), func_idx);
         }
-        let wasm_module = module_stitch.finish();
+
+        module.export_memory("mem", 0);
+        let wasm_module = module.finish();
+
+        std::fs::write("/tmp/a.wasm", &wasm_module).unwrap();
         let module = cubedaw_wasm::Module::new(options.registry.engine(), &wasm_module).todo();
 
-        // let (mut store, instance) = Self::instantiate(&module, options)?;
-        Self {
+        Ok(Self {
             memory_location: module
-                .get_export("memory")
-                .expect("plugin has no exported memory???"),
+                .get_export("mem")
+                .expect("plugin has no exported memory despite us exporting it like 10 lines ago"),
             exported_nodes: plugin
                 .exported_nodes()
                 .map(|key| {
                     (
                         key.clone(),
                         module
-                            .get_export(key.item_str())
+                            .get_export(key.as_str())
                             .expect("exported node isn't exported???"),
                     )
                 })
                 .collect(),
             module,
-        }
+        })
     }
 
     pub fn create(&self, options: &WorkerOptions) -> StandalonePlugin {
-        let mut store =
-            StandalonePluginStore::new(options.registry.engine(), StandalonePluginParameters {});
+        let mut store = StandalonePluginStore::new(
+            options.registry.engine(),
+            StandalonePluginParameters::default(),
+        );
         let instance = options
             .registry
             .standalone_linker()
@@ -119,18 +135,6 @@ const fn ceil_to_multiple_of_power_of_2(n: u32, logm: u32) -> u32 {
 }
 
 impl StandalonePlugin {
-    fn instantiate(
-        module: &cubedaw_wasm::Module,
-        options: &WorkerOptions,
-    ) -> Result<(StandalonePluginStore, cubedaw_wasm::Instance)> {
-        let mut store = StandalonePluginStore::new(options.registry.engine(), Default::default());
-        let instance = options
-            .registry
-            .standalone_linker()
-            .instantiate(&mut store, module)?;
-        Ok((store, instance))
-    }
-
     pub fn run(&mut self, key: &ResourceKey, args: &[u8], state: &mut [u8]) -> anyhow::Result<()> {
         assert!(
             args.len() <= u32::MAX as usize,
@@ -185,21 +189,12 @@ impl StandalonePlugin {
         Ok(())
     }
 
-    // fn clone(&self, options: &WorkerOptions) -> Result<Self> {
-    //     // this doesn't create an _exact_ exact copy of this object
-    //     // but since plugins aren't supposed to use global state anyways
-    //     // this is probably fine
-    //     let (mut store, instance) = Self::instantiate(&self.module, options)?;
-    //     Ok(Self {
-    //         memory: instance.get_memory(&mut store, &self.memory_location),
-
-    //         store,
-    //         module: self.module.clone(),
-    //         instance,
-    //         exported_function: self.exported_function,
-    //         byte_start: self.byte_start,
-    //     })
-    // }
+    pub fn store(&self) -> &StandalonePluginStore {
+        &self.store
+    }
+    pub fn store_mut(&mut self) -> &mut StandalonePluginStore {
+        &mut self.store
+    }
 }
 
 /// Typed store for cubedaw plugins.
@@ -208,5 +203,6 @@ pub type StandalonePluginStore = cubedaw_wasm::Store<StandalonePluginParameters>
 /// Parameters for `StandalonePluginStore`.
 #[derive(Debug, Default)]
 pub struct StandalonePluginParameters {
-    // TODO
+    pub inputs: Vec<InternalBufferType>,
+    pub outputs: Vec<InternalBufferType>,
 }

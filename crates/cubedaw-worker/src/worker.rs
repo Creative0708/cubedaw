@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use cubedaw_lib::Buffer;
 use resourcekey::ResourceKey;
+use unwrap_todo::UnwrapTodo;
 
 use crate::{
     common::{HostToWorkerEvent, WorkerToHostEvent},
@@ -83,7 +84,7 @@ pub fn run_forever(
 ///
 /// This is shared across all workers and is read-only. This is changed when the user changes the worker options (duh).
 pub struct WorkerOptions {
-    pub registry: NodeRegistry,
+    pub registry: Arc<NodeRegistry>,
     pub standalone_plugin_factories: HashMap<ResourceKey, Arc<StandalonePluginFactory>>,
 
     pub num_workers: u32,
@@ -93,7 +94,7 @@ pub struct WorkerOptions {
 }
 
 impl WorkerOptions {
-    pub fn new(registry: NodeRegistry) -> Self {
+    pub fn new(registry: Arc<NodeRegistry>) -> Self {
         let mut this = Self {
             standalone_plugin_factories: Default::default(),
 
@@ -119,7 +120,7 @@ impl WorkerOptions {
             let factory = arc_ptr_to_standalone_plugin_factory
                 .entry(Arc::as_ptr(plugin_data))
                 .or_insert_with(|| {
-                    Arc::new(StandalonePluginFactory::new(&plugin_data.plugin, &this))
+                    Arc::new(StandalonePluginFactory::new(&plugin_data.plugin, &this).todo())
                 });
             standalone_plugin_factories.insert(key.clone(), factory.clone());
         }
@@ -135,13 +136,6 @@ impl WorkerOptions {
         // }
 
         this
-    }
-}
-
-// TODO remove
-impl Default for WorkerOptions {
-    fn default() -> Self {
-        Self::new(NodeRegistry::new(Default::default()))
     }
 }
 

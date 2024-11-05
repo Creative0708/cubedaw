@@ -6,7 +6,7 @@ pub use stitch::{FunctionStitch, ModuleStitch, ModuleStitchInfo, ShimContext, Sh
 mod util;
 
 use ahash::{HashMap, HashMapExt};
-use anyhow::Context;
+use anyhow::{Context, Result};
 use prepare::{PrepareContext, PreparedFunction};
 use resourcekey::{Namespace, ResourceKey};
 
@@ -92,6 +92,8 @@ impl Plugin {
         // this will be Some(_) for everything afterwards (tables, memories, globals, etc.)
         let mut prepare_ctx: Option<PrepareContext> = None;
 
+        let mut num_imports: usize = 0;
+
         let mut tys: Vec<wasm_encoder::FuncType> = Vec::new();
         let mut cubedaw_imports = [None; CubedawPluginImport::SIZE];
         let mut funcs: Vec<PreparedFunction> = Vec::new();
@@ -172,6 +174,7 @@ impl Plugin {
                         }
 
                         cubedaw_imports[plugin_import as usize] = Some(func_idx as u32);
+                        num_imports += 1;
                     }
 
                     prepare_ctx = Some(PrepareContext {
@@ -380,6 +383,34 @@ impl Plugin {
             }
         }
 
+        let mut exported_nodes = HashMap::new();
+        let expected_func_type = wasm_encoder::FuncType::new(
+            [wasm_encoder::ValType::I32, wasm_encoder::ValType::I32],
+            [],
+        );
+        for (key, func_name) in function_names_of_exported_modules {
+            let func_idx = *func_exports.get(func_name).with_context(|| {
+                format!(
+                    "module references nonexistent function {func_name}; available functions: {:?}",
+                    func_exports.keys()
+                )
+            })?;
+
+            // do some other checks on the function
+            let ty = &tys[func_tys[func_idx as usize - num_imports] as usize];
+            if ty != &expected_func_type {
+                anyhow::bail!(
+                    "invalid signature for node {key:?}, expected {:?}, got {:?}",
+                    expected_func_type,
+                    ty
+                );
+            }
+
+            if exported_nodes.insert(key.clone(), func_idx).is_some() {
+                anyhow::bail!("plugin has multiple exports for {key:?}");
+            }
+        }
+
         let start_function = start_function.map(|function| funcs[function as usize].clone());
 
         Ok(Self {
@@ -390,18 +421,7 @@ impl Plugin {
             tys: tys.into_boxed_slice(),
 
             import_indices: cubedaw_imports,
-            exported_nodes: function_names_of_exported_modules
-                .into_iter()
-                .map(|(k, v)| {
-                    let func_idx = *func_exports.get(v).with_context(|| {
-                        format!(
-                            "module references nonexistent function {v}; available functions: {:?}",
-                            func_exports.keys()
-                        )
-                    })?;
-                    Ok((k, func_idx))
-                })
-                .collect::<anyhow::Result<HashMap<_, _>>>()?,
+            exported_nodes,
             funcs: funcs.into_boxed_slice(),
             func_offset: cubedaw_imports.iter().filter(|i| i.is_some()).count() as u32,
             tables,
@@ -434,16 +454,17 @@ impl Plugin {
         node: &ResourceKey,
         func: &mut stitch::FunctionStitch,
         module: &mut stitch::ModuleStitch,
-    ) {
+    ) -> Result<()> {
         let info = self.get_stitch_info_or_insert(module);
 
         let func_idx = *self
             .exported_nodes
             .get(node)
-            .with_context(|| format!("node {node} doesn't exist in plugin"))
-            .unwrap();
+            .with_context(|| format!("node {node} doesn't exist in plugin"))?;
 
         self.funcs[func_idx as usize - self.func_offset as usize].stitch(func, &info);
+
+        Ok(())
     }
 
     /// Gets the `ModuleStitchInfo` for this module, stitching if not present.
@@ -637,186 +658,4 @@ pub struct PluginManifest {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::{executing_wasm_features, CubedawPluginImport};
-
-    use super::stitch;
-    use cubedaw_wasm::wasmtime::V128 as OtherV128; // TODO: see cubedaw-wasm on reexporting wasmtime
-    use cubedaw_wasm::{Engine, Linker, Module, Store, Value, WasmConfig, V128};
-    use std::sync::{Arc, Mutex};
-    use wasm_encoder::{FuncType, Instruction, ValType};
-
-    #[test]
-    fn sanity_check_plugin_imports() {
-        use crate::CubedawPluginImport;
-        for import in CubedawPluginImport::ALL {
-            assert_eq!(
-                Some(import),
-                CubedawPluginImport::new(import.name()),
-                "import {import:?}'s name is not nameing"
-            );
-        }
-    }
-
-    #[test]
-    fn test_basic_plugin() {
-        let plugin = super::Plugin::new(
-            &std::fs::read({
-                // TODO not do this
-                let mut path = std::env::var_os("CARGO_MANIFEST_DIR").unwrap();
-                path.push(
-                    "/../../plugin/target/wasm32-unknown-unknown/release/cubedaw_test_plugin.wasm",
-                );
-                path
-            })
-            .unwrap(),
-        )
-        .unwrap();
-
-        let mut module = stitch::ModuleStitch::with_imports(
-            crate::ShimInfo::new(|mut ctx| {
-                use crate::CubedawPluginImport;
-                use wasm_encoder::Instruction;
-                match ctx.import() {
-                    CubedawPluginImport::SampleRate => {
-                        ctx.replace_only_current([Instruction::I32Const(44100)]);
-                    }
-                    CubedawPluginImport::Input => {
-                        ctx.replace_only_current([]);
-                        ctx.add_instruction_raw(Instruction::Call(0));
-                    }
-                    CubedawPluginImport::Output => {
-                        ctx.replace_only_current([]);
-                        ctx.add_instruction_raw(Instruction::Call(1));
-                    }
-                }
-            }),
-            [CubedawPluginImport::Input, CubedawPluginImport::Output]
-                .into_iter()
-                .map(|import| (import.name(), import.ty())),
-        );
-        let mut func = stitch::FunctionStitch::new(FuncType::new([ValType::I32, ValType::I32], []));
-        func.add_instruction_raw(&Instruction::LocalGet(0));
-        func.add_instruction_raw(&Instruction::LocalGet(1));
-        plugin.stitch_node(&resourcekey::literal!("test:test"), &mut func, &mut module);
-
-        let func_idx = module.add_function(func);
-        module.export_function("entrypoint", func_idx);
-        module.export_memory("mem", 0);
-
-        let bytes = module.finish();
-
-        std::fs::write("/tmp/a.wasm", &bytes).unwrap();
-
-        let config = WasmConfig::new().set_features(executing_wasm_features());
-
-        let engine = Engine::new(&config).unwrap();
-        let module = Module::new(&engine, &bytes).unwrap();
-
-        let mut linker = Linker::new(&engine);
-
-        // (input(0), input(1), output(0)
-        type StoreData = Arc<(Mutex<[V128; 4]>, Mutex<[V128; 4]>, Mutex<[V128; 4]>)>;
-        let store_data: StoreData = Arc::new((
-            Mutex::new([V128::f32x4_splat(9.0); 4]),
-            Mutex::new([V128::f32x4_splat(10.0); 4]),
-            Mutex::new([V128::ZERO; 4]),
-        ));
-        linker
-            .func_wrap(
-                "host",
-                CubedawPluginImport::Input.name(),
-                |caller: cubedaw_wasm::wasmtime::Caller<'_, StoreData>, input_idx: u32| {
-                    let data = caller.data();
-
-                    let arr = match input_idx {
-                        0 => *data.0.lock().unwrap(),
-                        1 => *data.1.lock().unwrap(),
-                        _ => [V128::ZERO; 4],
-                    };
-                    let [a, b, c, d] = arr;
-                    (
-                        OtherV128::from(a),
-                        OtherV128::from(b),
-                        OtherV128::from(c),
-                        OtherV128::from(d),
-                    )
-                },
-            )
-            .unwrap();
-        linker
-            .func_wrap(
-                "host",
-                CubedawPluginImport::Output.name(),
-                |caller: cubedaw_wasm::wasmtime::Caller<'_, StoreData>,
-                 a: OtherV128,
-                 b: OtherV128,
-                 c: OtherV128,
-                 d: OtherV128,
-                 output_idx: u32| {
-                    let arr: [V128; 4] = [a.into(), b.into(), c.into(), d.into()];
-
-                    let data = caller.data();
-
-                    match output_idx {
-                        0 => *data.2.lock().unwrap() = arr,
-                        1 => drop(Box::new(())), // to shut clippy up
-                        _ => (),
-                    };
-                },
-            )
-            .unwrap();
-
-        let mut store = Store::new(&engine, store_data.clone());
-
-        let instance = linker.instantiate(&mut store, &module).unwrap();
-
-        let memory = instance
-            .get_memory(&mut store, &module.get_export("mem").unwrap())
-            .unwrap();
-
-        let args_offset = memory.size(&store);
-        let state_offset = args_offset + 64;
-        let num_pages = 65536 >> memory.page_size_log2(&store);
-
-        memory.grow(&mut store, num_pages).unwrap();
-
-        let mut run = |args: u8, state: &mut [V128; 4]| {
-            // TestPluginArgs
-            memory.write(&mut store, args_offset, &[args]).unwrap();
-            // TestPluginState
-            memory
-                .write(&mut store, state_offset, bytemuck::must_cast_slice(state))
-                .unwrap();
-
-            let func = instance
-                .get_func(&mut store, &module.get_export("entrypoint").unwrap())
-                .unwrap();
-
-            func.call(
-                &mut store,
-                &[
-                    Value::I32(args_offset as i32),
-                    Value::I32(state_offset as i32),
-                ],
-                &mut [],
-            )
-            .unwrap();
-
-            memory
-                .read(&store, state_offset, bytemuck::must_cast_slice_mut(state))
-                .unwrap();
-        };
-
-        let mut v128s: [V128; 4] = [V128::ZERO; 4];
-
-        run(0u8, &mut v128s);
-        assert_eq!(v128s, [V128::f32x4_splat(19.0); 4]);
-
-        run(1u8, &mut v128s);
-        assert_eq!(v128s, [V128::f32x4_splat(90.0); 4]);
-
-        run(2u8, &mut v128s);
-        assert_eq!(v128s, [V128::f32x4_splat(44100.0); 4]);
-    }
-}
+mod tests;
