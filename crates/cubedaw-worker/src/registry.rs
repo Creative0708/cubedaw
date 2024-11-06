@@ -8,6 +8,20 @@ use resourcekey::ResourceKey;
 use crate::plugin::standalone::StandalonePluginParameters;
 
 pub struct DynNodeFactory(pub Box<dyn Send + Sync + Fn(&[u8]) -> Box<[u8]>>);
+impl DynNodeFactory {
+    pub fn new(f: impl 'static + Send + Sync + Fn(&[u8]) -> Box<[u8]>) -> Self {
+        Self(Box::new(f))
+    }
+    pub fn new_castable<R: bytemuck::NoUninit>(
+        f: impl 'static + Send + Sync + Fn(&[u8]) -> R,
+    ) -> Self {
+        Self(Box::new(move |args| {
+            let val = [f(args)];
+            let bytes: &[u8] = bytemuck::cast_slice(&val);
+            bytes.into()
+        }))
+    }
+}
 impl ops::Deref for DynNodeFactory {
     type Target = dyn Send + Sync + Fn(&[u8]) -> Box<[u8]>;
     fn deref(&self) -> &Self::Target {

@@ -35,13 +35,15 @@ impl GroupNodeGraph {
         &mut self,
         options: &WorkerOptions,
         state: &mut WorkerState,
-        input: &Buffer,
+        input_buf: &Buffer,
     ) -> Result<&mut Buffer> {
         let input_node = self
             .0
             .get_node_mut(self.0.input_node().expect("unreachable"))
             .expect("unreachable");
-        input_node.outputs[0].copy_from(input);
+        if let Some(input_node_buf) = input_node.outputs.first_mut() {
+            input_node_buf.copy_from(input_buf);
+        }
 
         self.0.process(options, state)?;
 

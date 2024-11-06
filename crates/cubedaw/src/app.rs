@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::registry::NodeRegistry;
+use cpal::traits::HostTrait;
 use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
 
@@ -317,13 +318,20 @@ impl eframe::App for CubedawApp {
         // global key commands
 
         // TODO implement configurable keymaps
-        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
+        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space))
+            || !self.worker_host.is_init()
+        {
             if !self.worker_host.is_init() {
                 // TODO change/make configurable/whatever
                 self.worker_host.init(
                     self.state.clone(),
                     cubedaw_worker::WorkerOptions::new(self.node_registry.inner().clone()),
                 );
+                self.worker_host.set_device(Some(
+                    cpal::default_host()
+                        .default_output_device()
+                        .expect("no default output device. sorry!"),
+                ));
             }
             if !self.worker_host.is_playing() {
                 self.worker_host
@@ -381,9 +389,9 @@ impl eframe::App for CubedawApp {
         }
 
         // final stuff
-        if self.worker_host.is_playing() {
-            egui_ctx.request_repaint();
-        }
+        // if self.worker_host.is_playing() {
+        //     egui_ctx.request_repaint();
+        // }
     }
 }
 

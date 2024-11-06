@@ -104,7 +104,7 @@ impl super::f32x16 {
                         wasm::f32x4_splat(1.0),
                         wasm::f32x4_mul(
                             x_fract,
-                            wasm::f32x4_div(wasm::f32x4_splat(1.0), wasm::f32x4_splat(i as f32)),
+                            wasm::f32x4_mul(total, wasm::f32x4_splat(1.0 / (i as f32))),
                         ),
                     );
                 }

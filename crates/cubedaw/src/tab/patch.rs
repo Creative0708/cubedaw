@@ -727,7 +727,6 @@ impl PatchTab {
                             output_input_index: input_index,
                             output_cable_index: cable_index.unwrap_or(0),
 
-                            output_multiplier_fac: 1.0,
                             tag: CableTag::Invalid,
                         },
                         cable_index,

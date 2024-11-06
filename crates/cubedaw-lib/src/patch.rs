@@ -402,8 +402,6 @@ pub struct Cable {
     pub output_input_index: u32,
     pub output_cable_index: u32,
 
-    pub output_multiplier_fac: f32,
-
     pub tag: CableTag,
 }
 impl Cable {
@@ -421,8 +419,6 @@ impl Cable {
             output_node,
             output_input_index,
             output_cable_index,
-
-            output_multiplier_fac: 1.0,
 
             tag: CableTag::Disconnected,
         }
@@ -444,6 +440,9 @@ impl Cable {
     pub fn node_input<'a>(&self, patch: &'a Patch) -> &'a NodeInput {
         &self.output_node(patch).inputs[self.output_input_index as usize]
     }
+    pub fn node_input_connection<'a>(&self, patch: &'a Patch) -> &'a CableConnection {
+        &self.node_input(patch).connections[self.output_cable_index as usize]
+    }
 
     pub fn assert_valid(&self, patch: &Patch) {
         let (input_node, output_node) = (
@@ -455,14 +454,17 @@ impl Cable {
                 .expect("nonexistent output node"),
         );
 
-        if self.tag.is_valid()
-            && !(input_node.tag == NodeTag::Special
-                || output_node.tag == NodeTag::Special
-                || input_node.tag == output_node.tag)
-        {
-            panic!(
-                "node tags connected to the same valid cable should be equal\nleft: {input_node:#?}\nright: {output_node:#?}"
-            );
+        #[allow(clippy::match_like_matches_macro)]
+        if match (self.tag, input_node.tag(), output_node.tag()) {
+            (
+                CableTag::Valid,
+                NodeTag::Disconnected,
+                NodeTag::Note | NodeTag::Track | NodeTag::Special,
+            ) => true,
+            (CableTag::Disconnected, _, NodeTag::Note | NodeTag::Track | NodeTag::Special) => true,
+            _ => false,
+        } {
+            panic!("incompatible node tags for cable {self:?}\ninput: {input_node:#?}\noutput: {output_node:#?}");
         }
     }
 }

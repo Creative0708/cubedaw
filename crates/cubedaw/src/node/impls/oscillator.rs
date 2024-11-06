@@ -22,11 +22,11 @@ impl OscillatorNodeType {
             other => anyhow::bail!("invalid index for MathNodeType: {other}"),
         })
     }
-    fn to_arr(&self) -> Box<[u8]> {
-        (*self as u32).to_le_bytes().into()
+    fn to_arr(self) -> Box<[u8]> {
+        (self as u32).to_le_bytes().into()
     }
 
-    const fn to_str(&self) -> &'static str {
+    const fn to_str(self) -> &'static str {
         match self {
             OscillatorNodeType::Sine => "Sine",
             OscillatorNodeType::Saw => "Saw",
@@ -83,5 +83,9 @@ impl NodeThingy for OscillatorNode {
         state.copy_from_slice(&node_type.to_arr());
 
         Ok(())
+    }
+
+    fn make_nodefactory(&self) -> cubedaw_worker::DynNodeFactory {
+        cubedaw_worker::DynNodeFactory::new_castable(|_| 0.0f32)
     }
 }

@@ -1,8 +1,11 @@
 use std::{sync::mpsc, thread};
 
+use anyhow::Result;
 use cubedaw_command::StateCommandWrapper;
 use cubedaw_lib::Buffer;
 use cubedaw_worker::WorkerOptions;
+
+mod audio;
 
 pub struct WorkerHostHandle {
     tx: mpsc::Sender<AppToWorkerHostEvent>,
@@ -41,6 +44,11 @@ impl WorkerHostHandle {
             .expect("channel closed???");
 
         self.is_init = true;
+    }
+    pub fn set_device(&mut self, device: Option<cpal::Device>) {
+        self.tx
+            .send(AppToWorkerHostEvent::SwitchAudioDevice(device))
+            .expect("channel closed???");
     }
     pub fn start_processing(&mut self, from: i64) {
         self.tx
@@ -100,14 +108,22 @@ impl WorkerHostHandle {
     ) -> Option<(cubedaw_lib::PreciseSongPos, std::time::Instant)> {
         self.last_playhead_update
     }
+
+    pub fn join(self) -> Result<()> {
+        let Self { join_handle, .. } = self;
+        join_handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("worker host panicked. that's not good."))?;
+        Ok(())
+    }
 }
 
-#[derive(Debug)]
 enum AppToWorkerHostEvent {
     Init {
         state: cubedaw_lib::State,
         options: WorkerOptions,
     },
+    SwitchAudioDevice(Option<cpal::Device>),
     StartPlaying {
         from: i64,
     },
@@ -132,7 +148,7 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
 
     let Ok(first_event) = rx.recv() else { return };
     let AppToWorkerHostEvent::Init { state, options } = first_event else {
-        panic!("other event sent to worker_host before Init: {first_event:?}");
+        panic!("other event sent to worker_host before Init");
     };
 
     let mut time_to_wait_until = Instant::now();
@@ -145,6 +161,7 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
     let mut playhead_pos = Default::default();
 
     let mut output_buffer = Buffer::new_box_zeroed(idle_host.options().buffer_size);
+    let mut audio_handler = audio::CpalAudioHandler::new();
 
     'outer: loop {
         // process events first
@@ -166,6 +183,10 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
 
                     idle_host = cubedaw_worker::WorkerHost::new(state, options);
                 }
+                AppToWorkerHostEvent::SwitchAudioDevice(device) => match device {
+                    Some(device) => audio_handler.set_device(device, idle_host.options()),
+                    None => audio_handler.close(),
+                },
                 AppToWorkerHostEvent::StartPlaying { from } => {
                     playhead_pos = cubedaw_lib::PreciseSongPos::from_song_pos(from);
                     is_playing = true;
@@ -188,7 +209,8 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             }
         }
         let live_playhead_pos = playhead_pos;
-        // Process audio
+
+        // process the audio
         idle_host = idle_host.process(
             if is_playing {
                 Some(&mut playhead_pos)
@@ -199,7 +221,11 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             &mut output_buffer,
         );
 
-        do_stuff_with(&output_buffer);
+        // play the audio!
+        audio_handler.open(idle_host.options());
+        for data in output_buffer.as_internal() {
+            audio_handler.send(*data);
+        }
 
         time_to_wait_until += duration_per_frame;
 
@@ -211,6 +237,7 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 "audio workerhost underflow: behind by {:.02} ms",
                 (now - time_to_wait_until).as_secs_f64() * 1000.0
             );
+            time_to_wait_until = now;
         }
         if is_playing {
             let res = tx.send(WorkerHostToAppEvent::PlayheadUpdate {
@@ -222,20 +249,4 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
             }
         }
     }
-}
-
-// TODO replace
-fn do_stuff_with(buffer: &Buffer) {
-    let max = buffer
-        .iter()
-        .copied()
-        .map(f32::abs)
-        .reduce(f32::max)
-        .unwrap();
-    let current_time = std::time::SystemTime::now();
-    let millis = current_time
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .subsec_millis();
-    println!("{millis:03}ms: max {max}");
 }

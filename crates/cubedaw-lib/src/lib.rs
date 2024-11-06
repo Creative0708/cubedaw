@@ -30,7 +30,7 @@ pub use util::PreciseSongPos;
 // TODO replace with more robust system (for scales other than 12TET, etc.)
 pub fn pitch_to_hertz(pitch: f32) -> f32 {
     const MIDDLE_C_FREQUENCY: f32 = 261.62558f32; // 440 / 2**(9/12)
-    const MULT_PER_PITCH: f32 = 1.0594631f32; // 2**(1/12)
+    const MULT_PER_PITCH_UNIT: f32 = 2.0; // cubedaw currently uses 1.0f32/octave
 
-    MIDDLE_C_FREQUENCY * MULT_PER_PITCH.powf(pitch)
+    MIDDLE_C_FREQUENCY * MULT_PER_PITCH_UNIT.powf(pitch)
 }

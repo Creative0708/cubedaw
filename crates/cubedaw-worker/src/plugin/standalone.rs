@@ -170,12 +170,16 @@ impl StandalonePlugin {
                 .map_err(|_| anyhow::anyhow!("plugin memory limit exceeded"))?;
         }
         // write() only returns Err when the indices are out of range so these expect()s are unreachable
-        self.memory
-            .write(&mut self.store, args_start, args)
-            .expect("unreachable");
-        self.memory
-            .write(&mut self.store, state_start, state)
-            .expect("unreachable");
+        if !args.is_empty() {
+            self.memory
+                .write(&mut self.store, args_start, args)
+                .expect("unreachable");
+        }
+        if !state.is_empty() {
+            self.memory
+                .write(&mut self.store, state_start, state)
+                .expect("unreachable");
+        }
 
         func.call(
             &mut self.store,
@@ -185,6 +189,12 @@ impl StandalonePlugin {
             ],
             &mut [],
         )?;
+
+        if !state.is_empty() {
+            self.memory
+                .read(&self.store, state_start, state)
+                .expect("unreachable");
+        }
 
         Ok(())
     }

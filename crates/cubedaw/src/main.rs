@@ -4,8 +4,9 @@
 #![feature(let_chains)]
 #![feature(portable_simd)]
 #![feature(float_next_up_down)]
-#![forbid(unsafe_op_in_unsafe_fn)]
+#![feature(cfg_boolean_literals)]
 #![allow(clippy::new_without_default)] // useless, cubedaw isn't a library so default impls aren't necessary
+#![forbid(unsafe_op_in_unsafe_fn)]
 
 pub mod app;
 mod screen;
@@ -19,6 +20,7 @@ pub use node::registry;
 pub use state::{ephemeral::EphemeralState, ui::UiState};
 mod audio;
 mod command;
+pub mod dbg;
 mod node;
 mod widget;
 mod workerhost;

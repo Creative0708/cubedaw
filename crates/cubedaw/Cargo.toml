@@ -16,11 +16,14 @@ cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-worker = { path = "../cubedaw-worker" }
 cubedaw-plugin = { path = "../cubedaw-plugin" }
 resourcekey = { path = "../resourcekey" }
+crossbeam-channel = { workspace = true }
+replace_with = { workspace = true }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }
 log = { workspace = true }
 unwrap_todo = { workspace = true }
+cpal = "0.15.3"
 
 [lints]
 workspace = true

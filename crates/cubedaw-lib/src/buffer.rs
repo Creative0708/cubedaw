@@ -24,8 +24,11 @@ use std::{fmt, ops};
 // (i.e. f32 is too imprecise and is changed to an f64)
 pub type BufferType = f32;
 
-#[repr(align(16))] // for optimization purposes
+#[repr(align(16))]
 #[derive(Clone, Copy, Debug, Default)]
+/// A fixed grouping of `BufferType`s with stricter alignment. For optimization purposes. What do you mean "prematurely optimizing"?
+///
+/// This is also used in `cubedaw-plugin` as plugins operate in chunks of 16 `f32`s (4 `f32x4` `v128`s).
 pub struct InternalBufferType(pub [BufferType; 16]);
 unsafe impl bytemuck::Zeroable for InternalBufferType {}
 unsafe impl bytemuck::Pod for InternalBufferType {}
@@ -37,6 +40,9 @@ impl InternalBufferType {
     pub fn splat(val: BufferType) -> Self {
         Self([val; Self::N])
     }
+    pub fn as_array(&self) -> &[BufferType; Self::N] {
+        bytemuck::must_cast_ref(self)
+    }
 }
 const _: () = assert!(
     InternalBufferType::N.is_power_of_two(),
@@ -46,7 +52,7 @@ const _: () = assert!(
 #[repr(transparent)]
 pub struct Buffer([InternalBufferType]);
 impl Buffer {
-    pub fn new<'a>(inner: &'a [InternalBufferType]) -> &'a Self {
+    pub fn new(inner: &[InternalBufferType]) -> &Self {
         assert!(
             inner.len() <= u32::MAX as usize / InternalBufferType::N,
             "buffer length must fit in a u32"
@@ -54,7 +60,7 @@ impl Buffer {
         // SAFETY: Buffer is repr(transparent) and thus has the same layout as [InternalBufferType]
         unsafe { &*(inner as *const [InternalBufferType] as *const Buffer) }
     }
-    pub fn new_mut<'a>(inner: &'a mut [InternalBufferType]) -> &'a mut Self {
+    pub fn new_mut(inner: &mut [InternalBufferType]) -> &mut Self {
         assert!(
             inner.len() <= u32::MAX as usize / InternalBufferType::N,
             "buffer length must fit in a u32"
@@ -68,13 +74,13 @@ impl Buffer {
             "buffer length must fit in a u32"
         );
         // SAFETY: Buffer is repr(transparent) and thus has the same layout as [InternalBufferType]
-        unsafe { Box::from_raw(Box::into_raw(inner) as *mut [InternalBufferType] as *mut Buffer) }
+        unsafe { Box::from_raw(Box::into_raw(inner) as *mut Buffer) }
     }
     /// Creates a `Box<Self>` with `length` elements.
     pub fn new_box_zeroed(length: u32) -> Box<Self> {
         assert!(
             length % InternalBufferType::N as u32 == 0,
-            "buffer length must be a multiple of InternalBufferType::N ({})",
+            "buffer length {length} must be a multiple of InternalBufferType::N ({})",
             InternalBufferType::N
         );
         Self::new_box(bytemuck::zeroed_slice_box(
@@ -90,7 +96,7 @@ impl Buffer {
     }
 
     pub fn copy_from(&mut self, that: &Buffer) {
-        self.copy_from_slice(&that);
+        self.copy_from_slice(that);
     }
     pub fn accumulate(&mut self, that: &Buffer) {
         // TODO accelerate with like simd or something

@@ -51,6 +51,13 @@ impl PreparedNodeGraph {
         self.input_node = input_node;
         self.output_node = output_node;
 
+        let mut node_id_to_vec_index_map = IdMap::new();
+
+        let mut old_node_inners = IdMap::new();
+        for graph_entry in self.nodes.drain(..) {
+            old_node_inners.insert(graph_entry.node_id, graph_entry.state);
+        }
+
         // simple topo sort algo. TODO possibly replace with a faster one
 
         let mut indegrees: IdMap<NodeEntry, u32> = IdMap::new();
@@ -92,17 +99,18 @@ impl PreparedNodeGraph {
 
             if let Some(input_node) = input_node {
                 if !visited.contains(&input_node) {
-                    dbg!(patch, input_node, output_node);
-                    todo!();
+                    // the input node isn't connected to the output node! just insert a "dummy" entry in that case.
+                    node_id_to_vec_index_map.insert(input_node, 0);
+                    self.nodes.push(NodeGraphEntry {
+                        inputs: Vec::new(),
+                        outputs: Vec::new(),
+                        key: patch.node(input_node).expect("unreachable").key.clone(),
+                        node_id: input_node,
+                        args: Box::new([]),
+                        state: Box::new([]),
+                    });
                 }
             }
-        }
-
-        let mut node_id_to_vec_index_map = IdMap::new();
-
-        let mut old_node_inners = IdMap::new();
-        for graph_entry in self.nodes.drain(..) {
-            old_node_inners.insert(graph_entry.node_id, graph_entry.state);
         }
 
         while let Some(node_id) = zero_indegree_node_stack.pop() {
@@ -139,7 +147,7 @@ impl PreparedNodeGraph {
                                                 )
                                             }),
                                         cable.input_output_index,
-                                        cable.output_multiplier_fac,
+                                        cable.node_input_connection(patch).multiplier,
                                     )
                                 })
                                 .collect()
@@ -162,13 +170,13 @@ impl PreparedNodeGraph {
                         .get_connections(patch)
                         .filter(|(_, cable)| cable.tag.is_valid())
                     {
-                        let indegree = indegrees
-                            .get_mut(cable.output_node)
-                            .expect("cable connected to invalid node");
-                        *indegree -= 1;
-                        if *indegree == 0 {
-                            zero_indegree_node_stack.push(cable.output_node);
-                            indegrees.remove(cable.output_node);
+                        // if the node isn't in the indegrees map that means it's disconnected. just ignore it in that case
+                        if let Some(indegree) = indegrees.get_mut(cable.output_node) {
+                            *indegree -= 1;
+                            if *indegree == 0 {
+                                zero_indegree_node_stack.push(cable.output_node);
+                                indegrees.remove(cable.output_node);
+                            }
                         }
                     }
                 }
@@ -221,11 +229,13 @@ impl PreparedNodeGraph {
         // self.nodes has been topologically sorted so the all dependencies of a node appear before it in the vec
         for index in 0..self.nodes.len() {
             let (previous_nodes, [node, ..]) = self.nodes.split_at_mut(index) else {
-                unreachable!()
+                unreachable!(
+                    "index <= self.nodes.len() - 1 at all times so the right side is nonempty"
+                );
             };
 
             for input in &mut node.inputs {
-                input.buffer.fill(0.0);
+                input.buffer.fill(input.bias);
                 for &(connection, output_index, multiplier) in &input.connections {
                     let connected_node = &previous_nodes[connection as usize];
                     let zipped = connected_node.outputs[output_index as usize]
