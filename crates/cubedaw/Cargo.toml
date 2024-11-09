@@ -23,6 +23,8 @@ smallvec = { workspace = true }
 bytemuck = { workspace = true }
 log = { workspace = true }
 unwrap_todo = { workspace = true }
+bitflags = "2.6.0"
+
 cpal = "0.15.3"
 
 [lints]

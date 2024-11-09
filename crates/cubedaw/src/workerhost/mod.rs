@@ -231,9 +231,10 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
 
         let now = Instant::now();
         if now < time_to_wait_until {
+            // dbg!(time_to_wait_until - now);
             std::thread::sleep(time_to_wait_until - now);
         } else {
-            log::warn!(
+            eprintln!(
                 "audio workerhost underflow: behind by {:.02} ms",
                 (now - time_to_wait_until).as_secs_f64() * 1000.0
             );

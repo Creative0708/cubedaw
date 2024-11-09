@@ -4,7 +4,7 @@ use crate::registry::NodeRegistry;
 
 mod ui;
 use ahash::{HashMap, HashMapExt};
-pub use ui::{NodeInputUiOptions, NodeUiContext, ValueHandler, ValueHandlerContext};
+pub use ui::{NodeInputUiOptions, NodeUiContext};
 
 mod impls;
 pub mod registry;

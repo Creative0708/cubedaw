@@ -2,6 +2,8 @@ use std::{any::TypeId, borrow::Cow};
 
 use egui::{Rangef, WidgetText};
 
+use crate::widget::{ValueHandler, ValueHandlerContext};
+
 pub trait NodeUiContext {
     // TODO: currently this only takes into account the position of the inputs to determine what inputs are the same across frames.
     // This means that, say, if a node has an input named "Pitch", then switches it next frame to "Volume", the same cables will persist the next frame, causing the user to get their speakers blown out, probably.
@@ -78,20 +80,21 @@ impl NodeInputUiOptions<'_> {
         }
         impl ValueHandler for PitchDisplay {
             fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String {
-                if ctx.is_relative() {
-                    format!("{:+.2}", val * 12.0).into()
+                if ctx.is_relative {
+                    format!("{:+.2}", val * 12.0)
                 } else {
                     let (note_name, difference) = self.get_parts(val);
-                    (note_name + &difference).into()
+                    note_name + &difference
                 }
             }
             fn parse_input(&self, str: &str, _ctx: &ValueHandlerContext) -> Option<f32> {
                 if let Ok(val) = str.parse::<f32>() {
                     Some(val / 12.0)
                 } else {
+                    let str = str.to_ascii_uppercase();
                     let (note_name, difference) = match str.find(['+', '-']) {
                         Some(index) => str.split_at(index),
-                        None => (str, ""),
+                        None => (&*str, ""),
                     };
                     let (note_name, difference) = (note_name.trim(), difference.trim());
                     let (note_offset, rest) = match note_name.as_bytes() {
@@ -132,8 +135,13 @@ impl NodeInputUiOptions<'_> {
                     Some(pitch_with_difference / 12.0)
                 }
             }
-            fn snap(&self, val: f32) -> f32 {
-                (val * 12.0).round() / 12.0
+            fn snap(&self, val: f32, ctx: &ValueHandlerContext) -> f32 {
+                // relative controls by default don't snap, while nonrelative controls do snap.
+                if ctx.alternate() ^ ctx.is_relative {
+                    val
+                } else {
+                    (val * 12.0).round() / 12.0
+                }
             }
         }
         Self {
@@ -143,32 +151,5 @@ impl NodeInputUiOptions<'_> {
 
             ..Default::default()
         }
-    }
-}
-
-pub struct ValueHandlerContext {
-    is_relative: bool,
-}
-impl ValueHandlerContext {
-    pub fn new(is_relative: bool) -> Self {
-        Self { is_relative }
-    }
-    pub fn is_relative(&self) -> bool {
-        self.is_relative
-    }
-}
-
-pub trait ValueHandler {
-    fn to_display(&self, val: f32, ctx: &ValueHandlerContext) -> WidgetText {
-        self.to_input(val, ctx).into()
-    }
-    fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String;
-    // TODO implement expression evaluator based off of https://crates.io/crates/meval or the like
-    fn parse_input(&self, str: &str, ctx: &ValueHandlerContext) -> Option<f32>;
-
-    fn snap(&self, val: f32) -> f32;
-
-    fn default_value(&self) -> f32 {
-        0.0
     }
 }

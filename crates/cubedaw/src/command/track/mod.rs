@@ -64,10 +64,12 @@ impl UiTrackAddOrRemove {
                     vec![0.0],
                     0,
                 );
-                patch.insert_cable(
-                    Id::arbitrary(),
-                    cubedaw_lib::Cable::one(id_note_output, id_track_output),
-                );
+                patch
+                    .insert_cable(
+                        Id::arbitrary(),
+                        cubedaw_lib::Cable::one(id_note_output, id_track_output),
+                    )
+                    .multiplier = 1.0;
 
                 patch
             }),
@@ -133,10 +135,12 @@ impl UiTrackAddOrRemove {
                     vec![0.0],
                     0,
                 );
-                patch.insert_cable(
-                    Id::arbitrary(),
-                    cubedaw_lib::Cable::one(id_track_input, id_track_output),
-                );
+                patch
+                    .insert_cable(
+                        Id::arbitrary(),
+                        cubedaw_lib::Cable::one(id_track_input, id_track_output),
+                    )
+                    .multiplier = 1.0;
 
                 patch
             }),

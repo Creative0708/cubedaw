@@ -161,32 +161,45 @@ impl Patch {
             CableTag::Valid
         }
     }
-    pub fn insert_cable(&mut self, cable_id: Id<Cable>, mut cable: Cable) {
+    pub fn insert_cable(&mut self, cable_id: Id<Cable>, mut cable: Cable) -> &mut CableConnection {
         cable.tag = self.get_cable_tag_if_added(&cable);
 
-        let input_node = self.nodes.force_get_mut(cable.input_node);
-        let input_output = &mut input_node.outputs[cable.input_output_index as usize];
+        let Cable {
+            input_node: input_node_id,
+            input_output_index,
+            output_node: output_node_id,
+            output_input_index,
+            output_cable_index,
+            ..
+        } = cable;
+
+        let input_node = self.nodes.force_get_mut(input_node_id);
+        let input_output = &mut input_node.outputs[input_output_index as usize];
         input_output.connections.push(cable_id);
 
-        let output_node = self.nodes.force_get_mut(cable.output_node);
-        let output_input = &mut output_node.inputs[cable.output_input_index as usize];
+        let output_node = self.nodes.force_get_mut(output_node_id);
+        let output_input = &mut output_node.inputs[output_input_index as usize];
 
-        for cable_connection in &output_input.connections[cable.output_cable_index as usize..] {
+        for cable_connection in &output_input.connections[output_cable_index as usize..] {
             self.cables
                 .force_get_mut(cable_connection.id)
                 .output_cable_index += 1;
         }
         output_input.connections.insert(
-            cable.output_cable_index as usize,
+            output_cable_index as usize,
             CableConnection {
                 id: cable_id,
-                multiplier: 1.0,
+                multiplier: 0.2,
             },
         );
 
         self.cables.insert(cable_id, cable);
 
         self.recalculate_tags();
+
+        let output_node = self.nodes.force_get_mut(output_node_id);
+        let output_input = &mut output_node.inputs[output_input_index as usize];
+        &mut output_input.connections[output_cable_index as usize]
     }
     pub fn remove_cable(&mut self, cable_id: Id<Cable>) -> Option<Cable> {
         let cable = self.cables.remove(cable_id)?;

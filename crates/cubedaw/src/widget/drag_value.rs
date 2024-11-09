@@ -2,7 +2,7 @@
 
 use egui::{emath::inverse_lerp, text_edit::TextEditState, *};
 
-use crate::node::{ValueHandler, ValueHandlerContext};
+use super::InputModifiers;
 
 /// A Blender-like draggable slider.
 pub struct DragValue<'a> {
@@ -20,7 +20,7 @@ pub struct DragValue<'a> {
 pub struct DefaultValueDisplay;
 impl ValueHandler for DefaultValueDisplay {
     fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String {
-        if ctx.is_relative() {
+        if ctx.is_relative {
             format!("{val:+.2}")
         } else {
             format!("{val:.2}")
@@ -29,8 +29,13 @@ impl ValueHandler for DefaultValueDisplay {
     fn parse_input(&self, str: &str, _ctx: &ValueHandlerContext) -> Option<f32> {
         str.parse().ok()
     }
-    fn snap(&self, val: f32) -> f32 {
-        (val * 100.0).round() * 0.01
+    fn snap(&self, val: f32, ctx: &ValueHandlerContext) -> f32 {
+        if ctx.alternate() {
+            // don't round
+            val
+        } else {
+            (val * 100.0).round() * 0.01
+        }
     }
 }
 
@@ -94,11 +99,12 @@ impl<'a> Widget for DragValue<'a> {
             name,
         } = self;
 
-        let ctx = ValueHandlerContext::new(relative);
+        let ctx = ValueHandlerContext {
+            is_relative: relative,
+            modifiers: ui.input(InputModifiers::read_from_egui_input),
+        };
 
         let padding = ui.spacing().button_padding;
-
-        let shift = ui.input(|i| i.modifiers.shift_only());
 
         let id = ui.next_auto_id();
 
@@ -130,7 +136,7 @@ impl<'a> Widget for DragValue<'a> {
         });
 
         if change != 0.0 {
-            value = display.snap(value + change);
+            value = display.snap(value + change, &ctx);
         }
 
         let text_style = ui.style().drag_value_text_style.clone();
@@ -209,7 +215,7 @@ impl<'a> Widget for DragValue<'a> {
             if response.hovered()
                 && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Backspace))
             {
-                *reference = display.default_value();
+                *reference = display.default_value(&ctx);
             }
 
             if ui.style().explanation_tooltips {
@@ -244,7 +250,7 @@ impl<'a> Widget for DragValue<'a> {
                     && let Some(drag_pos) = response.interact_pointer_pos()
                 {
                     if let Some(initial_value) = inverse_lerp(rect.x_range().into(), drag_pos.x) {
-                        value = display.snap(lerp(display_range, initial_value));
+                        value = display.snap(lerp(display_range, initial_value), &ctx);
                         *reference = value;
                     }
                 }
@@ -252,7 +258,7 @@ impl<'a> Widget for DragValue<'a> {
                 let delta_points = response.drag_delta().x;
 
                 let speed = display_range.span() / rect.width();
-                let speed = if shift { speed * 0.1 } else { speed };
+                let speed = if ctx.alternate() { speed * 0.1 } else { speed };
 
                 let delta_value = delta_points * speed;
 
@@ -262,9 +268,7 @@ impl<'a> Widget for DragValue<'a> {
                     let precise_value = precise_value + delta_value;
 
                     let mut value = range.clamp(precise_value);
-                    if !shift {
-                        value = display.snap(value);
-                    }
+                    value = display.snap(value, &ctx);
                     *reference = value;
 
                     ui.data_mut(|data| data.insert_temp::<f32>(id, precise_value));
@@ -336,5 +340,30 @@ impl<'a> Widget for DragValue<'a> {
         };
 
         response
+    }
+}
+
+pub trait ValueHandler {
+    fn to_display(&self, val: f32, ctx: &ValueHandlerContext) -> WidgetText {
+        self.to_input(val, ctx).into()
+    }
+    fn to_input(&self, val: f32, ctx: &ValueHandlerContext) -> String;
+    // TODO implement expression evaluator based off of https://crates.io/crates/meval or the like
+    fn parse_input(&self, str: &str, ctx: &ValueHandlerContext) -> Option<f32>;
+
+    fn snap(&self, val: f32, ctx: &ValueHandlerContext) -> f32;
+
+    fn default_value(&self, _ctx: &ValueHandlerContext) -> f32 {
+        0.0
+    }
+}
+
+pub struct ValueHandlerContext {
+    pub is_relative: bool,
+    pub modifiers: InputModifiers,
+}
+impl ValueHandlerContext {
+    pub fn alternate(&self) -> bool {
+        self.modifiers.contains(InputModifiers::ALTERNATE)
     }
 }

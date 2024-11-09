@@ -44,7 +44,8 @@ impl CpalAudioHandler {
 
                 let mut ring_buffer: VecDeque<f32> =
                     VecDeque::with_capacity(options.buffer_size as usize * 2);
-                ring_buffer.extend(std::iter::repeat_n(0.0, options.buffer_size as usize));
+                // ring_buffer.extend(std::iter::repeat_n(0.0, options.buffer_size as usize));
+                dbg!(options.buffer_size, options.sample_rate);
                 CpalAudioHandlerState::Open {
                     audio_stream: audio_device
                         .build_output_stream(
@@ -53,7 +54,7 @@ impl CpalAudioHandler {
                                 sample_rate: cpal::SampleRate(options.sample_rate),
                                 buffer_size: cpal::BufferSize::Fixed(options.buffer_size),
                             },
-                            move |buffer, _| {
+                            move |buffer: &mut [f32], _info| {
                                 for val in buffer.iter_mut() {
                                     if ring_buffer.is_empty() {
                                         ring_buffer.extend(
@@ -105,7 +106,7 @@ impl CpalAudioHandler {
                     panic!("channel disconnected");
                 }
                 Err(crossbeam_channel::TrySendError::Full(_)) => {
-                    panic!("buffer overflow :( (not in the memory safety way)");
+                    eprintln!("buffer overflow :( (not in the memory safety way)");
                 }
             }
         }
