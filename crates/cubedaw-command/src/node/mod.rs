@@ -310,6 +310,7 @@ impl NodeMultiplierChange {
                 .get_mut(self.input_index as usize)?
                 .connections
                 .get_mut(self.cable_index as usize)?
+                .1
                 .multiplier,
         )
     }

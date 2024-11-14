@@ -147,7 +147,7 @@ impl PreparedNodeGraph {
                                                 )
                                             }),
                                         cable.input_output_index,
-                                        cable.node_input_connection(patch).multiplier,
+                                        cable.node_input_connection(patch).1.multiplier,
                                     )
                                 })
                                 .collect()

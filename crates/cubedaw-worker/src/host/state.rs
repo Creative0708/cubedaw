@@ -204,6 +204,7 @@ impl WorkerSectionTrackState {
         fake_patch.insert_cable(
             Id::arbitrary(),
             cubedaw_lib::Cable::new(input, 0, output, 0, 0),
+            cubedaw_lib::CableConnection { multiplier: 1.0 },
         );
 
         let fake_track = Track {
@@ -303,6 +304,7 @@ impl WorkerGroupTrackState {
         fake_patch.insert_cable(
             Id::arbitrary(),
             cubedaw_lib::Cable::new(input, 0, output, 0, 0),
+            cubedaw_lib::CableConnection { multiplier: 1.0 },
         );
 
         let fake_track = Track {

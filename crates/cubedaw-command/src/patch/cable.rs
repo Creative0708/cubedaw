@@ -1,19 +1,24 @@
-use cubedaw_lib::{Cable, Id, Track};
+use cubedaw_lib::{Cable, CableConnection, Id, Track};
 
 #[derive(Clone)]
 pub struct CableAddOrRemove {
     id: Id<Cable>,
     track_id: Id<Track>,
-    data: Option<Cable>,
+    data: Option<(Cable, CableConnection)>,
     is_removal: bool,
 }
 
 impl CableAddOrRemove {
-    pub fn addition(id: Id<Cable>, data: Cable, track_id: Id<Track>) -> Self {
+    pub fn addition(
+        id: Id<Cable>,
+        data: Cable,
+        conn: CableConnection,
+        track_id: Id<Track>,
+    ) -> Self {
         Self {
             id,
             track_id,
-            data: Some(data),
+            data: Some((data, conn)),
             is_removal: false,
         }
     }
@@ -37,7 +42,7 @@ impl CableAddOrRemove {
     }
 
     fn execute_add(&mut self, state: &mut cubedaw_lib::State) {
-        let cable_data = self
+        let (cable, conn) = self
             .data
             .take()
             .expect("called execute_add on empty NodeAddOrRemove");
@@ -47,7 +52,7 @@ impl CableAddOrRemove {
             .get_mut(self.track_id)
             .expect("tried to add node to nonexistent section")
             .patch
-            .insert_cable(self.id, cable_data);
+            .insert_cable(self.id, cable, conn);
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
         let cable_data = state

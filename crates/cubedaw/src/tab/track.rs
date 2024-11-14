@@ -5,7 +5,9 @@ use anyhow::Result;
 use cubedaw_lib::{Id, Range, Track};
 use egui::{vec2, Widget};
 
-use crate::{app::Tab, command::track::UiTrackSelect, state::ui::TrackUiState};
+use crate::{
+    app::Tab, command::track::UiTrackSelect, state::ui::TrackUiState, widget::EditableLabel,
+};
 
 #[derive(Debug)]
 pub struct TrackTab {
@@ -108,7 +110,11 @@ impl TrackListEntry<'_> {
 
         self.track_header_inner(
             tracker,
-            &mut ui.child_ui_with_id_source(rect.shrink(4.0), *ui.layout(), id_source, None),
+            &mut ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect.shrink(4.0))
+                    .id_salt(id_source),
+            ),
             tab,
         );
     }
@@ -118,64 +124,24 @@ impl TrackListEntry<'_> {
         ui: &mut egui::Ui,
         tab: &mut TrackTab,
     ) {
-        match tab.track_whose_name_is_being_edited {
-            Some((edited_track_id, ref mut string)) if edited_track_id == self.track_id => {
-                let textedit_id = ui.auto_id_with("textedit");
-                // gained_focus() doesn't work for some reason. TODO investigate
-                let gained_focus = tab.track_whose_name_was_being_edited_last_frame.is_none();
-                if gained_focus {
-                    let mut state = egui::text_edit::TextEditState::default();
-                    state
-                        .cursor
-                        .set_char_range(Some(egui::text::CCursorRange::two(
-                            egui::text::CCursor::new(0),
-                            egui::text::CCursor::new(string.len()),
-                        )));
-                    state.store(ui.ctx(), textedit_id);
-                }
-                let resp = ui.add(egui::TextEdit::singleline(string).id(textedit_id));
-                if gained_focus {
-                    resp.request_focus();
-                }
-                if resp.lost_focus() {
-                    if !ui.input(|i| i.key_pressed(egui::Key::Escape))
-                        && &self.track_ui.name != string
-                    {
-                        let mut new_track_name = core::mem::take(string);
-                        if !new_track_name.is_empty() {
-                            let track_id = self.track_id;
-                            tracker.add(move |ui_state: &mut crate::UiState, _ephemeral_state: &mut crate::EphemeralState, _action: crate::command::UiActionType| {
-                                core::mem::swap(&mut new_track_name, &mut ui_state.tracks.force_get_mut(track_id).name);
-                            });
-                        }
-                    }
-                    tab.track_whose_name_is_being_edited = None;
-                }
+        let Self {
+            track_id, track_ui, ..
+        } = *self;
 
-                tab.track_whose_name_was_being_edited_last_frame = tab
-                    .track_whose_name_is_being_edited
-                    .as_ref()
-                    .map(|(id, _)| *id);
-            }
-            _ => {
-                let label_resp =
-                    egui::Label::new(egui::RichText::new(&self.track_ui.name).heading())
-                        .sense(egui::Sense::hover())
-                        .selectable(false)
-                        .ui(ui);
-                // expand label rect to edge of container to make renaming easier
-                let resp = ui
-                    .interact(
-                        label_resp.rect.with_max_x(ui.max_rect().right()),
-                        label_resp.id,
-                        egui::Sense::click(),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::Text);
-                if resp.double_clicked() {
-                    tab.track_whose_name_is_being_edited =
-                        Some((self.track_id, self.track_ui.name.clone()));
-                }
-            }
+        let mut new_track_name = track_ui.name.clone();
+        ui.add(EditableLabel::new(&mut new_track_name).id_salt(track_id));
+
+        if new_track_name != track_ui.name {
+            tracker.add(
+                move |ui_state: &mut crate::UiState,
+                      _ephemeral_state: &mut crate::EphemeralState,
+                      _action: crate::command::UiActionType| {
+                    core::mem::swap(
+                        &mut new_track_name,
+                        &mut ui_state.tracks.force_get_mut(track_id).name,
+                    );
+                },
+            );
         }
     }
 }
@@ -364,6 +330,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                         );
                     }
                     if let Some(movement) = prepared.movement() {
+                        // render the currently dragged tracks
                         let dragged_layer_id = egui::LayerId::new(
                             egui::Order::Foreground,
                             ui.layer_id().id.with("track drag"),
@@ -403,7 +370,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
                     }
                 },
             );
-            let viewport_interaction = ui.interact_bg(egui::Sense::click());
+            let viewport_interaction = ui.response();
             viewport_interaction.context_menu(|ui| {
                 let mut b = ctx.ui_state.show_root_track;
                 ui.checkbox(&mut b, "Show Master Track");

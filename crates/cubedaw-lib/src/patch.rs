@@ -161,7 +161,13 @@ impl Patch {
             CableTag::Valid
         }
     }
-    pub fn insert_cable(&mut self, cable_id: Id<Cable>, mut cable: Cable) -> &mut CableConnection {
+
+    pub fn insert_cable(
+        &mut self,
+        cable_id: Id<Cable>,
+        mut cable: Cable,
+        conn: CableConnection,
+    ) -> &mut CableConnection {
         cable.tag = self.get_cable_tag_if_added(&cable);
 
         let Cable {
@@ -180,18 +186,12 @@ impl Patch {
         let output_node = self.nodes.force_get_mut(output_node_id);
         let output_input = &mut output_node.inputs[output_input_index as usize];
 
-        for cable_connection in &output_input.connections[output_cable_index as usize..] {
-            self.cables
-                .force_get_mut(cable_connection.id)
-                .output_cable_index += 1;
+        for &(node_id, _) in &output_input.connections[output_cable_index as usize..] {
+            self.cables.force_get_mut(node_id).output_cable_index += 1;
         }
-        output_input.connections.insert(
-            output_cable_index as usize,
-            CableConnection {
-                id: cable_id,
-                multiplier: 0.2,
-            },
-        );
+        output_input
+            .connections
+            .insert(output_cable_index as usize, (cable_id, conn));
 
         self.cables.insert(cable_id, cable);
 
@@ -199,9 +199,9 @@ impl Patch {
 
         let output_node = self.nodes.force_get_mut(output_node_id);
         let output_input = &mut output_node.inputs[output_input_index as usize];
-        &mut output_input.connections[output_cable_index as usize]
+        &mut output_input.connections[output_cable_index as usize].1
     }
-    pub fn remove_cable(&mut self, cable_id: Id<Cable>) -> Option<Cable> {
+    pub fn remove_cable(&mut self, cable_id: Id<Cable>) -> Option<(Cable, CableConnection)> {
         let cable = self.cables.remove(cable_id)?;
 
         let input_node = self.nodes.force_get_mut(cable.input_node);
@@ -218,18 +218,18 @@ impl Patch {
         let cable_index = output_input
             .connections
             .iter()
-            .position(|conn| conn.id == cable_id)
+            .position(|&(id, _)| id == cable_id)
             .expect("node input doesn't have an entry for connected cable");
-        output_input.connections.remove(cable_index);
-        for conn in &output_input.connections[cable_index..] {
-            self.cables.force_get_mut(conn.id).output_cable_index -= 1;
+        let (_, conn) = output_input.connections.remove(cable_index);
+        for &(conn_id, _) in &output_input.connections[cable_index..] {
+            self.cables.force_get_mut(conn_id).output_cable_index -= 1;
         }
 
         self.recalculate_tags();
 
-        Some(cable)
+        Some((cable, conn))
     }
-    pub fn take_cable(&mut self, cable_id: Id<Cable>) -> Cable {
+    pub fn take_cable(&mut self, cable_id: Id<Cable>) -> (Cable, CableConnection) {
         self.remove_cable(cable_id)
             .expect("take_cable() failed: cable doesn't exist in patch")
     }
@@ -267,19 +267,18 @@ impl Patch {
             let node = patch.nodes.force_get_mut(start_id);
             node.tag = tag;
 
-            let connections: Vec<CableConnection> = node
+            let connections: Vec<(Id<Cable>, CableConnection)> = node
                 .inputs
                 .iter()
-                .flat_map(|input| input.connections.iter())
-                .cloned()
+                .flat_map(|input| input.connections.iter().cloned())
                 .collect();
 
-            for conn in connections {
+            for (cable_id, conn) in connections {
                 let Cable {
                     input_node,
                     tag: ref mut cable_tag,
                     ..
-                } = *patch.cables.force_get_mut(conn.id);
+                } = *patch.cables.force_get_mut(cable_id);
 
                 match visited.get(input_node).copied() {
                     Some(VisitedState::Active) => {
@@ -350,26 +349,21 @@ impl Patch {
 pub struct NodeInput {
     pub bias: f32,
     // connections are additive to the value
-    // Vec<(cable_id, multiplier)>
-    pub connections: Vec<CableConnection>,
+    pub connections: Vec<(Id<Cable>, CableConnection)>,
 }
 impl NodeInput {
     pub fn connected_cables(&self) -> impl Iterator<Item = Id<Cable>> + '_ {
-        self.connections
-            .iter()
-            .map(|cable_connection| cable_connection.id)
+        self.connections.iter().map(|(id, _)| *id)
     }
     /// Convenience function.
     pub fn get_connections<'a>(
         &'a self,
         patch: &'a Patch,
     ) -> impl Iterator<Item = (&'a CableConnection, &'a Cable)> {
-        self.connections.iter().map(move |cable_connection| {
+        self.connections.iter().map(move |(id, conn)| {
             (
-                cable_connection,
-                patch
-                    .cable(cable_connection.id)
-                    .expect("cable doesn't exist on patch??"),
+                conn,
+                patch.cable(*id).expect("cable doesn't exist on patch??"),
             )
         })
     }
@@ -377,8 +371,12 @@ impl NodeInput {
 
 #[derive(Debug, Clone)]
 pub struct CableConnection {
-    pub id: Id<Cable>,
     pub multiplier: f32,
+}
+impl Default for CableConnection {
+    fn default() -> Self {
+        Self { multiplier: 0.2 }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -453,8 +451,9 @@ impl Cable {
     pub fn node_input<'a>(&self, patch: &'a Patch) -> &'a NodeInput {
         &self.output_node(patch).inputs[self.output_input_index as usize]
     }
-    pub fn node_input_connection<'a>(&self, patch: &'a Patch) -> &'a CableConnection {
-        &self.node_input(patch).connections[self.output_cable_index as usize]
+    pub fn node_input_connection<'a>(&self, patch: &'a Patch) -> (Id<Cable>, &'a CableConnection) {
+        let (id, ref cable) = self.node_input(patch).connections[self.output_cable_index as usize];
+        (id, cable)
     }
 
     pub fn assert_valid(&self, patch: &Patch) {

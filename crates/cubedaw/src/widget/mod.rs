@@ -1,12 +1,14 @@
 mod drag_value;
 pub use drag_value::{DefaultValueDisplay, DragValue, ValueHandler, ValueHandlerContext};
+mod editable_label;
+pub use editable_label::{EditableLabel, EditableLabelState};
 
 bitflags::bitflags! {
     /// Generic input modifiers that can be rebound (in the future, that is. key remapping isn't available right now)
     ///
-    /// The modifiers should have semantic meanings. Why? Because I said so and this is my project. Also this text has the formatting of a header in zed and i don't know why; it's not supposed to be this bold.
+    /// The modifiers should have semantic meanings. Why? Because I said so and this is my project.
     ///
-    /// This text is to make zed not present the above text as a header. I don't know why the last piece of text in a bitflags triggers the header formatting.
+    /// This text is to make Zed not present the above text as a header. I don't know why the last piece of text in a bitflags triggers the header formatting.
     pub struct InputModifiers: u8 {
         /// "Alternate" modifier. By default, bound to the shift keys.
         ///

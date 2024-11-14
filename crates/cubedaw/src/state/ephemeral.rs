@@ -31,6 +31,11 @@ impl Default for EphemeralState {
 #[derive(Debug, Default)]
 pub struct TrackEphemeralState {
     pub node_drag: DragHandler,
+    pub patch: PatchEphemeralState,
+}
+
+#[derive(Debug, Default)]
+pub struct PatchEphemeralState {
     pub nodes: IdMap<NodeEntry, NodeEphemeralState>,
 }
 

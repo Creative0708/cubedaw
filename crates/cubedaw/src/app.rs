@@ -75,26 +75,26 @@ impl CubedawApp {
                 &mut ui_state,
                 &mut ephemeral_state,
             );
+
+            let section_track_id = Id::arbitrary();
             execute(
-                crate::command::track::UiTrackSelect::new(state.root_track, true),
+                crate::command::track::UiTrackAddOrRemove::add_generic_section_track(
+                    section_track_id,
+                    Some(state.root_track),
+                    0,
+                    &node_registry,
+                ),
                 &mut state,
                 &mut ui_state,
                 &mut ephemeral_state,
             );
 
-            for i in 1..=6 {
-                execute(
-                    crate::command::track::UiTrackAddOrRemove::add_generic_section_track(
-                        Id::arbitrary(),
-                        Some(state.root_track),
-                        i - 1,
-                        &node_registry,
-                    ),
-                    &mut state,
-                    &mut ui_state,
-                    &mut ephemeral_state,
-                );
-            }
+            execute(
+                crate::command::track::UiTrackSelect::new(section_track_id, true),
+                &mut state,
+                &mut ui_state,
+                &mut ephemeral_state,
+            );
 
             Self {
                 worker_host: crate::workerhost::WorkerHostHandle::new(),
@@ -126,10 +126,10 @@ impl CubedawApp {
             None,
         );
 
-        // ctx.tabs
-        //     .create_tab::<crate::tab::pianoroll::PianoRollTab>(ctx.state, ctx.ui_state);
-        // ctx.tabs
-        //     .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
+        ctx.tabs
+            .create_tab::<crate::tab::pianoroll::PianoRollTab>(ctx.state, ctx.ui_state);
+        ctx.tabs
+            .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
         ctx.tabs
             .create_tab::<crate::tab::patch::PatchTab>(ctx.state, ctx.ui_state);
         // ctx.create_tab::<PatchTab>();
@@ -170,17 +170,9 @@ impl CubedawApp {
             let crate::context::UiStateTrackerResult {
                 mut commands,
                 strong,
-                make_next_command_strong: make_last_command_strong,
                 delete_last_command,
             } = result.tracker;
 
-            if make_last_command_strong
-                && self.undo_stack.last().is_some_and(|last| !last.is_empty())
-            {
-                self.undo_stack.truncate(self.undo_index);
-                self.undo_stack.push(Vec::new());
-                self.undo_index += 1;
-            }
             if delete_last_command {
                 self.undo_index -= 1;
                 self.undo_stack.truncate(self.undo_index);
@@ -219,11 +211,9 @@ impl CubedawApp {
                     }
                 }
                 last.extend(commands.drain(starting_index..));
-            } else {
-                if !commands.is_empty() {
-                    self.undo_stack.push(commands);
-                    self.undo_index += 1;
-                }
+            } else if !commands.is_empty() {
+                self.undo_stack.push(commands);
+                self.undo_index += 1;
             }
         }
     }
@@ -318,9 +308,7 @@ impl eframe::App for CubedawApp {
         // global key commands
 
         // TODO implement configurable keymaps
-        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space))
-            || !self.worker_host.is_init()
-        {
+        if egui_ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
             if !self.worker_host.is_init() {
                 // TODO change/make configurable/whatever
                 self.worker_host.init(

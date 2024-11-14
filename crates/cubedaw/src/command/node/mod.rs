@@ -62,7 +62,10 @@ impl UiNodeAddOrRemove {
         );
 
         if let Some(track) = ephemeral_state.tracks.get_mut(self.inner.track_id()) {
-            track.nodes.insert(self.inner.id(), Default::default());
+            track
+                .patch
+                .nodes
+                .insert(self.inner.id(), Default::default());
         }
     }
     fn execute_remove(
@@ -73,7 +76,7 @@ impl UiNodeAddOrRemove {
         self.ui_data = self.nodes(ui_state).remove(self.inner.id());
 
         if let Some(track) = ephemeral_state.tracks.get_mut(self.inner.track_id()) {
-            track.nodes.remove(self.inner.id());
+            track.patch.nodes.remove(self.inner.id());
         }
     }
 }

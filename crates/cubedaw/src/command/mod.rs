@@ -1,7 +1,8 @@
 //! Like cubedaw-command, but with `UiState` support.
 
+use std::any::{Any, TypeId};
+
 use cubedaw_command::{StateCommand, StateCommandWrapper};
-use egui::util::id_type_map::TypeId;
 
 use crate::{EphemeralState, UiState};
 
@@ -27,15 +28,13 @@ pub trait UiStateCommand: 'static + Send {
     }
 }
 
-pub trait UiStateCommandWrapper: 'static + Send {
+pub trait UiStateCommandWrapper: 'static + Send + Any {
     fn ui_execute(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState);
     fn ui_rollback(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState);
 
     fn try_merge(&mut self, other: &dyn UiStateCommandWrapper) -> bool;
 
     fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper>;
-
-    fn type_id(&self) -> TypeId;
 }
 impl<T: UiStateCommand> UiStateCommandWrapper for T {
     fn ui_execute(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState) {
@@ -56,22 +55,18 @@ impl<T: UiStateCommand> UiStateCommandWrapper for T {
     fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
         UiStateCommand::inner(self)
     }
-
-    fn type_id(&self) -> TypeId {
-        TypeId::of::<Self>()
-    }
 }
 
 impl dyn UiStateCommandWrapper {
     pub fn downcast_ref<T: UiStateCommandWrapper + Sized>(&self) -> Option<&T> {
-        if UiStateCommandWrapper::type_id(self) == TypeId::of::<T>() {
+        if Any::type_id(self) == TypeId::of::<T>() {
             Some(unsafe { &*(self as *const dyn UiStateCommandWrapper as *const T) })
         } else {
             None
         }
     }
     pub fn downcast_mut<T: UiStateCommandWrapper + Sized>(&mut self) -> Option<&T> {
-        if UiStateCommandWrapper::type_id(self) == TypeId::of::<T>() {
+        if Any::type_id(self) == TypeId::of::<T>() {
             Some(unsafe { &*(self as *mut dyn UiStateCommandWrapper as *mut T) })
         } else {
             None

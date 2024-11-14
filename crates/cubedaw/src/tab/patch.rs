@@ -27,7 +27,7 @@ pub struct PatchTab {
     // used for when the user draws a cable. duh.
     currently_drawn_cable: Option<CurrentlyDrawnCable>,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct CurrentlyDrawnCable {
     /// Id of the cable. This is usually `Id::arbitrary()`, but in some circumstances is the id of a previously existing cable.
     pub id: Id<Cable>,
@@ -39,7 +39,7 @@ struct CurrentlyDrawnCable {
     pub originally_attached: Option<(NodeSlotDescriptor, CableConnection)>,
 
     /// If the user drags the end of this cable over another cable, the original cable is replaced. This holds the original cable in case the user moves their cursor away from the slot, making the original cable appear again.
-    pub cable_that_this_replaces: Option<(Id<Cable>, Cable)>,
+    pub cable_that_this_replaces: Option<(Id<Cable>, Cable, CableConnection)>,
 
     /// Cable tag of this cable. Usually this is `CableTag::Disconnected`, but can be `CableTag::Valid` the frame before a cable is added.
     pub tag: CableTag,
@@ -78,22 +78,25 @@ impl crate::Screen for PatchTab {
     }
 
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
+        let Self { track_id, id, .. } = *self;
+
         egui::CentralPanel::default()
             .show_inside(ui, |ui| -> Result<()> {
-                if self.track_id.is_some() {
+                if track_id.is_some() {
                     let parent_layer_id = ui.layer_id();
                     let screen_viewport = ui.max_rect();
                     let transform = transform_viewport(self.transform, screen_viewport);
+
                     // we use an area here because it's the only way to render something with custom transforms above another layer.
                     // kinda jank (and there doesn't seem to be a way to delete an area), but oh well.
-                    egui::Area::new(parent_layer_id.id.with((parent_layer_id.order, self.id)))
+                    egui::Area::new(parent_layer_id.id.with((parent_layer_id.order, id)))
                         .movable(false)
                         .constrain_to(screen_viewport)
                         .order(parent_layer_id.order)
                         .show(ui.ctx(), |ui| -> Result<()> {
-                            // ui.push_id(id_source, add_contents)
                             let layer_id = ui.layer_id();
 
+                            // handle panning/zoom
                             let viewport = transform.inverse() * screen_viewport;
                             ui.set_clip_rect(viewport);
                             let viewport_interaction = ui.interact(
@@ -129,7 +132,23 @@ impl crate::Screen for PatchTab {
                             ui.ctx().set_sublayer(parent_layer_id, layer_id);
 
                             ui.set_clip_rect(viewport);
-                            self.node_view(ctx, ui, viewport, viewport_interaction)?;
+
+                            let mut prepared = Prepared::new(
+                                self,
+                                ctx,
+                                ui,
+                                &viewport_interaction,
+                                ui.input(|i| i.pointer.hover_pos())
+                                    .map(|pos| transform.inverse() * pos),
+                            );
+
+                            prepared.background();
+                            prepared.show_add_node_menu();
+                            // cables are rendered below the nodes; save a ShapeIdx for them!
+                            let cable_shapeidx = prepared.ui.painter().add(egui::Shape::Noop);
+                            let node_results = prepared.handle_nodes()?;
+                            let cable_result = prepared.do_cable_interactions(&node_results);
+                            prepared.draw_cables(&node_results, cable_result, cable_shapeidx);
 
                             Ok(())
                         })
@@ -155,30 +174,48 @@ impl crate::Screen for PatchTab {
 }
 
 impl PatchTab {
-    fn node_view(
-        &mut self,
-        ctx: &mut crate::Context,
-        ui: &mut egui::Ui,
-        viewport: Rect,
-        viewport_interaction: egui::Response,
-    ) -> Result<()> {
-        // setup
-        let Some(track_id) = self.track_id else {
-            unreachable!()
-        };
-        let Track { patch, .. } = ctx.state.tracks.force_get(track_id);
-        let track_ui = ctx.ui_state.tracks.force_get(track_id);
-        let track_ephemeral = ctx.ephemeral_state.tracks.force_get_mut(track_id);
+    pub fn select_track(&mut self, track_id: Option<Id<Track>>) {
+        self.track_id = track_id;
+    }
+}
 
-        let patch_ui = &ctx
-            .ui_state
-            .tracks
-            .get(track_id)
-            .expect("track state exists but not ui state?")
-            .patch;
+struct Prepared<'a> {
+    tab: &'a mut PatchTab,
 
-        ui.set_clip_rect(viewport);
-        let painter = ui.painter();
+    ui: &'a mut egui::Ui,
+    drag: &'a mut crate::util::DragHandler,
+
+    ui_state: &'a crate::UiState,
+
+    track_id: Id<Track>,
+    patch: &'a cubedaw_lib::Patch,
+    patch_ui: &'a crate::state::ui::PatchUiState,
+    patch_ephemeral: &'a mut crate::state::ephemeral::PatchEphemeralState,
+
+    tracker: &'a mut crate::context::UiStateTracker,
+    node_registry: &'a crate::NodeRegistry,
+
+    // patch_ephemeral: &'a mut crate::state::ephemeral::
+    viewport: Rect,
+    viewport_interaction: &'a egui::Response,
+    pointer_pos: Option<Pos2>,
+
+    primary_clicked: bool,
+    secondary_clicked: bool,
+    screen_hover_pos: Option<Pos2>,
+}
+
+impl<'a> Prepared<'a> {
+    pub fn new(
+        tab: &'a mut PatchTab,
+        ctx: &'a mut crate::Context,
+        ui: &'a mut egui::Ui,
+        viewport_interaction: &'a egui::Response,
+        pointer_pos: Option<Pos2>,
+    ) -> Self {
+        let viewport = ui.clip_rect();
+
+        let track_id = tab.track_id.expect("unreachable");
 
         let (primary_clicked, secondary_clicked, screen_hover_pos) = ui.input(|i| {
             (
@@ -187,21 +224,36 @@ impl PatchTab {
                 i.pointer.hover_pos(),
             )
         });
-        let pointer_pos = if viewport_interaction.contains_pointer() {
-            screen_hover_pos.map(|mut pos| {
-                if let Some(transform) = ui
-                    .ctx()
-                    .memory(|m| m.layer_transforms.get(&ui.layer_id()).copied())
-                {
-                    pos = transform.inverse() * pos;
-                }
-                pos
-            })
-        } else {
-            None
-        };
 
-        // background
+        Self {
+            tab,
+            ui,
+            track_id,
+            ui_state: ctx.ui_state,
+            patch: &ctx.state.tracks.force_get(track_id).patch,
+            patch_ui: &ctx.ui_state.tracks.force_get(track_id).patch,
+            patch_ephemeral: &mut ctx.ephemeral_state.tracks.force_get_mut(track_id).patch,
+            drag: &mut ctx.ephemeral_state.drag,
+
+            tracker: &mut ctx.tracker,
+            node_registry: ctx.node_registry,
+            viewport,
+            viewport_interaction,
+            pointer_pos,
+            primary_clicked,
+            secondary_clicked,
+            screen_hover_pos,
+        }
+    }
+    pub fn background(&mut self) {
+        let Self {
+            ref mut ui,
+            viewport,
+            ..
+        } = *self;
+
+        let painter = ui.painter();
+
         painter.rect_filled(
             viewport,
             egui::Rounding::ZERO,
@@ -229,6 +281,14 @@ impl PatchTab {
                 }
             }
         }
+    }
+    pub fn show_add_node_menu(&mut self) {
+        let Self {
+            ref mut tab,
+            node_registry,
+            viewport_interaction,
+            ..
+        } = *self;
 
         // TODO: this is a WIP "add node" menu. later we would want a search bar and whatnot.
         viewport_interaction.context_menu(|ui| {
@@ -251,8 +311,8 @@ impl PatchTab {
                 if let Some(key) = node_added {
                     ui.close_menu();
 
-                    let entry = ctx.node_registry.get(&key).expect("wut");
-                    self.currently_held_node = Some(NodeData::new_disconnected(
+                    let entry = node_registry.get(&key).expect("wut");
+                    tab.currently_held_node = Some(NodeData::new_disconnected(
                         key,
                         entry
                             .node_thingy
@@ -261,403 +321,712 @@ impl PatchTab {
                 }
             });
         });
+    }
 
-        // cables are rendered below everything else; save a ShpaeIdx for them!
-        let cable_shapeidx = ui.painter().add(egui::Shape::Noop);
+    fn handle_node(
+        &mut self,
+        prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
+        node_data: &NodeEntry,
+        node_id: Option<Id<NodeEntry>>,
+        node_ui: &NodeUiState,
+    ) -> Result<(
+        CubedawNodeUiContextResult,
+        Option<InteractedNodeSlot>,
+        Option<InteractedNodeSlot>,
+    )> {
+        let Self {
+            ref mut ui,
+            ref mut tab,
+            node_registry,
 
-        // nodes; their interactions, rendering, whew
-        let mut hovered_node_slot = None;
-        let mut cable_drag_stopped = false;
+            ref mut patch_ephemeral,
+            viewport,
 
-        let result = ctx
-            .ephemeral_state
-            .drag
-            .handle(Id::new("nodes"), |prepared| -> Result<_> {
-                let mut node_results: IdMap<NodeEntry, CubedawNodeUiContextResult> = IdMap::new();
+            track_id,
+            ref mut tracker,
+            ..
+        } = *self;
 
-                // nodes
-                if viewport_interaction.secondary_clicked() {
-                    self.currently_held_node = None;
+        // Some(node_id, ephemeral_state) if node actually exists, None if the node is just there for rendering
+        // (e.g. the user is adding a node and is choosing where to place it)
+        let mut real_node_data = node_id.map(|node_id| {
+            (
+                node_id,
+                patch_ephemeral.nodes.get_mut_or_insert_default(node_id),
+            )
+        });
+
+        let pos = if node_ui.selected
+            && let Some(offset) = prepared.movement()
+        {
+            node_ui.pos + offset
+        } else {
+            node_ui.pos
+        };
+
+        let node_max_rect = Rect::from_x_y_ranges(
+            pos.x..=pos.x + node_ui.width,
+            pos.y..=match real_node_data {
+                Some((_, ref node_ephemeral)) => pos.y + node_ephemeral.size.y,
+                None => {
+                    // would be f32::INFINITY but egui needs a finite rect
+                    viewport.bottom() + 128.0
                 }
+            },
+        );
 
-                let currently_held_node_is_some = self.currently_held_node.is_some();
+        let mut frame_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(node_max_rect)
+                .id_salt(node_id.unwrap_or(Id::new("currently_held_node"))),
+        );
+        if tab.currently_held_node.is_some() {
+            // TODO make ui uninteractable without setting fade out color
+            // frame_ui.disable()
+        }
+        if node_id.is_some()
+            && !node_max_rect.intersects(viewport)
+            && prepared.dragged_thing() != node_id.map(Id::cast)
+        {
+            // node isn't visible, hide it
+            frame_ui.set_invisible();
+        }
+        frame_ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
 
-                let mut handle_node =
-                    |prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
-                     ui: &mut egui::Ui,
-                     node_data: &NodeEntry,
-                     node_id: Option<Id<NodeEntry>>,
-                     node_ui: &NodeUiState,
-                     tracker: &mut UiStateTracker|
-                     -> Result<CubedawNodeUiContextResult> {
-                        // Some(node_id, ephemeral_state) if node actually exists, None if the node is just there for rendering
-                        // (e.g. the user is adding a node and is choosing where to place it)
-                        let mut real_node_data = node_id.map(|node_id| {
-                            (
-                                node_id,
-                                track_ephemeral.nodes.get_mut_or_insert_default(node_id),
-                            )
-                        });
+        let mut frame = egui::Frame::window(ui.style()).inner_margin(8.0);
+        if node_ui.selected {
+            // TODO actually implement selection colors/strokes
+            frame.stroke =
+                egui::Stroke::new(frame.stroke.width * 1.2, egui::Color32::from_gray(96));
+            frame.fill = egui::Color32::from_gray(32);
+        }
 
-                        let pos = if node_ui.selected
-                            && let Some(offset) = prepared.movement()
-                        {
-                            node_ui.pos + offset
-                        } else {
-                            node_ui.pos
-                        };
+        let mut default_node_ephemeral = NodeEphemeralState::default();
 
-                        let node_max_rect = Rect::from_x_y_ranges(
-                            pos.x..=pos.x + node_ui.width,
-                            pos.y..=match real_node_data {
-                                Some((_, ref node_ephemeral)) => pos.y + node_ephemeral.size.y,
-                                None => {
-                                    // would be f32::INFINITY but egui needs a finite rect
-                                    viewport.bottom() + 128.0
-                                }
-                            },
-                        );
+        let mut ui_ctx = CubedawNodeUiContext::new(
+            node_id,
+            track_id,
+            node_data,
+            match real_node_data {
+                Some((_, ref mut node_ephemeral)) => node_ephemeral,
+                None => &mut default_node_ephemeral,
+            },
+            tab.currently_drawn_cable.clone(),
+        );
 
-                        let mut frame_ui = ui.child_ui_with_id_source(
-                            node_max_rect,
-                            egui::Layout::top_down(egui::Align::Min),
-                            node_id.unwrap_or(Id::new("currently_held_node")),
-                            None,
-                        );
-                        if currently_held_node_is_some {
-                            // TODO make ui uninteractable without setting fade out color
-                            // frame_ui.disable()
-                        }
-                        if node_id.is_some()
-                            && !node_max_rect.intersects(viewport)
-                            && prepared.dragged_thing() != node_id.map(Id::cast)
-                        {
-                            // node isn't visible, hide it
-                            frame_ui.set_invisible();
-                        }
-                        frame_ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
+        let frame_rect: Rect;
 
-                        let mut frame = egui::Frame::window(ui.style()).inner_margin(8.0);
-                        if node_ui.selected {
-                            // TODO actually implement selection colors/strokes
-                            frame.stroke = egui::Stroke::new(
-                                frame.stroke.width * 1.2,
-                                egui::Color32::from_gray(96),
-                            );
-                            frame.fill = egui::Color32::from_gray(32);
-                        }
+        // node frame
+        let mut frame_prepared = frame.begin(&mut frame_ui);
+        frame_prepared
+            .content_ui
+            .style_mut()
+            .interaction
+            .selectable_labels = false;
+        {
+            if let Some(node_id) = node_id {
+                let drag_response = frame_ui.allocate_rect(
+                    Rect::from_min_size(node_ui.pos, ui_ctx.node_ephemeral.size),
+                    egui::Sense::click_and_drag(),
+                );
+                prepared.process_interaction(
+                    node_id.cast(),
+                    &drag_response,
+                    (track_id, node_id),
+                    node_ui.selected,
+                );
+            }
+            let node_state = node_data.data.inner.as_ref();
+            let mut node_state_copy: Box<[u8]> = node_state.into();
 
-                        let mut default_node_ephemeral = NodeEphemeralState::default();
+            // TODO add header colors
+            let node_thingy = node_registry
+                .get(&node_data.data.key)
+                .todo()
+                .node_thingy
+                .as_ref();
 
-                        let mut ui_ctx = CubedawNodeUiContext::new(
-                            node_id,
-                            track_id,
-                            node_data,
-                            match real_node_data {
-                                Some((_, ref mut node_ephemeral)) => node_ephemeral,
-                                None => &mut default_node_ephemeral,
-                            },
-                            self.currently_drawn_cable.clone(),
-                        );
+            frame_prepared
+                .content_ui
+                .label(node_thingy.title(node_state)?);
+            frame_prepared.content_ui.separator();
+            node_thingy.ui(
+                &mut node_state_copy,
+                &mut frame_prepared.content_ui,
+                &mut ui_ctx,
+            )?;
 
-                        let frame_rect: Rect;
+            if *node_state_copy != *node_state
+                && let Some(node_id) = node_id
+            {
+                tracker.add(NodeStateUpdate::new(
+                    node_id,
+                    track_id,
+                    node_state_copy,
+                    ui_ctx.inputs.iter().map(|i| i.value).collect(),
+                    node_data.inputs().iter().map(|i| i.bias).collect(),
+                    ui_ctx.outputs.len() as u32,
+                    node_data.outputs().len() as u32,
+                ));
+            }
 
-                        // node frame
-                        let mut frame_prepared = frame.begin(&mut frame_ui);
-                        frame_prepared
-                            .content_ui
-                            .style_mut()
-                            .interaction
-                            .selectable_labels = false;
-                        {
-                            if let Some(node_id) = node_id {
-                                let drag_response = frame_ui.allocate_rect(
-                                    Rect::from_min_size(node_ui.pos, ui_ctx.node_ephemeral.size),
-                                    egui::Sense::click_and_drag(),
-                                );
-                                prepared.process_interaction(
-                                    node_id.cast(),
-                                    &drag_response,
-                                    (track_id, node_id),
-                                    node_ui.selected,
-                                );
-                            }
-                            let node_state = node_data.data.inner.as_ref();
-                            let mut node_state_copy: Box<[u8]> = node_state.into();
+            frame_rect = frame_prepared.content_ui.min_rect() + frame.total_margin();
+            frame_prepared.allocate_space(&mut frame_ui);
+            ui_ctx.node_ephemeral.size = frame_rect.size();
+        }
+        frame_prepared.paint(&frame_ui);
 
-                            // TODO add header colors
-                            let node_thingy = ctx
-                                .node_registry
-                                .get(&node_data.data.key)
-                                .todo()
-                                .node_thingy
-                                .as_ref();
+        ui_ctx.apply(tracker);
 
-                            frame_prepared
-                                .content_ui
-                                .label(node_thingy.title(node_state)?);
-                            frame_prepared.content_ui.separator();
-                            node_thingy.ui(
-                                &mut node_state_copy,
-                                &mut frame_prepared.content_ui,
-                                &mut ui_ctx,
-                            )?;
+        let result = ui_ctx.finish(frame_rect);
 
-                            if *node_state_copy != *node_state
-                                && let Some(node_id) = node_id
-                            {
-                                tracker.add(NodeStateUpdate::new(
-                                    node_id,
-                                    track_id,
-                                    node_state_copy,
-                                    ui_ctx.inputs.iter().map(|i| i.value).collect(),
-                                    node_data.inputs().iter().map(|i| i.bias).collect(),
-                                    ui_ctx.outputs.len() as u32,
-                                    node_data.outputs().len() as u32,
-                                ));
-                            }
+        let node_slots = self.handle_node_slots_for(node_id, &result);
 
-                            frame_rect =
-                                frame_prepared.content_ui.min_rect() + frame.total_margin();
-                            frame_prepared.allocate_space(&mut frame_ui);
-                            ui_ctx.node_ephemeral.size = frame_rect.size();
-                        }
-                        frame_prepared.paint(&frame_ui);
+        Ok((result, node_slots.0, node_slots.1))
+    }
 
-                        // node inputs
-                        //
-                        // index: either input index or output index, depending on is_output
-                        // y_pos: screen y pos
-                        // cable_index: for inputs, either Some(the 0-based index of the cable this is connected to) or None for not being connected to a cable. for outputs, unused.
-                        // is_output: duh
-                        for ((index, (y_pos, cable_index)), is_output) in ui_ctx
-                            .inputs
-                            .iter()
-                            .enumerate()
-                            .flat_map(|(idx, input)| {
-                                iter::once((idx, (input.y_pos, None))).chain(
-                                    input.cables.iter().enumerate().map(
-                                        move |(cable_idx, cable_input)| {
-                                            (idx, (cable_input.y_pos, Some(cable_idx as u32)))
-                                        },
-                                    ),
-                                )
-                            })
-                            .zip(iter::repeat(false))
-                            .chain(
-                                ui_ctx
-                                    .outputs
-                                    .iter()
-                                    .map(|o| (o.y_pos, None))
-                                    .enumerate()
-                                    .zip(iter::repeat(true)),
-                            )
-                        {
-                            let pos = egui::pos2(
-                                if is_output {
-                                    node_max_rect.right()
-                                } else {
-                                    node_max_rect.left()
-                                },
-                                y_pos,
-                            );
+    fn handle_node_slots_for(
+        &mut self,
+        node_id: Option<Id<NodeEntry>>,
+        node_result: &CubedawNodeUiContextResult,
+    ) -> (Option<InteractedNodeSlot>, Option<InteractedNodeSlot>) {
+        let Self { ref mut ui, .. } = *self;
+        let CubedawNodeUiContextResult {
+            node_rect,
+            inputs,
+            outputs,
+        } = node_result;
 
-                            // TODO add configurable styles for this
-                            let slot_radius = 4.0;
+        let mut dragged_node_slot = None;
+        let mut hovered_node_slot = None;
 
-                            let mut hovered = false;
-                            if let Some(node_id) = node_id {
-                                let response = frame_ui
-                                    .allocate_rect(
-                                        Rect::from_min_size(pos, Vec2::ZERO).expand(
-                                            slot_radius + 4.0 + ui.input(|i| i.aim_radius()),
-                                        ),
-                                        egui::Sense::drag(),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+        // node slots
+        // index: either input index or output index, depending on is_output
+        // y_pos: screen y pos
+        // cable_index: for inputs, either Some(the 0-based index of the cable this is connected to) or None for not being connected to a cable. for outputs, unused.
+        // is_output: duh
+        for ((index, (y_pos, cable_index)), is_output) in node_result
+            .inputs
+            .iter()
+            .enumerate()
+            .flat_map(|(idx, input)| {
+                iter::once((idx, (input.input_y_pos, None))).chain(
+                    input
+                        .cables
+                        .iter()
+                        .enumerate()
+                        .map(move |(cable_idx, cable_input)| {
+                            (idx, (cable_input.y_pos, Some(cable_idx as u32)))
+                        }),
+                )
+            })
+            .zip(iter::repeat(false))
+            .chain(
+                node_result
+                    .outputs
+                    .iter()
+                    .map(|o| (o.y_pos, None))
+                    .enumerate()
+                    .zip(iter::repeat(true)),
+            )
+        {
+            let pos = Pos2 {
+                x: if is_output {
+                    node_rect.right()
+                } else {
+                    node_rect.left()
+                },
+                y: y_pos,
+            };
 
-                                let slot_descriptor = if is_output {
-                                    NodeSlotDescriptor::Output {
-                                        node: node_id,
-                                        output_index: index as u32,
-                                    }
-                                } else {
-                                    NodeSlotDescriptor::Input {
-                                        node: node_id,
-                                        input_index: index as u32,
-                                        conn_index: cable_index,
-                                    }
-                                };
+            // TODO add configurable styles for this
+            let slot_radius = 4.0;
 
-                                if response.drag_started() {
-                                    if let Some(cable_index) = cable_index
-                                        && let Some(conn) = node_data
-                                            .inputs()
-                                            .get(index)
-                                            .expect("unreachable")
-                                            .connections
-                                            .get(cable_index as usize)
-                                    {
-                                        // if the slot is an input and there already is a cable there, take control of it
-                                        let cable = patch.cable(conn.id).expect("unreachable");
+            let response = ui
+                .allocate_rect(
+                    Rect::from_min_size(pos, Vec2::ZERO)
+                        .expand(slot_radius + 4.0 + ui.input(|i| i.aim_radius())),
+                    egui::Sense::drag(),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
 
-                                        self.currently_drawn_cable = Some(CurrentlyDrawnCable {
-                                            id: conn.id,
-                                            attached: NodeSlotDescriptor::Output {
-                                                node: cable.input_node,
-                                                output_index: cable.input_output_index,
-                                            },
-                                            originally_attached: Some((
-                                                slot_descriptor,
-                                                conn.clone(),
-                                            )),
-                                            cable_that_this_replaces: None,
-                                            tag: CableTag::Valid,
-                                        });
-                                        tracker
-                                            .add_weak(CableAddOrRemove::removal(conn.id, track_id));
-                                    } else {
-                                        // create a new cable
-                                        self.currently_drawn_cable = Some(CurrentlyDrawnCable {
-                                            id: Id::arbitrary(),
-                                            attached: slot_descriptor,
-                                            originally_attached: None,
+            let hovered = response.contains_pointer();
 
-                                            cable_that_this_replaces: None,
-                                            tag: CableTag::Disconnected,
-                                        });
-                                    }
+            if let Some(node_id) = node_id {
+                // handle node slot interactions
+                let slot_descriptor = if is_output {
+                    NodeSlotDescriptor::Output {
+                        node_id,
+                        output_index: index as u32,
+                    }
+                } else {
+                    NodeSlotDescriptor::Input {
+                        node_id,
+                        input_index: index as u32,
+                        conn_index: cable_index,
+                    }
+                };
 
-                                    tracker.make_next_command_strong();
-                                } else if response.drag_stopped() {
-                                    cable_drag_stopped = true;
-                                }
-                                if response.contains_pointer() {
-                                    hovered = true;
-                                    hovered_node_slot = Some(slot_descriptor);
-                                }
-                            }
-                            let visuals = if hovered {
-                                frame_ui.visuals().widgets.hovered
-                            } else {
-                                frame_ui.visuals().widgets.noninteractive
-                            };
-                            let slot_fill = visuals.bg_fill;
-                            let slot_stroke = visuals.bg_stroke;
+                if response.dragged() || response.drag_stopped() {
+                    dragged_node_slot = Some(InteractedNodeSlot {
+                        descriptor: slot_descriptor,
+                        response: response.clone(),
+                    });
+                }
+                if response.contains_pointer() {
+                    hovered_node_slot = Some(InteractedNodeSlot {
+                        descriptor: slot_descriptor,
+                        response,
+                    });
+                }
+            }
 
-                            frame_ui
-                                .painter()
-                                .circle(pos, slot_radius, slot_fill, slot_stroke);
-                        }
+            let visuals = if hovered {
+                ui.visuals().widgets.hovered
+            } else {
+                ui.visuals().widgets.noninteractive
+            };
+            let slot_fill = visuals.bg_fill;
+            let slot_stroke = visuals.bg_stroke;
 
-                        ui_ctx.apply(tracker);
+            ui.painter()
+                .circle(pos, slot_radius, slot_fill, slot_stroke);
+        }
 
-                        Ok(ui_ctx.finish(frame_rect))
-                    };
-                for (node_id, node_data) in patch.nodes() {
-                    let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
+        (dragged_node_slot, hovered_node_slot)
+    }
 
-                    let result = handle_node(
-                        prepared,
+    fn handle_nodes(&mut self) -> Result<NodeResults> {
+        let Self {
+            ref mut tab,
+            ref mut ui,
+            ref mut drag,
+            ui_state,
+            track_id,
+            patch,
+            patch_ui,
+            ref mut patch_ephemeral,
+            ref mut tracker,
+            node_registry,
+            viewport,
+            viewport_interaction,
+            pointer_pos,
+            primary_clicked,
+            secondary_clicked,
+            screen_hover_pos,
+        } = *self;
+
+        let result = drag.handle(Id::new("nodes"), |prepared| -> Result<_> {
+            let mut dragged_node_slot: Option<InteractedNodeSlot> = None;
+            let mut hovered_node_slot: Option<InteractedNodeSlot> = None;
+
+            let mut node_results_map: IdMap<NodeEntry, CubedawNodeUiContextResult> = IdMap::new();
+
+            // nodes
+            if viewport_interaction.secondary_clicked() {
+                tab.currently_held_node = None;
+            }
+
+            for (node_id, node_data) in patch.nodes() {
+                let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
+
+                let (result, dragged_node_slot_for_this_node, hovered_node_slot_for_this_node) =
+                    Prepared {
+                        tab,
                         ui,
+                        drag: &mut crate::util::DragHandler::new(),
+                        ui_state,
+                        tracker,
+                        track_id,
+                        patch,
+                        patch_ui,
+                        node_registry,
+                        viewport,
+                        patch_ephemeral,
+                        viewport_interaction,
+                        pointer_pos,
+                        primary_clicked,
+                        secondary_clicked,
+                        screen_hover_pos,
+                    }
+                    .handle_node(
+                        prepared,
                         node_data,
                         Some(node_id),
                         node_ui,
-                        &mut ctx.tracker,
                     )?;
 
-                    node_results.insert(node_id, result);
-                }
+                dragged_node_slot = dragged_node_slot.or(dragged_node_slot_for_this_node);
+                hovered_node_slot = hovered_node_slot.or(hovered_node_slot_for_this_node);
 
-                if let Some(node_data) = self.currently_held_node.take() {
-                    if let Some(pointer_pos) = pointer_pos {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
-                        let fake_entry = NodeEntry::new(node_data, 0, 0);
-                        let result = handle_node(
-                            prepared,
-                            ui,
-                            &fake_entry,
-                            None,
-                            &NodeUiState {
-                                selected: true,
-                                pos: pointer_pos,
-                                width: 128.0,
-                            },
-                            &mut ctx.tracker,
-                        )?;
-                        let node_data = fake_entry.data;
-                        if primary_clicked {
-                            // place the node
-                            ctx.tracker.add(UiNodeAddOrRemove::addition(
-                                Id::arbitrary(),
-                                node_data,
-                                result.inputs.into_iter().map(|input| input.value).collect(),
-                                result.outputs.len() as u32,
-                                track_id,
-                                NodeUiState {
-                                    selected: true,
-                                    pos: pointer_pos,
-                                    width: 128.0, // TODO impl node widths
-                                },
-                            ))
-                        } else if !secondary_clicked {
-                            self.currently_held_node = Some(node_data);
-                        }
-                    } else {
-                        self.currently_held_node = Some(node_data);
+                node_results_map.insert(node_id, result);
+            }
+
+            if let Some(node_data) = tab.currently_held_node.take() {
+                if let Some(hover_pos) = viewport_interaction.hover_pos() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
+                    let fake_entry = NodeEntry::new(node_data, 0, 0);
+                    let (result, ..) = Prepared {
+                        tab,
+                        ui,
+                        drag: &mut crate::util::DragHandler::new(),
+                        ui_state,
+                        tracker,
+                        track_id,
+                        patch,
+                        patch_ui,
+                        node_registry,
+                        viewport,
+                        patch_ephemeral,
+                        viewport_interaction,
+                        pointer_pos,
+                        primary_clicked,
+                        secondary_clicked,
+                        screen_hover_pos,
                     }
+                    .handle_node(
+                        prepared,
+                        &fake_entry,
+                        None,
+                        &NodeUiState {
+                            selected: true,
+                            pos: hover_pos,
+                            width: 128.0,
+                        },
+                    )?;
+                    let node_data = fake_entry.data;
+                    if primary_clicked {
+                        // place the node
+                        tracker.add(UiNodeAddOrRemove::addition(
+                            Id::arbitrary(),
+                            node_data,
+                            result.inputs.into_iter().map(|input| input.value).collect(),
+                            result.outputs.len() as u32,
+                            track_id,
+                            NodeUiState {
+                                selected: true,
+                                pos: hover_pos,
+                                width: 128.0, // TODO impl node widths
+                            },
+                        ))
+                    } else if !secondary_clicked {
+                        tab.currently_held_node = Some(node_data);
+                    }
+                } else {
+                    tab.currently_held_node = Some(node_data);
                 }
+            }
 
-                Ok(node_results)
-            });
+            Ok(NodeResults {
+                results: node_results_map,
+                dragged_node_slot,
+                hovered_node_slot,
+            })
+        });
         {
             let should_deselect_everything =
                 result.should_deselect_everything || viewport_interaction.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
-                for (&node_id2, node_ui) in &track_ui.patch.nodes {
+                for (&node_id2, node_ui) in &patch_ui.nodes {
                     if node_ui.selected
                         && !matches!(selection_changes.get(&(track_id, node_id2)), Some(true))
                     {
-                        ctx.tracker
-                            .add(UiNodeSelect::new(track_id, node_id2, false));
+                        tracker.add(UiNodeSelect::new(track_id, node_id2, false));
                     }
                 }
                 for (&(track_id, node_id), &selected) in &selection_changes {
                     if selected
-                        && !ctx
-                            .ui_state
+                        && !ui_state
                             .tracks
                             .get(track_id)
                             .and_then(|t| t.patch.nodes.get(node_id))
                             .is_some_and(|n| n.selected)
                     {
-                        ctx.tracker.add(UiNodeSelect::new(track_id, node_id, true));
+                        tracker.add(UiNodeSelect::new(track_id, node_id, true));
                     }
                 }
             } else {
                 for (&(track_id, node_id), &selected) in &selection_changes {
-                    ctx.tracker
-                        .add(UiNodeSelect::new(track_id, node_id, selected));
+                    tracker.add(UiNodeSelect::new(track_id, node_id, selected));
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
-                for (&node_id, node_ui) in &track_ui.patch.nodes {
+                for (&node_id, node_ui) in &patch_ui.nodes {
                     if node_ui.selected {
-                        ctx.tracker
-                            .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
+                        tracker.add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
                     }
                 }
             }
         }
 
-        let node_results: IdMap<NodeEntry, CubedawNodeUiContextResult> = result.inner?;
+        Ok(result.inner?)
+    }
+
+    fn do_cable_interactions(
+        &mut self,
+        node_results: &NodeResults,
+    ) -> Option<CableInteractionResult> {
+        let Self {
+            ref mut tab,
+            patch,
+            ref mut tracker,
+            track_id,
+            pointer_pos,
+            ..
+        } = *self;
+        let NodeResults {
+            dragged_node_slot,
+            hovered_node_slot,
+            ..
+        } = node_results;
+
+        if let Some(InteractedNodeSlot {
+            descriptor,
+            ref response,
+        }) = *dragged_node_slot
+        {
+            if response.drag_started() {
+                let node_data = patch.node_entry(descriptor.node_id()).todo();
+
+                match descriptor {
+                    NodeSlotDescriptor::Input {
+                        conn_index: Some(conn_index),
+                        input_index,
+                        ..
+                    } if let Some(&(cable_id, ref conn)) = node_data
+                        .inputs()
+                        .get(input_index as usize)
+                        .expect("unreachable")
+                        .connections
+                        .get(conn_index as usize) =>
+                    {
+                        // if the slot is an input and there already is a cable there, take control of it
+                        let cable = patch.cable(cable_id).expect("unreachable");
+
+                        tab.currently_drawn_cable = Some(CurrentlyDrawnCable {
+                            id: cable_id,
+                            attached: NodeSlotDescriptor::Output {
+                                node_id: cable.input_node,
+                                output_index: cable.input_output_index,
+                            },
+                            originally_attached: Some((descriptor, conn.clone())),
+                            cable_that_this_replaces: None,
+                            tag: CableTag::Valid,
+                        });
+
+                        // no need to remove the cable now; the code below will automatically remove the cable when it's not connected
+                    }
+                    _ => {
+                        // create a new cable
+                        tab.currently_drawn_cable = Some(CurrentlyDrawnCable {
+                            id: Id::arbitrary(),
+                            attached: descriptor,
+                            originally_attached: None,
+
+                            cable_that_this_replaces: None,
+                            tag: CableTag::Disconnected,
+                        });
+                    }
+                }
+                tracker.add(crate::command::Noop);
+            }
+        }
+
+        let mut result = None;
+
+        if let Some(pointer_pos) = pointer_pos {
+            let hovered_node_slot_descriptor = hovered_node_slot
+                .as_ref()
+                .map(|node_slot| node_slot.descriptor);
+            if let Some(mut currently_drawn_cable) = tab.currently_drawn_cable.take() {
+                let viable_cable =
+                    match (hovered_node_slot_descriptor, currently_drawn_cable.attached) {
+                        (
+                            Some(NodeSlotDescriptor::Output {
+                                node_id: input_node,
+                                output_index,
+                            }),
+                            NodeSlotDescriptor::Input {
+                                node_id: output_node,
+                                input_index,
+                                conn_index: cable_index,
+                            },
+                        )
+                        | (
+                            Some(NodeSlotDescriptor::Input {
+                                node_id: output_node,
+                                input_index,
+                                conn_index: cable_index,
+                            }),
+                            NodeSlotDescriptor::Output {
+                                node_id: input_node,
+                                output_index,
+                            },
+                        ) => Some((
+                            Cable {
+                                input_node,
+                                input_output_index: output_index,
+
+                                output_node,
+                                output_input_index: input_index,
+                                output_cable_index: cable_index.unwrap_or(0),
+
+                                tag: CableTag::Invalid,
+                            },
+                            cable_index,
+                        )),
+                        _ => None,
+                    };
+                let currently_drawn_cable_exists_in_patch =
+                    patch.cable(currently_drawn_cable.id).is_some();
+
+                let mut should_render_currently_drawn_cable = true; // false if a "real" cable already replaced this one
+                if let Some((cable, cable_index)) = viable_cable {
+                    if currently_drawn_cable_exists_in_patch {
+                        should_render_currently_drawn_cable = false;
+                    } else if let Some(cable_index) = cable_index &&
+                        let Some(&(cable_id, ref conn)) = cable
+                            .node_input(patch)
+                            .connections
+                            .get(cable_index as usize)
+
+                        // don't delete the cable at this index if it's where the cable is originally attached!
+                        && currently_drawn_cable.originally_attached.as_ref().is_none_or(
+                            |(descriptor, _)| {
+                                descriptor
+                                    != &NodeSlotDescriptor::Input {
+                                        node_id: cable.output_node,
+                                        input_index: cable.output_input_index,
+                                        conn_index: Some(cable_index),
+                                    }
+                            },
+                        )
+                    {
+                        currently_drawn_cable.cable_that_this_replaces = Some((
+                            cable_id,
+                            patch.cable(cable_id).expect("invalid patch").clone(),
+                            conn.clone(),
+                        ));
+                        tracker.add_weak(CableAddOrRemove::removal(cable_id, track_id));
+
+                        dbg!();
+                        tracker.add_weak(CableAddOrRemove::addition(
+                            currently_drawn_cable.id,
+                            cable,
+                            conn.clone(),
+                            track_id,
+                        ));
+                    } else {
+                        // was there an original node slot? yes? use the old cable conn then
+                        let cable_conn = if let Some((_, ref cable_connection)) =
+                            currently_drawn_cable.originally_attached
+                        {
+                            cable_connection.clone()
+                        } else {
+                            Default::default()
+                        };
+
+                        tracker.add_weak(CableAddOrRemove::addition(
+                            currently_drawn_cable.id,
+                            cable,
+                            cable_conn,
+                            track_id,
+                        ));
+                    }
+                } else {
+                    currently_drawn_cable.tag = CableTag::Disconnected;
+
+                    if currently_drawn_cable_exists_in_patch {
+                        tracker.add_weak(CableAddOrRemove::removal(
+                            currently_drawn_cable.id,
+                            track_id,
+                        ));
+                        if let Some((cable_id, cable, conn)) =
+                            currently_drawn_cable.cable_that_this_replaces.take()
+                        {
+                            tracker.add_weak(CableAddOrRemove::addition(
+                                cable_id, cable, conn, track_id,
+                            ));
+                        }
+                    }
+                }
+                if should_render_currently_drawn_cable {
+                    let attached_pos = currently_drawn_cable.attached.get_pos(node_results);
+                    result = Some(match currently_drawn_cable.attached {
+                        NodeSlotDescriptor::Input { .. } => {
+                            let output_pos = match hovered_node_slot_descriptor {
+                                Some(slot @ NodeSlotDescriptor::Output { .. }) => {
+                                    slot.get_pos_raw(node_results)
+                                }
+                                _ => pointer_pos,
+                            };
+                            CableInteractionResult {
+                                start_pos: attached_pos,
+                                end_pos: output_pos,
+                                tag: currently_drawn_cable.tag,
+                            }
+                        }
+                        NodeSlotDescriptor::Output { .. } => {
+                            let input_pos = match hovered_node_slot_descriptor {
+                                Some(slot @ NodeSlotDescriptor::Input { .. }) => {
+                                    slot.get_pos_raw(node_results)
+                                }
+                                _ => pointer_pos,
+                            };
+                            CableInteractionResult {
+                                start_pos: input_pos,
+                                end_pos: attached_pos,
+                                tag: currently_drawn_cable.tag,
+                            }
+                        }
+                    });
+                }
+                if dragged_node_slot
+                    .as_ref()
+                    .is_some_and(|node_slot| node_slot.response.drag_stopped())
+                {
+                    // did it actually do anything? no? guess all those commands were for nothing then. delete the commands
+                    let was_added = currently_drawn_cable.originally_attached.is_none()
+                        && currently_drawn_cable_exists_in_patch;
+                    let was_deleted = currently_drawn_cable.originally_attached.is_some()
+                        && !currently_drawn_cable_exists_in_patch;
+                    let was_moved = currently_drawn_cable
+                        .originally_attached
+                        .as_ref()
+                        .is_some_and(|(node_slot, _)| {
+                            Some(*node_slot)
+                                != dragged_node_slot.as_ref().map(|slot| slot.descriptor)
+                        });
+                    if !(was_added || was_deleted || was_moved) {
+                        tracker.delete_last_command();
+                    }
+                } else {
+                    tab.currently_drawn_cable = Some(currently_drawn_cable);
+                }
+            }
+        }
+        result
+    }
+
+    fn draw_cables(
+        &mut self,
+        node_results: &NodeResults,
+        cable_result: Option<CableInteractionResult>,
+        shapeidx: egui::layers::ShapeIdx,
+    ) {
+        let Self {
+            ref mut ui,
+            viewport,
+            patch,
+            ..
+        } = *self;
 
         // cables
 
-        let mut cable_shapes = Vec::new();
-        let mut draw_cable = |output_pos: Pos2, input_pos: Pos2, tag: CableTag| {
+        let mut cable_shapes: Vec<egui::Shape> = Vec::new();
+        let mut draw_cable = |input_pos: Pos2, output_pos: Pos2, tag: CableTag| {
             // TODO make this configurable
             let cable_stroke = egui::Stroke::new(
                 4.0,
@@ -668,7 +1037,7 @@ impl PatchTab {
                 },
             );
 
-            if !viewport.intersects(Rect::from_points(&[output_pos, input_pos])) {
+            if !viewport.intersects(Rect::from_points(&[input_pos, output_pos])) {
                 return;
             }
 
@@ -694,160 +1063,30 @@ impl PatchTab {
             );
         };
 
-        if let Some(pointer_pos) = pointer_pos {
-            if let Some(mut currently_drawn_cable) = self.currently_drawn_cable.take() {
-                let viable_cable = match (hovered_node_slot, currently_drawn_cable.attached) {
-                    (
-                        Some(NodeSlotDescriptor::Output {
-                            node: input_node,
-                            output_index,
-                        }),
-                        NodeSlotDescriptor::Input {
-                            node: output_node,
-                            input_index,
-                            conn_index: cable_index,
-                        },
-                    )
-                    | (
-                        Some(NodeSlotDescriptor::Input {
-                            node: output_node,
-                            input_index,
-                            conn_index: cable_index,
-                        }),
-                        NodeSlotDescriptor::Output {
-                            node: input_node,
-                            output_index,
-                        },
-                    ) => Some((
-                        Cable {
-                            input_node,
-                            input_output_index: output_index,
-
-                            output_node,
-                            output_input_index: input_index,
-                            output_cable_index: cable_index.unwrap_or(0),
-
-                            tag: CableTag::Invalid,
-                        },
-                        cable_index,
-                    )),
-                    _ => None,
-                };
-                let currently_drawn_cable_exists_in_patch =
-                    patch.cable(currently_drawn_cable.id).is_some();
-
-                let mut should_render_currently_drawn_cable = true; // false if a "real" cable already replaced this one
-                if let Some((cable, cable_index)) = viable_cable {
-                    if currently_drawn_cable_exists_in_patch {
-                        should_render_currently_drawn_cable = false;
-                    } else {
-                        if let Some(cable_index) = cable_index
-                            && let Some(conn) = cable
-                                .node_input(patch)
-                                .connections
-                                .get(cable_index as usize)
-
-                            // don't delete the cable at this index if it's where the cable is originally attached!
-                            && currently_drawn_cable.originally_attached.as_ref().is_none_or(
-                                |(descriptor, _)| {
-                                    descriptor
-                                        != &NodeSlotDescriptor::Input {
-                                            node: cable.output_node,
-                                            input_index: cable.output_input_index,
-                                            conn_index: Some(cable_index),
-                                        }
-                                },
-                            )
-                        {
-                            currently_drawn_cable.cable_that_this_replaces =
-                                Some((conn.id, patch.cable(conn.id).todo().clone()));
-                            ctx.tracker
-                                .add_weak(CableAddOrRemove::removal(conn.id, track_id));
-                        }
-                        ctx.tracker.add_weak(CableAddOrRemove::addition(
-                            currently_drawn_cable.id,
-                            cable,
-                            track_id,
-                        ));
-                    }
-                } else {
-                    currently_drawn_cable.tag = CableTag::Disconnected;
-
-                    if currently_drawn_cable_exists_in_patch {
-                        ctx.tracker.add_weak(CableAddOrRemove::removal(
-                            currently_drawn_cable.id,
-                            track_id,
-                        ));
-                        if let Some((cable_id, cable)) =
-                            currently_drawn_cable.cable_that_this_replaces.take()
-                        {
-                            ctx.tracker
-                                .add_weak(CableAddOrRemove::addition(cable_id, cable, track_id));
-                        }
-                    }
-                }
-                if should_render_currently_drawn_cable {
-                    let attached_pos = currently_drawn_cable.attached.get_pos(&node_results);
-                    match currently_drawn_cable.attached {
-                        NodeSlotDescriptor::Input { .. } => {
-                            let output_pos = match hovered_node_slot {
-                                Some(slot @ NodeSlotDescriptor::Output { .. }) => {
-                                    slot.get_pos_raw(&node_results)
-                                }
-                                _ => pointer_pos,
-                            };
-                            draw_cable(output_pos, attached_pos, currently_drawn_cable.tag)
-                        }
-                        NodeSlotDescriptor::Output { .. } => {
-                            let input_pos = match hovered_node_slot {
-                                Some(slot @ NodeSlotDescriptor::Input { .. }) => {
-                                    slot.get_pos_raw(&node_results)
-                                }
-                                _ => pointer_pos,
-                            };
-                            draw_cable(attached_pos, input_pos, currently_drawn_cable.tag);
-                        }
-                    }
-                }
-                if cable_drag_stopped {
-                    // did it actually do anything? no? guess all those commands were for nothing then. delete the commands
-                    let was_added = currently_drawn_cable.originally_attached.is_none()
-                        && currently_drawn_cable_exists_in_patch;
-                    let was_deleted = currently_drawn_cable.originally_attached.is_some()
-                        && !currently_drawn_cable_exists_in_patch;
-                    let was_moved = currently_drawn_cable
-                        .originally_attached
-                        .as_ref()
-                        .is_some_and(|(node_slot, _)| Some(*node_slot) != hovered_node_slot);
-                    if !(was_added || was_deleted || was_moved) {
-                        ctx.tracker.delete_last_command();
-                    }
-                } else {
-                    self.currently_drawn_cable = Some(currently_drawn_cable);
-                }
-            }
-        }
-
         for (_cable_id, cable) in patch.cables() {
             draw_cable(
                 node_results
-                    .force_get(cable.input_node)
-                    .get_output_pos(cable.input_output_index),
-                node_results
+                    .results
                     .force_get(cable.output_node)
                     .get_input_pos(cable.output_input_index, Some(cable.output_cable_index)),
+                node_results
+                    .results
+                    .force_get(cable.input_node)
+                    .get_output_pos(cable.input_output_index),
                 cable.tag,
             );
         }
 
-        ui.painter()
-            .set(cable_shapeidx, egui::Shape::Vec(cable_shapes));
+        if let Some(CableInteractionResult {
+            start_pos,
+            end_pos,
+            tag,
+        }) = cable_result
+        {
+            draw_cable(start_pos, end_pos, tag);
+        }
 
-        Ok(())
-    }
-
-    pub fn select_track(&mut self, track_id: Option<Id<Track>>) {
-        self.track_id = track_id;
+        ui.painter().set(shapeidx, egui::Shape::Vec(cable_shapes));
     }
 }
 
@@ -892,9 +1131,9 @@ impl<'a> CubedawNodeUiContext<'a> {
             if num_inputs < old_num_inputs {
                 for deleted_input in &self.node_data.inputs()[num_inputs..old_num_inputs] {
                     // do in reverse order because removing elements one-by-one from the vec is faster if you remove from last to first
-                    for connection in deleted_input.connections.iter().rev() {
+                    for &(cable_id, _) in deleted_input.connections.iter().rev() {
                         tracker.add_weak(cubedaw_command::patch::CableAddOrRemove::removal(
-                            connection.id,
+                            cable_id,
                             self.track_id,
                         ));
                     }
@@ -963,13 +1202,16 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
         let mut virtual_index: Option<u32> = None;
 
         if let Some(input) = input {
-            let mut connections: Vec<(bool, &CableConnection)> =
-                input.connections.iter().map(|conn| (false, conn)).collect();
+            let mut connections: Vec<(bool, &CableConnection)> = input
+                .connections
+                .iter()
+                .map(|(_, conn)| (false, conn))
+                .collect();
 
             if let Some(ref currently_drawn_cable) = self.currently_drawn_cable
                 && let Some((
                     NodeSlotDescriptor::Input {
-                        node,
+                        node_id: node,
                         input_index: other_input_index,
                         conn_index: Some(cable_index),
                     },
@@ -980,9 +1222,9 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                 && input
                     .connections
                     .get(cable_index as usize)
-                    .is_none_or(|conn| conn.id != currently_drawn_cable.id)
+                    .is_none_or(|&(id, _)| id != currently_drawn_cable.id)
             {
-                // if the currently drawn cable refers to this input and the input doesn't exist, insert a virtual cable connection
+                // if the currently drawn cable refers to this input and the connection doesn't exist, insert a virtual cable connection
                 virtual_index = Some(cable_index);
                 connections.insert(
                     cable_index as usize,
@@ -1074,7 +1316,7 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
         }
 
         self.inputs.push(CubedawNodeUiContextInputData {
-            y_pos: input_response.rect.center().y,
+            input_y_pos: input_response.rect.center().y,
             virtual_index,
             value: new_bias,
             cables: cable_connections,
@@ -1095,11 +1337,12 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
 
 #[derive(Debug)]
 struct CubedawNodeUiContextInputData {
-    y_pos: f32,
+    input_y_pos: f32,
     value: f32,
 
-    // if there is a virtual cable connection, where is it located?
+    /// If there is a virtual cable connection, where is it located?
     virtual_index: Option<u32>,
+    /// List of cables for this input. This includes the virtual cable; be careful when indexing!
     cables: Vec<CubedawNodeUiContextCableConnectionData>,
 }
 impl CubedawNodeUiContextInputData {
@@ -1149,7 +1392,7 @@ impl CubedawNodeUiContextResult {
         let input = &self.inputs[input_index as usize];
         let y_pos = match conn_index {
             Some(idx) => input.cables[idx as usize].y_pos,
-            None => input.y_pos,
+            None => input.input_y_pos,
         };
         Pos2 {
             x: self.node_rect.left(),
@@ -1165,41 +1408,91 @@ impl CubedawNodeUiContextResult {
     }
 }
 
+struct NodeResults {
+    pub results: IdMap<NodeEntry, CubedawNodeUiContextResult>,
+
+    pub dragged_node_slot: Option<InteractedNodeSlot>,
+    pub hovered_node_slot: Option<InteractedNodeSlot>,
+}
+impl NodeResults {
+    // pub fn get_slot_descriptor_at(&self, pos: Pos2) -> Option<NodeSlotDescriptor> {
+    //     for (node_id, node) in self.results {
+    //         for input in &node.inputs {
+    //             if input.input_y_pos
+    //         }
+    //     }
+    // }
+}
+
+#[derive(Debug)]
+struct InteractedNodeSlot {
+    pub descriptor: NodeSlotDescriptor,
+    pub response: egui::Response,
+}
+
+#[derive(Debug)]
+struct CableInteractionResult {
+    start_pos: Pos2,
+    end_pos: Pos2,
+    tag: CableTag,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeSlotDescriptor {
-    Output {
-        node: Id<NodeEntry>,
-        output_index: u32,
-    },
     Input {
-        node: Id<NodeEntry>,
+        node_id: Id<NodeEntry>,
         input_index: u32,
         conn_index: Option<u32>,
     },
+    Output {
+        node_id: Id<NodeEntry>,
+        output_index: u32,
+    },
 }
 impl NodeSlotDescriptor {
-    pub fn get_pos(self, data: &IdMap<NodeEntry, CubedawNodeUiContextResult>) -> Pos2 {
-        match self {
-            Self::Output { node, output_index } => {
-                data.force_get(node).get_output_pos(output_index)
-            }
-            Self::Input {
-                node,
-                input_index,
-                conn_index,
-            } => data.force_get(node).get_input_pos(input_index, conn_index),
+    pub fn of_cable_input(cable: &Cable) -> Self {
+        Self::Input {
+            node_id: cable.output_node,
+            input_index: cable.output_input_index,
+            conn_index: Some(cable.output_cable_index),
         }
     }
-    pub fn get_pos_raw(self, data: &IdMap<NodeEntry, CubedawNodeUiContextResult>) -> Pos2 {
+
+    pub fn node_id(self) -> Id<NodeEntry> {
         match self {
-            Self::Output { node, output_index } => {
-                data.force_get(node).get_output_pos(output_index)
-            }
+            Self::Input { node_id, .. } => node_id,
+            Self::Output { node_id, .. } => node_id,
+        }
+    }
+
+    pub fn get_pos(self, results: &NodeResults) -> Pos2 {
+        match self {
+            Self::Output {
+                node_id: node,
+                output_index,
+            } => results.results.force_get(node).get_output_pos(output_index),
             Self::Input {
-                node,
+                node_id: node,
                 input_index,
                 conn_index,
-            } => data
+            } => results
+                .results
+                .force_get(node)
+                .get_input_pos(input_index, conn_index),
+        }
+    }
+    pub fn get_pos_raw(self, results: &NodeResults) -> Pos2 {
+        match self {
+            Self::Output {
+                node_id: node,
+                output_index,
+            } => results.results.force_get(node).get_output_pos(output_index),
+            Self::Input {
+                node_id: node,
+                input_index,
+                conn_index,
+            } => results
+                .results
                 .force_get(node)
                 .get_input_pos_raw(input_index, conn_index),
         }
