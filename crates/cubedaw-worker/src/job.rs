@@ -76,7 +76,7 @@ impl WorkerJob {
                 let buffer = nodes.process(worker_options, worker_state, input.wait())?;
 
                 let job_to_add = output.lock(|output_buf| {
-                    output_buf.accumulate(&buffer);
+                    output_buf.accumulate(buffer);
                 });
 
                 WorkerJobResult {

@@ -74,9 +74,8 @@ impl Patch {
     }
     pub fn remove_entry(&mut self, node_id: Id<NodeEntry>) -> Option<NodeEntry> {
         let entry = self.nodes.remove(node_id)?;
-        // TODO what do we do in this scenario
         assert!(
-            entry.inputs.is_empty() && entry.outputs.is_empty(),
+            entry.connected_cables(self).next().is_none(),
             "unimplemented :("
         );
         Some(entry)
@@ -273,7 +272,7 @@ impl Patch {
                 .flat_map(|input| input.connections.iter().cloned())
                 .collect();
 
-            for (cable_id, conn) in connections {
+            for (cable_id, _conn) in connections {
                 let Cable {
                     input_node,
                     tag: ref mut cable_tag,
@@ -627,6 +626,17 @@ impl NodeEntry {
             self.outputs.len() <= u32::MAX as usize,
             "you got 4 billion outputs on your node there"
         );
+    }
+
+    pub fn connected_cables(&self, parent: &Patch) -> impl Iterator<Item = Id<Cable>> + '_ {
+        self.inputs()
+            .iter()
+            .flat_map(|input| input.connections.iter().map(|conn| conn.0))
+            .chain(
+                self.outputs()
+                    .iter()
+                    .flat_map(|output| output.connections.iter().copied()),
+            )
     }
 
     pub fn tag(&self) -> NodeTag {

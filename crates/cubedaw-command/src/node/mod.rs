@@ -180,6 +180,7 @@ impl NodeAddOrRemove {
         assert!(self.inputs.is_empty());
         self.inputs
             .extend(node_data.inputs().iter().map(|input| input.bias));
+        self.num_outputs = node_data.outputs().len() as u32;
 
         if self.data.replace(node_data.data).is_some() {
             panic!("called execute_remove on nonempty NodeAddOrRemove");

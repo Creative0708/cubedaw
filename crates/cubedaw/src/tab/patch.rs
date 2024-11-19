@@ -1,9 +1,10 @@
 use std::iter;
 
+use ahash::HashSetExt;
 use anyhow::Result;
 
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
-use cubedaw_lib::{Cable, CableConnection, CableTag, Id, IdMap, NodeData, NodeEntry, Track};
+use cubedaw_lib::{Cable, CableConnection, CableTag, Id, IdMap, IdSet, NodeData, NodeEntry, Track};
 use egui::{emath::TSTransform, pos2, Pos2, Rangef, Rect, Vec2};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
@@ -662,56 +663,56 @@ impl<'a> Prepared<'a> {
                 node_results_map.insert(node_id, result);
             }
 
-            if let Some(node_data) = tab.currently_held_node.take() {
-                if let Some(hover_pos) = viewport_interaction.hover_pos() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
-                    let fake_entry = NodeEntry::new(node_data, 0, 0);
-                    let (result, ..) = Prepared {
-                        tab,
-                        ui,
-                        drag: &mut crate::util::DragHandler::new(),
-                        ui_state,
-                        tracker,
+            if let Some(hover_pos) = viewport_interaction.hover_pos()
+                && let Some(node_data) = tab.currently_held_node.take()
+            {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
+                let fake_entry = NodeEntry::new(node_data, 0, 0);
+                let (result, ..) = Prepared {
+                    tab,
+                    ui,
+                    drag: &mut crate::util::DragHandler::new(),
+                    ui_state,
+                    tracker,
+                    track_id,
+                    patch,
+                    patch_ui,
+                    node_registry,
+                    viewport,
+                    patch_ephemeral,
+                    viewport_interaction,
+                    pointer_pos,
+                    primary_clicked,
+                    secondary_clicked,
+                    screen_hover_pos,
+                }
+                .handle_node(
+                    prepared,
+                    &fake_entry,
+                    None,
+                    &NodeUiState {
+                        selected: true,
+                        pos: hover_pos,
+                        width: 128.0,
+                    },
+                )?;
+                let node_data = fake_entry.data;
+                if primary_clicked {
+                    // place the node
+                    tracker.add(UiNodeAddOrRemove::addition(
+                        Id::arbitrary(),
+                        node_data,
+                        result.inputs.into_iter().map(|input| input.value).collect(),
+                        result.outputs.len() as u32,
                         track_id,
-                        patch,
-                        patch_ui,
-                        node_registry,
-                        viewport,
-                        patch_ephemeral,
-                        viewport_interaction,
-                        pointer_pos,
-                        primary_clicked,
-                        secondary_clicked,
-                        screen_hover_pos,
-                    }
-                    .handle_node(
-                        prepared,
-                        &fake_entry,
-                        None,
-                        &NodeUiState {
+                        NodeUiState {
                             selected: true,
                             pos: hover_pos,
-                            width: 128.0,
+                            width: 128.0, // TODO impl node widths
                         },
-                    )?;
-                    let node_data = fake_entry.data;
-                    if primary_clicked {
-                        // place the node
-                        tracker.add(UiNodeAddOrRemove::addition(
-                            Id::arbitrary(),
-                            node_data,
-                            result.inputs.into_iter().map(|input| input.value).collect(),
-                            result.outputs.len() as u32,
-                            track_id,
-                            NodeUiState {
-                                selected: true,
-                                pos: hover_pos,
-                                width: 128.0, // TODO impl node widths
-                            },
-                        ))
-                    } else if !secondary_clicked {
-                        tab.currently_held_node = Some(node_data);
-                    }
+                    ))
+                } else if secondary_clicked {
+                    // do nothing; since we're never setting currently_held_node to Some(_) after the take(), this deletes the node
                 } else {
                     tab.currently_held_node = Some(node_data);
                 }
@@ -761,7 +762,35 @@ impl<'a> Prepared<'a> {
             }
         }
 
+        if ui.input(|input| input.key_pressed(egui::Key::X)) {
+            self.delete_selected_nodes();
+        }
+
         Ok(result.inner?)
+    }
+
+    fn delete_selected_nodes(&mut self) {
+        let Self {
+            patch_ui,
+            patch,
+            track_id,
+            ref mut tracker,
+            ..
+        } = *self;
+        let mut deleted_cables: IdSet<Cable> = IdSet::new();
+        for (&node_id, node_ui) in &patch_ui.nodes {
+            if !node_ui.selected {
+                continue;
+            }
+            let node = patch.node_entry(node_id).todo();
+
+            for cable_id in node.connected_cables(patch) {
+                if deleted_cables.insert(cable_id) {
+                    tracker.add(CableAddOrRemove::removal(cable_id, track_id));
+                }
+            }
+            tracker.add(UiNodeAddOrRemove::removal(node_id, track_id));
+        }
     }
 
     fn do_cable_interactions(
@@ -830,6 +859,8 @@ impl<'a> Prepared<'a> {
                         });
                     }
                 }
+
+                // add a strong command to allow for possible deletion later (so we don't delete another state command accidentally)
                 tracker.add(crate::command::Noop);
             }
         }
@@ -911,7 +942,6 @@ impl<'a> Prepared<'a> {
                         ));
                         tracker.add_weak(CableAddOrRemove::removal(cable_id, track_id));
 
-                        dbg!();
                         tracker.add_weak(CableAddOrRemove::addition(
                             currently_drawn_cable.id,
                             cable,
