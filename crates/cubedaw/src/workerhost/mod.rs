@@ -50,6 +50,11 @@ impl WorkerHostHandle {
             .send(AppToWorkerHostEvent::SwitchAudioDevice(device))
             .expect("channel closed???");
     }
+
+    pub fn reset(&mut self) {
+        self.tx.send(AppToWorkerHostEvent::Reset);
+    }
+
     pub fn start_processing(&mut self, from: i64) {
         self.tx
             .send(AppToWorkerHostEvent::StartPlaying { from })
@@ -128,6 +133,8 @@ enum AppToWorkerHostEvent {
         from: i64,
     },
     StopPlaying,
+    // Stop all notes from playing
+    Reset,
     UpdatePlayheadPos(i64),
     Commands {
         commands: Box<[Box<dyn StateCommandWrapper>]>,
@@ -193,6 +200,9 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 }
                 AppToWorkerHostEvent::StopPlaying => {
                     is_playing = false;
+                }
+                AppToWorkerHostEvent::Reset => {
+                    idle_host.stop_all_processing();
                 }
                 AppToWorkerHostEvent::UpdatePlayheadPos(pos) => {
                     playhead_pos = cubedaw_lib::PreciseSongPos::from_song_pos(pos);

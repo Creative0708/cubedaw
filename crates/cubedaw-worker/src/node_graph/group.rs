@@ -26,7 +26,7 @@ impl GroupNodeGraph {
         self.0
             .get_node_mut(track_output)
             .expect("unreachable")
-            .outputs = vec![Buffer::new_box_zeroed(options.buffer_size)];
+            .add_dummy_output(options);
 
         Ok(())
     }
@@ -36,13 +36,13 @@ impl GroupNodeGraph {
         options: &WorkerOptions,
         state: &mut WorkerState,
         input_buf: &Buffer,
-    ) -> Result<&mut Buffer> {
+    ) -> Result<&Buffer> {
         let input_node = self
             .0
             .get_node_mut(self.0.input_node().expect("unreachable"))
             .expect("unreachable");
         if let Some(input_node_buf) = input_node.outputs.first_mut() {
-            input_node_buf.copy_from(input_buf);
+            input_node_buf.buffer.copy_from(input_buf);
         }
 
         self.0.process(options, state)?;
@@ -51,6 +51,10 @@ impl GroupNodeGraph {
             .0
             .get_node_mut(self.0.output_node())
             .expect("unreachable");
-        Ok(&mut output_node.outputs[0])
+        Ok(&output_node.outputs[0].buffer)
+    }
+
+    pub fn reset(&mut self) {
+        self.0.reset();
     }
 }

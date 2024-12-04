@@ -2,11 +2,13 @@
 // mod note;
 // mod section_track;
 
+use std::u32;
+
 use ahash::HashSetExt;
 use cubedaw_lib::{Buffer, Id, IdMap, IdSet, InternalBufferType, NodeEntry, Patch};
 use resourcekey::ResourceKey;
 
-use crate::{WorkerOptions, WorkerState};
+use crate::{WorkerOptions, WorkerState, util};
 
 mod group;
 pub use group::GroupNodeGraph;
@@ -16,6 +18,7 @@ mod synth_track;
 pub use synth_track::SynthTrackNodeGraph;
 
 #[derive(Clone, Debug)]
+/// A node graph. This is designed for fast updates and interactivity instead of performance.
 pub struct PreparedNodeGraph {
     input_node: Option<Id<NodeEntry>>,
     output_node: Id<NodeEntry>,
@@ -25,18 +28,18 @@ pub struct PreparedNodeGraph {
 }
 
 impl PreparedNodeGraph {
-    pub fn new(
-        patch: &Patch,
-        options: &WorkerOptions,
-        input_node: Option<Id<NodeEntry>>,
-        output_node: Id<NodeEntry>,
-    ) -> Self {
-        let mut this = Self::empty(input_node, output_node);
+    // pub fn new(
+    //     patch: &Patch,
+    //     options: &WorkerOptions,
+    //     input_node: Option<Id<NodeEntry>>,
+    //     output_node: Id<NodeEntry>,
+    // ) -> Self {
+    //     let mut this = Self::empty(input_node, output_node);
 
-        this.sync_with(patch, options, input_node, output_node);
+    //     this.sync_with(patch, options, input_node, output_node);
 
-        this
-    }
+    //     this
+    // }
 
     // this could be optimized to incrementally update the nodes when the graph is changed
     // but an O(n) change is fine because rendering is also O(n) and the performance impact is (probably) negligible.
@@ -51,11 +54,11 @@ impl PreparedNodeGraph {
         self.input_node = input_node;
         self.output_node = output_node;
 
-        let mut node_id_to_vec_index_map = IdMap::new();
+        let mut node_id_to_vec_index_map: IdMap<NodeEntry, u32> = IdMap::new();
 
-        let mut old_node_inners = IdMap::new();
+        let mut prev_entries: IdMap<NodeEntry, NodeGraphEntry> = IdMap::new();
         for graph_entry in self.nodes.drain(..) {
-            old_node_inners.insert(graph_entry.node_id, graph_entry.state);
+            prev_entries.insert(graph_entry.node_id, graph_entry);
         }
 
         // simple topo sort algo. TODO possibly replace with a faster one
@@ -108,6 +111,7 @@ impl PreparedNodeGraph {
                         node_id: input_node,
                         args: Box::new([]),
                         state: Box::new([]),
+                        original_state: Box::new([]),
                     });
                 }
             }
@@ -116,16 +120,68 @@ impl PreparedNodeGraph {
         while let Some(node_id) = zero_indegree_node_stack.pop() {
             let node = patch.node_entry(node_id).expect("unreachable");
 
-            node_id_to_vec_index_map.insert(node_id, self.nodes.len() as u32);
-            self.nodes.push(NodeGraphEntry {
+            let mut entry = prev_entries.remove(node_id).unwrap_or_else(|| {
+                let entry = options.registry.get(&node.data.key).expect("unreachable");
+                let state = (entry.node_factory)(&node.data.inner);
+                NodeGraphEntry {
+                    node_id,
+                    key: node.data.key.clone(),
+
+                    original_state: state.clone(),
+                    state,
+
+                    // these will be overwritten by the code below
+                    args: Default::default(),
+                    inputs: Default::default(),
+                    outputs: Default::default(),
+                }
+            });
+
+            entry
+                .inputs
+                .resize_with(node.inputs().len(), || NodeGraphInput {
+                    connections: Default::default(),
+                    bias: Default::default(),
+                    buffer: Buffer::new_box_zeroed(options.buffer_size),
+                });
+            for (node_input, graph_input) in node.inputs().iter().zip(entry.inputs.iter_mut()) {
+                graph_input.connections.resize_with(
+                    node_input.connections.len(),
+                    // dummy values
+                    || NodeGraphCableConnection {
+                        connection: u32::MAX,
+                        output_index: u32::MAX,
+                        multiplier: InterpolatedValue::default(),
+                    },
+                );
+                for (cable, graph_connection) in node_input
+                    .connected_cables()
+                    .zip(graph_input.connections.iter_mut())
+                {
+                    let cable = patch.cable(cable).expect("unreachable");
+                    graph_connection.connection = *node_id_to_vec_index_map.get(cable.input_node).expect("node reachable with cables but not in map; this indicates an error in preprocessing");
+                    graph_connection
+                        .multiplier
+                        .set_raw(cable.node_input_connection(patch).multiplier);
+                    graph_connection.output_index = cable.input_output_index;
+                }
+
+                graph_input.bias.set_raw(node_input.bias);
+            }
+
+            entry
+                .outputs
+                .resize_with(node.outputs().len(), || NodeGraphOutput {
+                    buffer: Buffer::new_box_zeroed(options.buffer_size),
+                });
+
+            /*
+            NodeGraphEntry {
                 node_id,
                 args: node.data.inner.clone(),
                 key: node.data.key.clone(),
 
-                state: old_node_inners.remove(node_id).unwrap_or_else(|| {
-                    let entry = options.registry.get(&node.data.key).expect("unreachable");
-                    (entry.node_factory)(&node.data.inner)
-                }),
+                state: prev_node_state.current,
                 inputs: node
                     .inputs()
                     .iter()
@@ -137,7 +193,9 @@ impl PreparedNodeGraph {
                                     let cable = patch
                                         .cable(cable_id)
                                         .expect("node connected to nonexistent cable");
-                                    (
+                                    CableConnection{
+                                        connection:
+
                                         *node_id_to_vec_index_map
                                             .get(cable.input_node)
                                             .unwrap_or_else(|| {
@@ -146,9 +204,9 @@ impl PreparedNodeGraph {
                                                     cable, &node_id_to_vec_index_map
                                                 )
                                             }),
-                                        cable.input_output_index,
-                                        cable.node_input_connection(patch).1.multiplier,
-                                    )
+                                        output_index: cable.input_output_index,
+                                        multiplier: InterpolatedValue { raw_value: (), interpolated_value: () }cable.node_input_connection(patch).1.multiplier,
+                        }
                                 })
                                 .collect()
                         },
@@ -161,7 +219,15 @@ impl PreparedNodeGraph {
                     .iter()
                     .map(|_output| Buffer::new_box_zeroed(options.buffer_size))
                     .collect(),
-            });
+
+                original_state: prev_node_state.original,
+            }
+            */
+
+            entry.args.clone_from(&node.data.inner);
+
+            node_id_to_vec_index_map.insert(node_id, self.nodes.len() as u32);
+            self.nodes.push(entry);
 
             if node_id != output_node {
                 // decrement indegrees
@@ -235,30 +301,23 @@ impl PreparedNodeGraph {
             };
 
             for input in &mut node.inputs {
-                input.buffer.fill(input.bias);
-                for &(connection, output_index, multiplier) in &input.connections {
+                input.bias.fill_buffer(&mut input.buffer);
+                for &mut NodeGraphCableConnection {
+                    connection,
+                    output_index,
+                    ref mut multiplier,
+                } in &mut input.connections
+                {
                     let connected_node = &previous_nodes[connection as usize];
-                    let zipped = connected_node.outputs[output_index as usize]
-                        .iter()
-                        .zip(input.buffer.iter_mut());
 
-                    match multiplier {
-                        0.0 => (),
-                        1.0 => {
-                            for (conn_val, buf_val) in zipped {
-                                *buf_val += conn_val;
-                            }
-                        }
-                        -1.0 => {
-                            for (conn_val, buf_val) in zipped {
-                                *buf_val -= conn_val;
-                            }
-                        }
-                        multiplier => {
-                            for (conn_val, buf_val) in zipped {
-                                *buf_val += conn_val * multiplier;
-                            }
-                        }
+                    for ((conn_val, buf_val), multiplier) in connected_node.outputs
+                        [output_index as usize]
+                        .buffer
+                        .iter()
+                        .zip(input.buffer.iter_mut())
+                        .zip(multiplier.iter())
+                    {
+                        *buf_val += conn_val * multiplier;
                     }
                 }
             }
@@ -268,7 +327,7 @@ impl PreparedNodeGraph {
                 .get(&node.key)
                 .expect("desynced node graph");
             match registry_entry.plugin_data {
-                Some(ref _plugin_data) => {
+                Some(ref plugin_data) => {
                     let mut plugin = state
                         .standalone_instances
                         .get(&node.key)
@@ -292,41 +351,38 @@ impl PreparedNodeGraph {
                         let data = plugin.store_mut().data_mut();
 
                         for (output_idx, output) in node.outputs.iter_mut().enumerate() {
-                            output.as_internal_mut()[sample_idx] = data.outputs[output_idx];
+                            output.buffer.as_internal_mut()[sample_idx] = data.outputs[output_idx];
                         }
                     }
                 }
                 None => {
                     // special passthrough logic
                     for (input, output) in node.inputs.iter().zip(node.outputs.iter_mut()) {
-                        output.copy_from(&input.buffer);
+                        output.buffer.copy_from(&input.buffer);
                     }
                 }
             }
-
-            // node.inner.process(
-            //     &*node.state,
-            //     &mut CubedawNodeContext {
-            //         worker_options,
-            //         previous_nodes,
-            //         inputs: &inputs_vec,
-            //         outputs: &mut node.outputs,
-            //     },
-            // );
         }
         Ok(())
+    }
+
+    pub fn reset(&mut self) {
+        for node in &mut self.nodes {
+            node.reset();
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct NodeGraphEntry {
-    pub state: Box<[u8]>,
-    pub inputs: Vec<NodeGraphInput>,
-    pub outputs: Vec<Box<Buffer>>,
+    state: Box<[u8]>,
+    inputs: Vec<NodeGraphInput>,
+    outputs: Vec<NodeGraphOutput>,
 
-    pub key: ResourceKey,
-    pub node_id: Id<NodeEntry>,
-    pub args: Box<[u8]>,
+    key: ResourceKey,
+    node_id: Id<NodeEntry>,
+    args: Box<[u8]>,
+    original_state: Box<[u8]>,
 }
 impl std::fmt::Debug for NodeGraphEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -340,12 +396,81 @@ impl std::fmt::Debug for NodeGraphEntry {
             .finish()
     }
 }
+impl NodeGraphEntry {
+    fn reset(&mut self) {
+        self.state.copy_from_slice(&self.original_state);
+    }
+
+    pub fn add_dummy_output(&mut self, options: &WorkerOptions) {
+        self.outputs = vec![NodeGraphOutput {
+            buffer: Buffer::new_box_zeroed(options.buffer_size),
+        }];
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct InterpolatedValue {
+    raw_value: f32,
+    interpolated_value: f32,
+}
+impl Default for InterpolatedValue {
+    fn default() -> Self {
+        Self {
+            raw_value: f32::NAN,
+            interpolated_value: f32::NAN,
+        }
+    }
+}
+impl InterpolatedValue {
+    pub fn set_raw(&mut self, val: f32) {
+        self.raw_value = val;
+        if self.interpolated_value.is_nan() {
+            self.interpolated_value = val;
+        }
+    }
+    pub fn fill_buffer(&mut self, buf: &mut [f32]) {
+        for (val, dst) in self.iter().zip(buf) {
+            *dst = val;
+        }
+    }
+    pub fn iter(&mut self) -> impl Iterator<Item = f32> {
+        let is_raw = if (self.raw_value - self.interpolated_value).abs() < f32::EPSILON {
+            self.interpolated_value = self.raw_value;
+            true
+        } else {
+            false
+        };
+        gen move {
+            loop {
+                if is_raw {
+                    yield self.raw_value;
+                } else {
+                    yield self.interpolated_value;
+                    // TODO: not hardcode this. this should also be dependent on the sample rate
+                    self.interpolated_value =
+                        util::lerp(self.interpolated_value, self.raw_value, 0.005);
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
-pub struct NodeGraphInput {
-    connections: Vec<(u32, u32, f32)>,
-    bias: f32,
+struct NodeGraphInput {
+    connections: Vec<NodeGraphCableConnection>,
+    bias: InterpolatedValue,
     buffer: Box<Buffer>,
+}
+#[derive(Clone)]
+struct NodeGraphOutput {
+    buffer: Box<Buffer>,
+}
+
+#[derive(Clone, Debug)]
+struct NodeGraphCableConnection {
+    connection: u32,
+    output_index: u32,
+    multiplier: InterpolatedValue,
 }
 
 impl std::fmt::Debug for NodeGraphInput {

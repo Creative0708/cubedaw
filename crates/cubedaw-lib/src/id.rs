@@ -207,21 +207,6 @@ impl<T, V> IdMap<T, V> {
         self.insert(id, val);
         self.get_mut(id).unwrap_or_else(|| unreachable!())
     }
-    // pub fn create(&mut self, val: V) -> Id<T> {
-    //     let id = Id::arbitrary();
-    //     self.set(id, val);
-    //     id
-    // }
-    // pub fn create_and_get_mut(&mut self, val: V) -> (Id<T>, &mut V) {
-    //     let id = Id::arbitrary();
-    //     (
-    //         id,
-    //         self.map
-    //             .entry(id)
-    //             .and_modify(|_| panic!("hash collision in IdMap"))
-    //             .or_insert(val),
-    //     )
-    // }
 
     pub fn remove(&mut self, id: Id<T>) -> Option<V> {
         // if let Some(ref mut events) = self.events {
@@ -232,6 +217,9 @@ impl<T, V> IdMap<T, V> {
     pub fn take(&mut self, id: Id<T>) -> V {
         self.remove(id)
             .unwrap_or_else(|| panic!("nonexistent id: {id:?}"))
+    }
+    pub fn clear(&mut self) {
+        self.map.clear();
     }
 
     // TODO make these functions give Id<T> instead of &Id<T>

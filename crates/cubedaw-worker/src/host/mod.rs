@@ -78,8 +78,14 @@ impl WorkerHost {
 
     /// Delete all currently processing jobs. This will result in silence
     pub fn stop_all_processing(&mut self) {
-        // TODO: there's no good way to "reset" a ProcessedNodeGraph yet
-        todo!()
+        for track_state in self.worker_state.section_tracks.values_mut() {
+            track_state.live_notes.clear();
+            track_state.notes.clear();
+            track_state.track_nodes.reset();
+        }
+        for track_state in self.worker_state.group_tracks.values_mut() {
+            track_state.nodes.reset();
+        }
     }
 
     pub fn options(&self) -> &WorkerOptions {
@@ -330,7 +336,7 @@ fn add_jobs(
         sync_buffer: &'static WorkerJobSyncBuffer,
         job: WorkerJob,
     }
-    let mut track_temp_map = IdMap::new();
+    let mut track_temp_map: IdMap<cubedaw_lib::Track, TrackTempData> = IdMap::new();
 
     // required due to borrowing rules
     let mut section_track_id_to_mutable_reference_to_section_track_data: IdMap<_, &'static mut _> =
@@ -432,7 +438,6 @@ fn add_jobs(
                             for (_start_pos, note_id, _note) in section.note_start_positions_in(
                                 section_range.intersect(song_range_that_we_will_process),
                             ) {
-                                dbg!(note_id);
                                 worker_track_data.notes.insert(
                                     note_id,
                                     WorkerNoteState {

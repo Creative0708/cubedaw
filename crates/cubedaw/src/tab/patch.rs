@@ -784,7 +784,7 @@ impl<'a> Prepared<'a> {
             }
             let node = patch.node_entry(node_id).todo();
 
-            for cable_id in node.connected_cables(patch) {
+            for cable_id in node.connected_cables() {
                 if deleted_cables.insert(cable_id) {
                     tracker.add(CableAddOrRemove::removal(cable_id, track_id));
                 }

@@ -6,6 +6,8 @@
 #![feature(float_next_up_down)]
 #![feature(cfg_boolean_literals)]
 #![feature(if_let_guard)]
+#![feature(gen_blocks)]
+#![feature(coroutines)]
 #![allow(clippy::new_without_default)] // useless, cubedaw isn't a library so default impls aren't necessary
 #![forbid(unsafe_op_in_unsafe_fn)]
 
@@ -18,7 +20,6 @@ mod state;
 pub mod tab;
 pub mod util;
 pub use state::{ephemeral::EphemeralState, ui::UiState};
-mod audio;
 mod command;
 pub mod dbg;
 mod node;

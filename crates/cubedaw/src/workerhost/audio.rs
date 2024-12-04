@@ -39,13 +39,12 @@ impl CpalAudioHandler {
             CpalAudioHandlerState::Offline => panic!("can't open an audio handler with no device!"),
             CpalAudioHandlerState::Closed { audio_device } => {
                 let (tx, rx) = crossbeam_channel::bounded::<InternalBufferType>(
-                    options.buffer_size as usize / InternalBufferType::N * 4,
+                    options.buffer_size as usize / InternalBufferType::N * 16,
                 ); // TODO make configurable
 
                 let mut ring_buffer: VecDeque<f32> =
                     VecDeque::with_capacity(options.buffer_size as usize * 2);
                 // ring_buffer.extend(std::iter::repeat_n(0.0, options.buffer_size as usize));
-                dbg!(options.buffer_size, options.sample_rate);
                 CpalAudioHandlerState::Open {
                     audio_stream: audio_device
                         .build_output_stream(
@@ -61,7 +60,7 @@ impl CpalAudioHandler {
                                             rx.try_recv()
                                                 .unwrap_or_else(|_| {
                                                     // TODO: keep track of buffer underflows
-                                                    eprintln!("buffer underflow :(");
+                                                    // eprintln!("buffer underflow :(");
                                                     bytemuck::zeroed()
                                                 })
                                                 .as_array(),

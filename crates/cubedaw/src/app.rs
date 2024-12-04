@@ -322,6 +322,7 @@ impl eframe::App for CubedawApp {
                 ));
             }
             if !self.worker_host.is_playing() {
+                self.worker_host.reset();
                 self.worker_host
                     .start_processing(self.ui_state.playhead_pos);
             } else {
@@ -377,9 +378,9 @@ impl eframe::App for CubedawApp {
         }
 
         // final stuff
-        // if self.worker_host.is_playing() {
-        //     egui_ctx.request_repaint();
-        // }
+        if self.worker_host.is_playing() {
+            egui_ctx.request_repaint();
+        }
     }
 }
 

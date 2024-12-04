@@ -3,8 +3,8 @@ use cubedaw_lib::{
 };
 
 use crate::{
-    node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
     WorkerOptions,
+    node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
 };
 
 #[derive(Debug)]
@@ -136,6 +136,7 @@ pub struct WorkerSectionTrackState {
     pub track_nodes: SynthTrackNodeGraph,
     pub note_nodes: SynthNoteNodeGraph,
 
+    // TODO: switch these to vec for optimization purposes (when necessary)
     pub notes: IdMap<Note, WorkerNoteState>,
     pub live_notes: IdMap<Note, WorkerLiveNoteState>,
 }
@@ -329,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_empty_functions() {
-        let options = WorkerOptions::default();
+        let options = WorkerOptions::new(Default::default());
 
         {
             let track = Track::new_section(Patch::new());

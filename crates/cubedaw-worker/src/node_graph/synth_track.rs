@@ -13,10 +13,10 @@ impl SynthTrackNodeGraph {
         Self(PreparedNodeGraph::empty(None, Id::invalid()))
     }
     pub fn sync_with(&mut self, patch: &Patch, options: &WorkerOptions) -> anyhow::Result<()> {
-        let mut track_output = patch
+        let track_output = patch
             .get_active_node(&resourcekey::literal!("builtin:track_output"))
             .context("no track output exists")?;
-        let mut note_output = patch
+        let note_output = patch
             .get_active_node(&resourcekey::literal!("builtin:note_output"))
             .context("no note output exists")?;
 
@@ -26,7 +26,7 @@ impl SynthTrackNodeGraph {
         self.0
             .get_node_mut(track_output)
             .expect("unreachable")
-            .outputs = vec![Buffer::new_box_zeroed(options.buffer_size)];
+            .add_dummy_output(options);
 
         Ok(())
     }
@@ -36,19 +36,22 @@ impl SynthTrackNodeGraph {
         options: &WorkerOptions,
         state: &mut WorkerState,
         input: &Buffer,
-    ) -> Result<&mut Buffer> {
+    ) -> Result<&Buffer> {
         let input_node = self
             .0
             .get_node_mut(self.0.input_node().expect("unreachable"))
             .expect("unreachable");
-        input_node.outputs[0].copy_from(input);
+        if let Some(input_buf) = input_node.outputs.first_mut() {
+            input_buf.buffer.copy_from(input);
+        }
 
-        self.0.process(options, state);
+        self.0.process(options, state)?;
 
-        let output_node = self
-            .0
-            .get_node_mut(self.0.output_node())
-            .expect("unreachable");
-        Ok(&mut output_node.outputs[0])
+        let output_node = self.0.get_node(self.0.output_node()).expect("unreachable");
+        Ok(&output_node.outputs[0].buffer)
+    }
+
+    pub fn reset(&mut self) {
+        self.0.reset();
     }
 }

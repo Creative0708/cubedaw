@@ -23,17 +23,13 @@ impl SynthNoteNodeGraph {
         Ok(())
     }
 
-    pub fn process(
-        &mut self,
-        options: &WorkerOptions,
-        state: &mut WorkerState,
-    ) -> Result<&mut Buffer> {
+    pub fn process(&mut self, options: &WorkerOptions, state: &mut WorkerState) -> Result<&Buffer> {
         self.0.process(options, state)?;
 
         let output_node = self
             .0
             .get_node_mut(self.0.output_node())
             .expect("unreachable");
-        Ok(&mut output_node.outputs[0])
+        Ok(&output_node.outputs[0].buffer)
     }
 }

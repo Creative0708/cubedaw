@@ -39,24 +39,6 @@ impl std::fmt::Debug for DynNodeFactory {
     }
 }
 
-// pub struct NodeStateFactory(pub Box<dyn Send + Sync + Fn(NodeCreationContext) -> Box<u8>>);
-// impl ops::Deref for NodeStateFactory {
-//     type Target = dyn Send + Sync + Fn(NodeCreationContext) -> DynNodeState;
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-// impl ops::DerefMut for NodeStateFactory {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.0
-//     }
-// }
-// impl std::fmt::Debug for NodeStateFactory {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "NodeStateFactory {{ <{:?}> }}", self as *const _)
-//     }
-// }
-
 /// Global registry for all of the nodes. All the instantiation of WebAssembly shenanigans occur with this.
 ///
 /// This is shared across all workers and is read-only. This is changed whenever a plugin is loaded/unloaded.

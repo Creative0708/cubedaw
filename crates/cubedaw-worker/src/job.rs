@@ -2,10 +2,10 @@ use anyhow::Result;
 use cubedaw_lib::{Buffer, Id, Note, PreciseSongPos, Track};
 
 use crate::{
+    WorkerState,
     node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
     sync,
     worker::WorkerScratch,
-    WorkerState,
 };
 
 #[derive(Debug)]

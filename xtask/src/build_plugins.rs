@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use xshell::{cmd, Shell};
+use xshell::{Shell, cmd};
 
 pub fn run() -> Result<()> {
     let ctx = crate::Context::get();
@@ -18,6 +18,7 @@ pub fn run() -> Result<()> {
     .context("invalid rust-toolchain.toml")?
     .to_owned();
 
+    #[allow(unexpected_cfgs)]
     cmd!(
         sh,
         "cargo +{toolchain} build --release -p cubedaw-default-nodes"

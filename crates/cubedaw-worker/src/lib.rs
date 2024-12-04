@@ -1,3 +1,6 @@
+#![feature(coroutines)]
+#![feature(gen_blocks)]
+
 mod common;
 pub mod host;
 mod plugin;
@@ -10,6 +13,8 @@ mod state;
 pub(crate) use state::WorkerState;
 
 pub mod sync;
+
+mod util;
 
 mod job;
 pub(crate) use job::{NoteDescriptor, WorkerJob};

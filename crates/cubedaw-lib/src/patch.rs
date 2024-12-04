@@ -47,27 +47,24 @@ impl Patch {
             u32::MAX
         );
 
-        self.nodes.insert(
-            node_id,
-            NodeEntry {
-                tag: self.get_node_tag_if_added(&node),
+        self.nodes.insert(node_id, NodeEntry {
+            tag: self.get_node_tag_if_added(&node),
 
-                data: node,
-                inputs: inputs
-                    .into_iter()
-                    .map(|bias| NodeInput {
-                        bias,
-                        connections: Vec::new(),
-                    })
-                    .collect(),
-                outputs: vec![
-                    NodeOutput {
-                        connections: Vec::new(),
-                    };
-                    num_outputs as usize
-                ],
-            },
-        );
+            data: node,
+            inputs: inputs
+                .into_iter()
+                .map(|bias| NodeInput {
+                    bias,
+                    connections: Vec::new(),
+                })
+                .collect(),
+            outputs: vec![
+                NodeOutput {
+                    connections: Vec::new(),
+                };
+                num_outputs as usize
+            ],
+        });
     }
     pub fn remove_node(&mut self, node_id: Id<NodeEntry>) -> Option<NodeData> {
         Some(self.remove_entry(node_id)?.data)
@@ -75,7 +72,7 @@ impl Patch {
     pub fn remove_entry(&mut self, node_id: Id<NodeEntry>) -> Option<NodeEntry> {
         let entry = self.nodes.remove(node_id)?;
         assert!(
-            entry.connected_cables(self).next().is_none(),
+            entry.connected_cables().next().is_none(),
             "unimplemented :("
         );
         Some(entry)
@@ -450,9 +447,9 @@ impl Cable {
     pub fn node_input<'a>(&self, patch: &'a Patch) -> &'a NodeInput {
         &self.output_node(patch).inputs[self.output_input_index as usize]
     }
-    pub fn node_input_connection<'a>(&self, patch: &'a Patch) -> (Id<Cable>, &'a CableConnection) {
-        let (id, ref cable) = self.node_input(patch).connections[self.output_cable_index as usize];
-        (id, cable)
+    pub fn node_input_connection<'a>(&self, patch: &'a Patch) -> &'a CableConnection {
+        let (_id, ref cable) = self.node_input(patch).connections[self.output_cable_index as usize];
+        cable
     }
 
     pub fn assert_valid(&self, patch: &Patch) {
@@ -475,7 +472,9 @@ impl Cable {
             (CableTag::Disconnected, _, NodeTag::Note | NodeTag::Track | NodeTag::Special) => true,
             _ => false,
         } {
-            panic!("incompatible node tags for cable {self:?}\ninput: {input_node:#?}\noutput: {output_node:#?}");
+            panic!(
+                "incompatible node tags for cable {self:?}\ninput: {input_node:#?}\noutput: {output_node:#?}"
+            );
         }
     }
 }
@@ -628,7 +627,7 @@ impl NodeEntry {
         );
     }
 
-    pub fn connected_cables(&self, parent: &Patch) -> impl Iterator<Item = Id<Cable>> + '_ {
+    pub fn connected_cables(&self) -> impl Iterator<Item = Id<Cable>> + '_ {
         self.inputs()
             .iter()
             .flat_map(|input| input.connections.iter().map(|conn| conn.0))
