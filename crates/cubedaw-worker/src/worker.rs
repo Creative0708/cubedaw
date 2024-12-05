@@ -6,10 +6,10 @@ use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
 use crate::{
+    WorkerJob, WorkerState,
     common::{HostToWorkerEvent, WorkerToHostEvent},
     plugin::standalone::StandalonePluginFactory,
     registry::NodeRegistry,
-    WorkerJob, WorkerState,
 };
 
 pub fn run_forever(
@@ -106,7 +106,7 @@ impl WorkerOptions {
             num_workers: 1, // TODO remove
 
             sample_rate: 44100,
-            buffer_size: 256,
+            buffer_size: 512,
 
             registry,
         };

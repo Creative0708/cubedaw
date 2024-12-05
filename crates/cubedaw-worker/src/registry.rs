@@ -2,7 +2,7 @@ use std::{ops, sync::Arc};
 
 use ahash::{HashMap, HashMapExt};
 use cubedaw_plugin::Plugin;
-use cubedaw_wasm::{wasmtime::V128 as OtherV128, V128};
+use cubedaw_wasm::{V128, wasmtime::V128 as OtherV128};
 use resourcekey::ResourceKey;
 
 use crate::plugin::standalone::StandalonePluginParameters;
@@ -110,14 +110,11 @@ impl NodeRegistry {
     }
 
     fn register_dummy_node(&mut self, key: ResourceKey) {
-        self.entries.insert(
-            key.clone(),
-            NodeRegistryEntry {
-                key,
-                node_factory: DynNodeFactory(Box::new(|_| Box::new([]))),
-                plugin_data: None,
-            },
-        );
+        self.entries.insert(key.clone(), NodeRegistryEntry {
+            key,
+            node_factory: DynNodeFactory(Box::new(|_| Box::new([]))),
+            plugin_data: None,
+        });
     }
 
     // TODO: passing in dyn_node_factories as a parameter is a terrible hack
@@ -131,16 +128,13 @@ impl NodeRegistry {
         let plugin_data = Arc::new(PluginData { plugin });
         for key in plugin_data.plugin.exported_nodes() {
             self.entries
-                .insert(
-                    key.clone(),
-                    NodeRegistryEntry {
-                        key: key.clone(),
-                        node_factory: dyn_node_factories.remove(key).unwrap_or_else(|| {
-                            panic!("dyn_node_factories didn't contain an entry for {key:?}")
-                        }),
-                        plugin_data: Some(plugin_data.clone()),
-                    },
-                )
+                .insert(key.clone(), NodeRegistryEntry {
+                    key: key.clone(),
+                    node_factory: dyn_node_factories.remove(key).unwrap_or_else(|| {
+                        panic!("dyn_node_factories didn't contain an entry for {key:?}")
+                    }),
+                    plugin_data: Some(plugin_data.clone()),
+                })
                 .inspect(|entry| {
                     panic!("plugin key collision for {}", entry.key);
                 });
@@ -188,6 +182,7 @@ impl std::fmt::Debug for NodeRegistry {
 pub struct NodeRegistryEntry {
     pub key: ResourceKey,
     pub node_factory: DynNodeFactory,
+    // None if this is a builtin node, Some(data) if not
     pub plugin_data: Option<Arc<PluginData>>,
 }
 

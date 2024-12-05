@@ -144,9 +144,7 @@ impl Clone for Box<Buffer> {
 
 impl From<&'_ Buffer> for Box<Buffer> {
     fn from(value: &Buffer) -> Self {
-        Buffer::new_box(bytemuck::cast_slice_box(Box::<[InternalBufferType]>::from(
-            value.as_internal(),
-        )))
+        Buffer::new_box(Box::<[InternalBufferType]>::from(value.as_internal()))
     }
 }
 
@@ -160,12 +158,27 @@ impl fmt::Debug for Buffer {
             struct DebugListHelper<'a>(&'a Buffer);
             impl<'a> std::fmt::Debug for DebugListHelper<'a> {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.debug_list()
-                        .entry(&self.0[0])
-                        .entry(&self.0[1])
-                        .entry(&self.0[2])
-                        .entry(&format_args!("... length {}", &self.0.len()))
-                        .finish()
+                    let list: &[f32] = self.0;
+                    if list.len() <= 16 {
+                        list.fmt(f)
+                    } else {
+                        let (min, max, sum) = list
+                            .iter()
+                            .copied()
+                            .fold((0.0f32, 0.0f32, 0.0f32), |(min, max, sum), val| {
+                                (min.min(val), max.max(val), sum + val)
+                            });
+                        // uiua-like list formatting
+                        // https://www.uiua.org/pad?src=0_14_0-dev_6__4oehMTAwMDAwCg==
+                        write!(
+                            f,
+                            "[{}: {:.3}-{:.3} ~{:.3}]",
+                            list.len(),
+                            min,
+                            max,
+                            sum / list.len() as f32
+                        )
+                    }
                 }
             }
             f.debug_tuple("Buffer")

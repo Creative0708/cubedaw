@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, io::Write};
 
 use cpal::traits::DeviceTrait;
 use cubedaw_lib::InternalBufferType;
@@ -71,13 +71,16 @@ impl CpalAudioHandler {
                                     *val = unclamped_val.clamp(-1.0, 1.0);
                                 }
 
-                                // let max = buffer.iter().copied().map(f32::abs).fold(0.0, f32::max);
-                                // use std::time::SystemTime;
-                                // let millis = SystemTime::now()
-                                //     .duration_since(SystemTime::UNIX_EPOCH)
-                                //     .unwrap()
-                                //     .subsec_millis();
-                                // println!("{millis:03}ms: max {max}");
+                                // for debugging purposes
+                                let max = buffer.iter().copied().map(f32::abs).fold(0.0, f32::max);
+                                use std::time::SystemTime;
+                                let millis = SystemTime::now()
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .subsec_millis();
+                                let mut stdout = std::io::stdout();
+                                write!(&mut stdout, " {millis:03}ms: max {max}\r").unwrap();
+                                stdout.flush().unwrap();
                             },
                             |err| todo!("{err:?}"),
                             None,

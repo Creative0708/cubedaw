@@ -115,7 +115,10 @@ impl WorkerHostState {
                     }
                 }
                 cubedaw_lib::TrackInner::Section(inner) => {
-                    if !self.section_tracks.has(track_id) {
+                    if let Some(worker_track) = self.section_tracks.get_mut(track_id) {
+                        // TODO only do this when the patch is mutated
+                        worker_track.sync_with(track, inner, worker_options)?;
+                    } else {
                         dbg!(&track.patch);
                         self.section_tracks.insert(
                             track_id,

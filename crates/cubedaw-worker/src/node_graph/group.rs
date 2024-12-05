@@ -43,6 +43,8 @@ impl GroupNodeGraph {
             .expect("unreachable");
         if let Some(input_node_buf) = input_node.outputs.first_mut() {
             input_node_buf.buffer.copy_from(input_buf);
+        } else {
+            panic!();
         }
 
         self.0.process(options, state)?;

@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{Cable, CableConnection, CableTag, Id, IdMap, IdSet, NodeData, NodeEntry, Track};
-use egui::{emath::TSTransform, pos2, Pos2, Rangef, Rect, Vec2};
+use egui::{Pos2, Rangef, Rect, Vec2, emath::TSTransform, pos2};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
@@ -382,8 +382,7 @@ impl<'a> Prepared<'a> {
                 .id_salt(node_id.unwrap_or(Id::new("currently_held_node"))),
         );
         if tab.currently_held_node.is_some() {
-            // TODO make ui uninteractable without setting fade out color
-            // frame_ui.disable()
+            frame_ui.disable();
         }
         if node_id.is_some()
             && !node_max_rect.intersects(viewport)
@@ -686,16 +685,11 @@ impl<'a> Prepared<'a> {
                     secondary_clicked,
                     screen_hover_pos,
                 }
-                .handle_node(
-                    prepared,
-                    &fake_entry,
-                    None,
-                    &NodeUiState {
-                        selected: true,
-                        pos: hover_pos,
-                        width: 128.0,
-                    },
-                )?;
+                .handle_node(prepared, &fake_entry, None, &NodeUiState {
+                    selected: true,
+                    pos: hover_pos,
+                    width: 128.0,
+                })?;
                 let node_data = fake_entry.data;
                 if primary_clicked {
                     // place the node
@@ -1058,14 +1052,11 @@ impl<'a> Prepared<'a> {
         let mut cable_shapes: Vec<egui::Shape> = Vec::new();
         let mut draw_cable = |input_pos: Pos2, output_pos: Pos2, tag: CableTag| {
             // TODO make this configurable
-            let cable_stroke = egui::Stroke::new(
-                4.0,
-                match tag {
-                    CableTag::Invalid => ui.visuals().error_fg_color,
-                    CableTag::Valid => egui::Color32::from_gray(128),
-                    CableTag::Disconnected => egui::Color32::from_gray(100),
-                },
-            );
+            let cable_stroke = egui::Stroke::new(4.0, match tag {
+                CableTag::Invalid => ui.visuals().error_fg_color,
+                CableTag::Valid => egui::Color32::from_gray(128),
+                CableTag::Disconnected => egui::Color32::from_gray(100),
+            });
 
             if !viewport.intersects(Rect::from_points(&[input_pos, output_pos])) {
                 return;

@@ -75,6 +75,8 @@ impl WorkerJob {
             } => {
                 let buffer = nodes.process(worker_options, worker_state, input.wait())?;
 
+                // dbg!(buffer);
+
                 let job_to_add = output.lock(|output_buf| {
                     output_buf.accumulate(buffer);
                 });
@@ -90,6 +92,8 @@ impl WorkerJob {
                 input,
                 output,
             } => {
+                // dbg!(input.wait());
+
                 let buffer = nodes.process(worker_options, worker_state, input.wait())?;
 
                 let job_to_add = output.lock(|output_buf| {
