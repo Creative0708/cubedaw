@@ -6,9 +6,10 @@ use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
 
 use crate::{
+    Context, Screen,
     command::{UiStateCommand, UiStateCommandWrapper},
     context::DockEvent,
-    node, Context, Screen,
+    node,
 };
 
 pub struct CubedawApp {
@@ -132,7 +133,6 @@ impl CubedawApp {
             .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
         ctx.tabs
             .create_tab::<crate::tab::patch::PatchTab>(ctx.state, ctx.ui_state);
-        // ctx.create_tab::<PatchTab>();
 
         let result = ctx.finish();
         app.ctx_finished(result, &creation_context.egui_ctx);

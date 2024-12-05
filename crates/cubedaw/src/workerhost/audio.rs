@@ -79,7 +79,7 @@ impl CpalAudioHandler {
                                     .unwrap()
                                     .subsec_millis();
                                 let mut stdout = std::io::stdout();
-                                write!(&mut stdout, " {millis:03}ms: max {max}\r").unwrap();
+                                write!(&mut stdout, "\x1b[0K {millis:03}ms: max {max}\r").unwrap();
                                 stdout.flush().unwrap();
                             },
                             |err| todo!("{err:?}"),

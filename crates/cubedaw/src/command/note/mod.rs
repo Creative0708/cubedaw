@@ -47,6 +47,7 @@ impl UiNoteAddOrRemove {
     }
     fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
         self.ui_data = self.notes(ui_state).remove(self.inner.id());
+        assert!(self.ui_data.is_some(), "tried to remove nonexistent note");
     }
 }
 

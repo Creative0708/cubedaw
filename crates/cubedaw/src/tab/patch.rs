@@ -608,6 +608,7 @@ impl<'a> Prepared<'a> {
             ..
         } = *self;
 
+        // replace self.drag with a temporary value to satisfy borrow checker shenanigans
         let mut drag = mem::replace(&mut **drag_orig, DragHandler::new());
 
         let result = drag.handle(Id::new("nodes"), |prepared| -> Result<_> {
@@ -672,6 +673,7 @@ impl<'a> Prepared<'a> {
                 hovered_node_slot,
             })
         });
+
         *self.drag = drag;
         {
             let should_deselect_everything =

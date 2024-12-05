@@ -185,9 +185,10 @@ impl<T: SelectablePath, F: Fn(Vec2) -> Vec2> Prepared<'_, T, F> {
             if self.drag_handler.is_something_being_dragged() {
                 self.finished_movement = Some(self.drag_handler.raw_movement);
             }
-        } else if resp.ctx.input(|i| i.pointer.primary_released()) {
-            self.canceled = true;
         }
+        // else if resp.ctx.input(|i| i.pointer.primary_released()) {
+        //     self.canceled = true;
+        // }
     }
 
     fn end(self) -> DragHandlerResult<T, ()> {

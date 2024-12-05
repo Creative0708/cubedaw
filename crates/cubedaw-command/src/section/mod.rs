@@ -10,11 +10,11 @@ pub struct SectionMove {
 }
 
 impl SectionMove {
-    pub fn new(track_id: Id<Track>, starting_range: Range, new_range: i64) -> Self {
+    pub fn new(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
         Self {
             track_id,
             starting_range,
-            new_start_pos: new_range,
+            new_start_pos,
         }
     }
 }
