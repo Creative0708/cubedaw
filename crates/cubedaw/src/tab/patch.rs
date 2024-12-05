@@ -1,4 +1,4 @@
-use std::iter;
+use std::{iter, mem};
 
 use ahash::HashSetExt;
 use anyhow::Result;
@@ -13,6 +13,7 @@ use crate::{
     command::node::{UiNodeAddOrRemove, UiNodeMove, UiNodeSelect},
     context::UiStateTracker,
     state::{ephemeral::NodeEphemeralState, ui::NodeUiState},
+    util::DragHandler,
     widget::DragValue,
 };
 
@@ -143,13 +144,13 @@ impl crate::Screen for PatchTab {
                                     .map(|pos| transform.inverse() * pos),
                             );
 
-                            prepared.background();
-                            prepared.show_add_node_menu();
+                            prepared.background(ui);
+                            prepared.show_add_node_menu(ui);
                             // cables are rendered below the nodes; save a ShapeIdx for them!
-                            let cable_shapeidx = prepared.ui.painter().add(egui::Shape::Noop);
-                            let node_results = prepared.handle_nodes()?;
-                            let cable_result = prepared.do_cable_interactions(&node_results);
-                            prepared.draw_cables(&node_results, cable_result, cable_shapeidx);
+                            let cable_shapeidx = ui.painter().add(egui::Shape::Noop);
+                            let node_results = prepared.handle_nodes(ui)?;
+                            let cable_result = prepared.do_cable_interactions(ui, &node_results);
+                            prepared.draw_cables(ui, &node_results, cable_result, cable_shapeidx);
 
                             Ok(())
                         })
@@ -183,7 +184,6 @@ impl PatchTab {
 struct Prepared<'a> {
     tab: &'a mut PatchTab,
 
-    ui: &'a mut egui::Ui,
     drag: &'a mut crate::util::DragHandler,
 
     ui_state: &'a crate::UiState,
@@ -210,7 +210,7 @@ impl<'a> Prepared<'a> {
     pub fn new(
         tab: &'a mut PatchTab,
         ctx: &'a mut crate::Context,
-        ui: &'a mut egui::Ui,
+        ui: &mut egui::Ui,
         viewport_interaction: &'a egui::Response,
         pointer_pos: Option<Pos2>,
     ) -> Self {
@@ -228,7 +228,6 @@ impl<'a> Prepared<'a> {
 
         Self {
             tab,
-            ui,
             track_id,
             ui_state: ctx.ui_state,
             patch: &ctx.state.tracks.force_get(track_id).patch,
@@ -246,12 +245,8 @@ impl<'a> Prepared<'a> {
             screen_hover_pos,
         }
     }
-    pub fn background(&mut self) {
-        let Self {
-            ref mut ui,
-            viewport,
-            ..
-        } = *self;
+    pub fn background(&mut self, ui: &mut egui::Ui) {
+        let Self { viewport, .. } = *self;
 
         let painter = ui.painter();
 
@@ -283,7 +278,7 @@ impl<'a> Prepared<'a> {
             }
         }
     }
-    pub fn show_add_node_menu(&mut self) {
+    pub fn show_add_node_menu(&mut self, _ui: &mut egui::Ui) {
         let Self {
             ref mut tab,
             node_registry,
@@ -326,6 +321,7 @@ impl<'a> Prepared<'a> {
 
     fn handle_node(
         &mut self,
+        ui: &mut egui::Ui,
         prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
         node_data: &NodeEntry,
         node_id: Option<Id<NodeEntry>>,
@@ -336,7 +332,6 @@ impl<'a> Prepared<'a> {
         Option<InteractedNodeSlot>,
     )> {
         let Self {
-            ref mut ui,
             ref mut tab,
             node_registry,
 
@@ -480,17 +475,21 @@ impl<'a> Prepared<'a> {
 
         let result = ui_ctx.finish(frame_rect);
 
-        let node_slots = self.handle_node_slots_for(node_id, &result);
+        let (dragged_node_slot, hovered_node_slot) = ui
+            .add_enabled_ui(self.tab.currently_held_node.is_none(), |ui| {
+                self.handle_node_slots_for(ui, node_id, &result)
+            })
+            .inner;
 
-        Ok((result, node_slots.0, node_slots.1))
+        Ok((result, dragged_node_slot, hovered_node_slot))
     }
 
     fn handle_node_slots_for(
         &mut self,
+        ui: &mut egui::Ui,
         node_id: Option<Id<NodeEntry>>,
         node_result: &CubedawNodeUiContextResult,
     ) -> (Option<InteractedNodeSlot>, Option<InteractedNodeSlot>) {
-        let Self { ref mut ui, .. } = *self;
         let CubedawNodeUiContextResult {
             node_rect,
             inputs,
@@ -596,25 +595,20 @@ impl<'a> Prepared<'a> {
         (dragged_node_slot, hovered_node_slot)
     }
 
-    fn handle_nodes(&mut self) -> Result<NodeResults> {
+    fn handle_nodes(&mut self, ui: &mut egui::Ui) -> Result<NodeResults> {
         let Self {
-            ref mut tab,
-            ref mut ui,
-            ref mut drag,
+            drag: ref mut drag_orig,
             ui_state,
             track_id,
             patch,
             patch_ui,
-            ref mut patch_ephemeral,
-            ref mut tracker,
-            node_registry,
-            viewport,
             viewport_interaction,
-            pointer_pos,
             primary_clicked,
             secondary_clicked,
-            screen_hover_pos,
+            ..
         } = *self;
+
+        let mut drag = mem::replace(&mut **drag_orig, DragHandler::new());
 
         let result = drag.handle(Id::new("nodes"), |prepared| -> Result<_> {
             let mut dragged_node_slot: Option<InteractedNodeSlot> = None;
@@ -624,37 +618,14 @@ impl<'a> Prepared<'a> {
 
             // nodes
             if viewport_interaction.secondary_clicked() {
-                tab.currently_held_node = None;
+                self.tab.currently_held_node = None;
             }
 
             for (node_id, node_data) in patch.nodes() {
                 let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
 
                 let (result, dragged_node_slot_for_this_node, hovered_node_slot_for_this_node) =
-                    Prepared {
-                        tab,
-                        ui,
-                        drag: &mut crate::util::DragHandler::new(),
-                        ui_state,
-                        tracker,
-                        track_id,
-                        patch,
-                        patch_ui,
-                        node_registry,
-                        viewport,
-                        patch_ephemeral,
-                        viewport_interaction,
-                        pointer_pos,
-                        primary_clicked,
-                        secondary_clicked,
-                        screen_hover_pos,
-                    }
-                    .handle_node(
-                        prepared,
-                        node_data,
-                        Some(node_id),
-                        node_ui,
-                    )?;
+                    self.handle_node(ui, prepared, node_data, Some(node_id), node_ui)?;
 
                 dragged_node_slot = dragged_node_slot.or(dragged_node_slot_for_this_node);
                 hovered_node_slot = hovered_node_slot.or(hovered_node_slot_for_this_node);
@@ -663,37 +634,20 @@ impl<'a> Prepared<'a> {
             }
 
             if let Some(hover_pos) = viewport_interaction.hover_pos()
-                && let Some(node_data) = tab.currently_held_node.take()
+                && let Some(node_data) = self.tab.currently_held_node.take()
             {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
                 let fake_entry = NodeEntry::new(node_data, 0, 0);
-                let (result, ..) = Prepared {
-                    tab,
-                    ui,
-                    drag: &mut crate::util::DragHandler::new(),
-                    ui_state,
-                    tracker,
-                    track_id,
-                    patch,
-                    patch_ui,
-                    node_registry,
-                    viewport,
-                    patch_ephemeral,
-                    viewport_interaction,
-                    pointer_pos,
-                    primary_clicked,
-                    secondary_clicked,
-                    screen_hover_pos,
-                }
-                .handle_node(prepared, &fake_entry, None, &NodeUiState {
-                    selected: true,
-                    pos: hover_pos,
-                    width: 128.0,
-                })?;
+                let (result, ..) =
+                    self.handle_node(ui, prepared, &fake_entry, None, &NodeUiState {
+                        selected: true,
+                        pos: hover_pos,
+                        width: 128.0,
+                    })?;
                 let node_data = fake_entry.data;
                 if primary_clicked {
                     // place the node
-                    tracker.add(UiNodeAddOrRemove::addition(
+                    self.tracker.add(UiNodeAddOrRemove::addition(
                         Id::arbitrary(),
                         node_data,
                         result.inputs.into_iter().map(|input| input.value).collect(),
@@ -708,7 +662,7 @@ impl<'a> Prepared<'a> {
                 } else if secondary_clicked {
                     // do nothing; since we're never setting currently_held_node to Some(_) after the take(), this deletes the node
                 } else {
-                    tab.currently_held_node = Some(node_data);
+                    self.tab.currently_held_node = Some(node_data);
                 }
             }
 
@@ -718,6 +672,7 @@ impl<'a> Prepared<'a> {
                 hovered_node_slot,
             })
         });
+        *self.drag = drag;
         {
             let should_deselect_everything =
                 result.should_deselect_everything || viewport_interaction.clicked();
@@ -728,7 +683,8 @@ impl<'a> Prepared<'a> {
                     if node_ui.selected
                         && !matches!(selection_changes.get(&(track_id, node_id2)), Some(true))
                     {
-                        tracker.add(UiNodeSelect::new(track_id, node_id2, false));
+                        self.tracker
+                            .add(UiNodeSelect::new(track_id, node_id2, false));
                     }
                 }
                 for (&(track_id, node_id), &selected) in &selection_changes {
@@ -739,18 +695,20 @@ impl<'a> Prepared<'a> {
                             .and_then(|t| t.patch.nodes.get(node_id))
                             .is_some_and(|n| n.selected)
                     {
-                        tracker.add(UiNodeSelect::new(track_id, node_id, true));
+                        self.tracker.add(UiNodeSelect::new(track_id, node_id, true));
                     }
                 }
             } else {
                 for (&(track_id, node_id), &selected) in &selection_changes {
-                    tracker.add(UiNodeSelect::new(track_id, node_id, selected));
+                    self.tracker
+                        .add(UiNodeSelect::new(track_id, node_id, selected));
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
                 for (&node_id, node_ui) in &patch_ui.nodes {
                     if node_ui.selected {
-                        tracker.add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
+                        self.tracker
+                            .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
                     }
                 }
             }
@@ -789,6 +747,7 @@ impl<'a> Prepared<'a> {
 
     fn do_cable_interactions(
         &mut self,
+        ui: &mut egui::Ui,
         node_results: &NodeResults,
     ) -> Option<CableInteractionResult> {
         let Self {
@@ -1036,15 +995,13 @@ impl<'a> Prepared<'a> {
 
     fn draw_cables(
         &mut self,
+        ui: &mut egui::Ui,
         node_results: &NodeResults,
         cable_result: Option<CableInteractionResult>,
         shapeidx: egui::layers::ShapeIdx,
     ) {
         let Self {
-            ref mut ui,
-            viewport,
-            patch,
-            ..
+            viewport, patch, ..
         } = *self;
 
         // cables
