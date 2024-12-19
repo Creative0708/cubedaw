@@ -232,29 +232,22 @@ impl fmt::Debug for Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::boxed_slice;
-    use std::hint::black_box;
+    use crate::{Buffer, InternalBufferType};
 
     #[test]
-    #[allow(clippy::unit_arg)]
-    fn test_boxed_slice() {
-        let mut i32s: Box<[i32]> = boxed_slice(10);
-        i32s.fill(42);
-        i32s[0] = 43;
-        assert!(i32s[9] == 42);
-        assert!(i32s[0] == 43);
-        assert!(i32s.len() == 10);
-        black_box(i32s);
+    fn test_buffer() {
+        let mut buf = Buffer::new_box_zeroed(64);
+        assert_eq!(buf.len(), 64);
+        (**buf)[0..3].copy_from_slice(&[1.0, 2.0, 42.42]);
 
-        let nothing: Box<[u64]> = boxed_slice(0);
-        assert!(nothing.len() == 0);
-        black_box(nothing);
+        // this probably doesn't work on big endian but whatever
+        assert_eq!(
+            buf.as_bytes()[0..12],
+            [0, 0, 128, 63, 0, 0, 0, 64, 20, 174, 41, 66],
+            "if you're on big-endian and this fails go scream at one of the maintainers (jk)"
+        );
 
-        let mut zsts: Box<[()]> = boxed_slice(usize::MAX);
-        assert!(zsts.len() == usize::MAX);
-        black_box(zsts[1000]);
-        black_box(zsts[1000000]);
-        zsts[1] = ();
-        black_box(zsts);
+        buf.as_internal_mut()[1] = InternalBufferType::splat(4200.1234);
+        assert_eq!((**buf)[16..32], [4200.1234f32; InternalBufferType::N]);
     }
 }
