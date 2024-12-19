@@ -1,5 +1,6 @@
 use cubedaw_lib::{
-    GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track, TrackInner,
+    Buffer, GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track,
+    TrackInner,
 };
 
 use crate::{
@@ -29,7 +30,7 @@ impl WorkerHostState {
                         &node.data.key, &options.registry
                     )
                 });
-                node_map.insert(node_id, (entry.node_factory)(&node.data.inner));
+                node_map.insert(node_id, (entry.node_factory)(&node.data.inner.as_bytes()));
             }
             match track.inner {
                 cubedaw_lib::TrackInner::Section(ref inner) => {
@@ -172,6 +173,14 @@ impl WorkerSectionTrackState {
         self.track_nodes.sync_with(patch, options)?;
         self.note_nodes.sync_with(patch, options)?;
 
+        // hella inefficient bc we're doing an unnecessary topo sort every time but i cannot be bothered (yet)
+        for (_note_id, note_state) in &mut self.notes {
+            note_state.sync_with(track, options);
+        }
+        for (_note_id, note_state) in &mut self.live_notes {
+            note_state.sync_with(track, options);
+        }
+
         Ok(())
     }
 
@@ -182,7 +191,7 @@ impl WorkerSectionTrackState {
         let mut insert_node = |key: ResourceKey,
                                num_inputs: u32,
                                num_outputs: u32,
-                               inner: Box<[u8]>|
+                               inner: Box<Buffer>|
          -> Id<NodeEntry> {
             let id = Id::arbitrary();
             fake_patch.insert_node(
@@ -197,13 +206,13 @@ impl WorkerSectionTrackState {
             resourcekey::literal!("builtin:note_output"),
             1,
             1,
-            Box::new([]),
+            Default::default(),
         );
         let output = insert_node(
             resourcekey::literal!("builtin:track_output"),
             1,
             0,
-            Box::new([]),
+            Default::default(),
         );
         fake_patch.insert_cable(
             Id::arbitrary(),
@@ -229,8 +238,8 @@ pub struct WorkerNoteState {
     pub nodes: SynthNoteNodeGraph,
 }
 impl WorkerNoteState {
-    pub fn new(section_id: Id<Section>, nodes: SynthNoteNodeGraph) -> Self {
-        Self { section_id, nodes }
+    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) {
+        self.nodes.sync_with(&track.patch, options);
     }
 }
 
@@ -240,6 +249,11 @@ pub struct WorkerLiveNoteState {
     pub note: Note,
     pub nodes: SynthNoteNodeGraph,
     pub samples_elapsed: u64,
+}
+impl WorkerLiveNoteState {
+    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) {
+        self.nodes.sync_with(&track.patch, options);
+    }
 }
 
 #[derive(Debug)]
@@ -281,7 +295,7 @@ impl WorkerGroupTrackState {
         let mut insert_node = |key: ResourceKey,
                                num_inputs: u32,
                                num_outputs: u32,
-                               inner: Box<[u8]>|
+                               inner: Box<Buffer>|
          -> Id<NodeEntry> {
             let id = Id::arbitrary();
             fake_patch.insert_node(
@@ -297,13 +311,13 @@ impl WorkerGroupTrackState {
             resourcekey::literal!("builtin:track_input"),
             0,
             1,
-            Box::new([]),
+            Default::default(),
         );
         let output = insert_node(
             resourcekey::literal!("builtin:track_output"),
             1,
             0,
-            Box::new([]),
+            Default::default(),
         );
         fake_patch.insert_cable(
             Id::arbitrary(),

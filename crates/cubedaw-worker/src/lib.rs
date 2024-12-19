@@ -1,5 +1,6 @@
 #![feature(coroutines)]
 #![feature(gen_blocks)]
+#![feature(non_null_from_ref)]
 
 mod common;
 pub mod host;

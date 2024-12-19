@@ -22,6 +22,7 @@ unsafe_op_in_unsafe_fn = "forbid"
 # pedantic = { level = "warn", priority = -1 }
 needless_question_mark = "allow" # makes code harder to read in long question mark chains
 unusual_byte_groupings = "allow" # misunderstands floating-point binary representation
+needless_lifetimes = "allow"     # false positives :(
 
 [workspace.dependencies]
 egui = "0.29.1"
@@ -30,6 +31,7 @@ anyhow = "1.0.89"
 ahash = "0.8.11"
 smallvec = "1.13.2"
 bytemuck = "1.15.0"
+zerocopy = { version = "0.8.13", features = ["derive"] }
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.13"
 replace_with = "0.1.7"

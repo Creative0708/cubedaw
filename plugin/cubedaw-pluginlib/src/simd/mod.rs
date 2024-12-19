@@ -137,7 +137,7 @@ impl f32x16 {
     #[inline(always)]
     pub fn prefix_sum_with(self, start: f32) -> Self {
         let mut new = [0.0; 16];
-        let mut arr = self.to_array();
+        let arr = self.to_array();
         let mut tot = start;
         // go go gadget loop unroller
         for i in 0..16 {

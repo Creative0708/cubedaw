@@ -1,19 +1,9 @@
-use cubedaw_pluginlib::f32x16;
+use cubedaw_pluginlib::{f32x16, Attribute};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-enum OscillatorNodeType {
-    Sine,
-    Saw,
-    Square,
-    Triangle,
-}
+use super::PitchState;
 
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct OscillatorNodeArgs {
-    node_type: OscillatorNodeType,
-}
+mod schema;
+use schema::*;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -23,7 +13,10 @@ pub struct OscillatorNodeState {
 
 #[no_mangle]
 fn do_oscillator(state: &OscillatorNodeArgs, buf: &mut OscillatorNodeState) {
-    let pitch = cubedaw_pluginlib::input::<0>();
+    let mut pitch = cubedaw_pluginlib::input::<0>();
+    if state.pitch_state.is_relative() {
+        pitch += cubedaw_pluginlib::attribute::<{ Attribute::Pitch }>()
+    }
 
     let increment = crate::util::pitch_to_hertz(pitch)
         * f32x16::splat(1.0 / cubedaw_pluginlib::sample_rate() as f32);

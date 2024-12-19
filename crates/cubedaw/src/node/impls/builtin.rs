@@ -1,4 +1,5 @@
 use anyhow::Result;
+use cubedaw_lib::Buffer;
 
 use crate::{
     node::{NodeCreationContext, NodeInputUiOptions, NodeUiContext},
@@ -7,13 +8,13 @@ use crate::{
 
 pub struct TrackInputNodeThingy;
 impl NodeThingy for TrackInputNodeThingy {
-    fn create(&self, _creation_context: &NodeCreationContext) -> Box<[u8]> {
-        Box::new([])
+    fn create(&self, _creation_context: &NodeCreationContext) -> Box<Buffer> {
+        Default::default()
     }
-    fn title(&self, _: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
+    fn title(&self, _: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
         Ok("Track Input".into())
     }
-    fn ui(&self, _: &mut [u8], ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
+    fn ui(&self, _: &mut Buffer, ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
         node_ui.output_ui(ui, "Track Input");
         Ok(())
     }
@@ -25,13 +26,13 @@ impl NodeThingy for TrackInputNodeThingy {
 
 pub struct TrackOutputNodeThingy;
 impl NodeThingy for TrackOutputNodeThingy {
-    fn create(&self, _creation_context: &NodeCreationContext) -> Box<[u8]> {
-        Box::new([])
+    fn create(&self, _creation_context: &NodeCreationContext) -> Box<Buffer> {
+        Default::default()
     }
-    fn title(&self, _: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
+    fn title(&self, _: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
         Ok("Track Output".into())
     }
-    fn ui(&self, _: &mut [u8], ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
+    fn ui(&self, _: &mut Buffer, ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
         node_ui.input_ui(ui, "Track Output", NodeInputUiOptions::uninteractable());
         Ok(())
     }
@@ -43,13 +44,13 @@ impl NodeThingy for TrackOutputNodeThingy {
 
 pub struct NoteInputNodeThingy;
 impl NodeThingy for NoteInputNodeThingy {
-    fn create(&self, _creation_context: &NodeCreationContext) -> Box<[u8]> {
-        Box::new([])
+    fn create(&self, _creation_context: &NodeCreationContext) -> Box<Buffer> {
+        Default::default()
     }
-    fn title(&self, _: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
+    fn title(&self, _: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
         Ok("Note Input".into())
     }
-    fn ui(&self, _: &mut [u8], ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
+    fn ui(&self, _: &mut Buffer, ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
         node_ui.input_ui(ui, "Note Output", NodeInputUiOptions::uninteractable());
         node_ui.output_ui(ui, "Track Input");
         Ok(())

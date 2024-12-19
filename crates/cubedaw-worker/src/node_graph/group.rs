@@ -47,7 +47,12 @@ impl GroupNodeGraph {
             panic!();
         }
 
-        self.0.process(options, state)?;
+        self.0.process(
+            options,
+            state,
+            // TODO
+            &mut crate::plugin::NoopAttributeMap,
+        )?;
 
         let output_node = self
             .0

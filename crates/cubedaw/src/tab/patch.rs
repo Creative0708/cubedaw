@@ -4,7 +4,9 @@ use ahash::HashSetExt;
 use anyhow::Result;
 
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
-use cubedaw_lib::{Cable, CableConnection, CableTag, Id, IdMap, IdSet, NodeData, NodeEntry, Track};
+use cubedaw_lib::{
+    Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, NodeData, NodeEntry, Track,
+};
 use egui::{Pos2, Rangef, Rect, Vec2, emath::TSTransform, pos2};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
@@ -312,7 +314,9 @@ impl<'a> Prepared<'a> {
                         key,
                         entry
                             .node_thingy
-                            .create(&crate::node::NodeCreationContext::default()),
+                            .create(&crate::node::NodeCreationContext::default())
+                            .as_ref()
+                            .into(),
                     ));
                 }
             });
@@ -432,7 +436,7 @@ impl<'a> Prepared<'a> {
                 );
             }
             let node_state = node_data.data.inner.as_ref();
-            let mut node_state_copy: Box<[u8]> = node_state.into();
+            let mut node_state_copy: Box<Buffer> = node_state.into();
 
             // TODO add header colors
             let node_thingy = node_registry
@@ -1157,7 +1161,8 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                 .show_number_text(options.interactable)
                 .range(options.range)
                 .display_range(options.display_range)
-                .display(options.display),
+                .display(options.display)
+                .extra(options.extra),
         );
 
         if let Some(id) = self.node_id {

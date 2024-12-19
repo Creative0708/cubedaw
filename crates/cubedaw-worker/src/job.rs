@@ -56,7 +56,7 @@ impl WorkerJob {
                     NoteDescriptor::Live { note, .. } => note,
                 };
 
-                let buffer = nodes.process(worker_options, worker_state)?;
+                let buffer = nodes.process(worker_options, worker_state, note)?;
 
                 let job_to_add = output.lock(|output_buf| {
                     output_buf.accumulate(buffer);

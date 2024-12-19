@@ -3,7 +3,7 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
-    num::NonZeroU64,
+    num::{NonZero, NonZeroU64},
 };
 
 use ahash::{AHasher, HashMap, HashSet, RandomState};
@@ -17,28 +17,28 @@ fn new_hasher() -> AHasher {
 
 // Due to this being a u64, birthday attacks are _technically_ possible but fairly unlikely.
 // If this becomes an issue at any point in the future, switch this to a u128.
-type IdInner = NonZeroU64;
+type IdInner = u64;
 
 // The <T> is used to prevent accidental misuse of an Id<whatever> as an Id<something else>.
 // This is definitely _not_ what generics are meant to be used for, but it's convenient soooo......
 // Also this may result in unneeded generic impls for stuff like IdMap. :shrug:
 #[repr(transparent)]
-pub struct Id<T = ()>(IdInner, PhantomData<T>);
+pub struct Id<T = ()>(NonZero<IdInner>, PhantomData<T>);
 
-fn new_impl(source: impl Hash) -> IdInner {
+fn new_impl(source: impl Hash) -> NonZero<IdInner> {
     let mut hasher = new_hasher();
     source.hash(&mut hasher);
-    IdInner::new(hasher.finish()).expect("hash collision to 0")
+    NonZero::<IdInner>::new(hasher.finish()).expect("hash collision to 0")
 }
 
-fn with_impl(source: IdInner, child: impl Hash) -> IdInner {
+fn with_impl(source: NonZero<IdInner>, child: impl Hash) -> NonZero<IdInner> {
     let mut hasher = new_hasher();
     source.hash(&mut hasher);
     child.hash(&mut hasher);
-    IdInner::new(hasher.finish()).expect("hash collision to 0")
+    NonZero::<IdInner>::new(hasher.finish()).expect("hash collision to 0")
 }
 
-fn arbitrary_impl() -> IdInner {
+fn arbitrary_impl() -> NonZero<IdInner> {
     use std::cell::Cell;
     thread_local! {
         static COUNTER: Cell<u64> = const { Cell::new(0) };
@@ -54,10 +54,17 @@ impl<T> Id<T> {
         Self::from_raw(NonZeroU64::new(0x4fccc597ae63b037).unwrap())
     }
 
-    pub const fn from_raw(raw: IdInner) -> Self {
+    pub const fn from_raw(raw: NonZero<IdInner>) -> Self {
         Self(raw, PhantomData)
     }
-    pub const fn raw(self) -> IdInner {
+    /// Convenience function.
+    pub const fn from_raw_or_panic(raw: IdInner) -> Self {
+        Self::from_raw(match NonZero::new(raw) {
+            Some(inner) => inner,
+            None => panic!("zero passed to Id::from_raw_or_panic"),
+        })
+    }
+    pub const fn raw(self) -> NonZero<IdInner> {
         self.0
     }
 

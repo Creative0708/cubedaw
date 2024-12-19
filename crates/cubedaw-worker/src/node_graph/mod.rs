@@ -7,7 +7,7 @@ use anyhow::Context;
 use cubedaw_lib::{Buffer, Id, IdMap, IdSet, InternalBufferType, NodeEntry, Patch};
 use resourcekey::ResourceKey;
 
-use crate::{WorkerOptions, WorkerState, util};
+use crate::{WorkerOptions, WorkerState, plugin::AttributeMap, util};
 
 mod group;
 pub use group::GroupNodeGraph;
@@ -110,9 +110,9 @@ impl PreparedNodeGraph {
                         outputs: Vec::new(),
                         key: patch.node(input_node).expect("unreachable").key.clone(),
                         node_id: input_node,
-                        args: Box::new([]),
-                        state: Box::new([]),
-                        original_state: Box::new([]),
+                        args: Default::default(),
+                        state: Default::default(),
+                        original_state: Default::default(),
                     });
                 }
             }
@@ -123,7 +123,9 @@ impl PreparedNodeGraph {
 
             let mut entry = prev_entries.remove(node_id).unwrap_or_else(|| {
                 let entry = options.registry.get(&node.data.key).expect("unreachable");
-                let state = (entry.node_factory)(&node.data.inner);
+                let state: Box<Buffer> = (entry.node_factory)(node.data.inner.as_bytes())
+                    .as_ref()
+                    .into();
                 NodeGraphEntry {
                     node_id,
                     key: node.data.key.clone(),
@@ -248,6 +250,7 @@ impl PreparedNodeGraph {
         &mut self,
         options: &WorkerOptions,
         state: &mut WorkerState,
+        attribute_map: &mut dyn AttributeMap,
     ) -> anyhow::Result<()> {
         // self.nodes has been topologically sorted so the all dependencies of a node appear before it in the vec
         for index in 0..self.nodes.len() {
@@ -308,7 +311,12 @@ impl PreparedNodeGraph {
                             data.inputs[input_idx] = input.buffer.as_internal()[sample_idx];
                         }
 
-                        plugin.run(&node.key, &node.args, &mut node.state)?;
+                        plugin.run(
+                            &node.key,
+                            node.args.as_bytes(),
+                            node.state.as_bytes_mut(),
+                            attribute_map,
+                        )?;
 
                         let data = plugin.store_mut().data_mut();
 
@@ -337,14 +345,14 @@ impl PreparedNodeGraph {
 
 #[derive(Clone, Debug)]
 pub struct NodeGraphEntry {
-    state: Box<[u8]>,
+    state: Box<Buffer>,
     inputs: Vec<NodeGraphInput>,
     outputs: Vec<NodeGraphOutput>,
 
     key: ResourceKey,
     node_id: Id<NodeEntry>,
-    args: Box<[u8]>,
-    original_state: Box<[u8]>,
+    args: Box<Buffer>,
+    original_state: Box<Buffer>,
 }
 impl NodeGraphEntry {
     fn reset(&mut self) {

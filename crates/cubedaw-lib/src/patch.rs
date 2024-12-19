@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use ahash::{HashSet, HashSetExt};
 
-use crate::{Id, IdMap, IdSet, ResourceKey};
+use crate::{Buffer, Id, IdMap, IdSet, ResourceKey};
 
 #[derive(Debug, Default, Clone)]
 pub struct Patch {
@@ -503,11 +503,11 @@ impl CableTag {
 pub struct NodeData {
     pub key: ResourceKey,
     /// Node args. _Not_ state, which can change over time. This stays static.
-    pub inner: Box<[u8]>,
+    pub inner: Box<Buffer>,
 }
 
 impl NodeData {
-    pub fn new_disconnected(node_type: ResourceKey, inner: Box<[u8]>) -> Self {
+    pub fn new_disconnected(node_type: ResourceKey, inner: Box<Buffer>) -> Self {
         Self {
             key: node_type,
             inner,

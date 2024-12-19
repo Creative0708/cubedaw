@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 cubedaw-pluginlib = { path = "../cubedaw-pluginlib", features = ["inline"] }
+zerocopy = { version = "0.8.13", features = ["derive"] }
 
 [lints]
 workspace = true

@@ -2,7 +2,6 @@ use std::{ops, sync::Arc};
 
 use ahash::{HashMap, HashMapExt};
 use cubedaw_plugin::Plugin;
-use cubedaw_wasm::{V128, wasmtime::V128 as OtherV128};
 use resourcekey::ResourceKey;
 
 use crate::plugin::standalone::StandalonePluginParameters;
@@ -54,7 +53,7 @@ impl NodeRegistry {
         let mut this = Self {
             entries: HashMap::new(),
             all_plugin_data: Vec::new(),
-            standalone_linker: Arc::new(Self::make_linker(&engine)),
+            standalone_linker: Arc::new(crate::plugin::standalone::make_linker(&engine)),
 
             engine,
         };
@@ -62,51 +61,6 @@ impl NodeRegistry {
         this.register_dummy_node(ResourceKey::new("builtin:track_output").unwrap());
         this.register_dummy_node(ResourceKey::new("builtin:note_output").unwrap());
         this
-    }
-
-    fn make_linker(
-        engine: &cubedaw_wasm::Engine,
-    ) -> cubedaw_wasm::Linker<StandalonePluginParameters> {
-        let mut linker = cubedaw_wasm::Linker::new(engine);
-        linker
-            .func_wrap(
-                "host",
-                "input",
-                |caller: cubedaw_wasm::wasmtime::Caller<'_, StandalonePluginParameters>,
-                 input_idx: u32|
-                 -> (OtherV128, OtherV128, OtherV128, OtherV128) {
-                    let data = caller.data();
-                    let [a, b, c, d]: [V128; 4] = bytemuck::must_cast(
-                        data.inputs
-                            .get(input_idx as usize)
-                            .copied()
-                            .unwrap_or_else(bytemuck::zeroed),
-                    );
-                    (a.into(), b.into(), c.into(), d.into())
-                },
-            )
-            .expect("failed to link");
-        linker
-            .func_wrap(
-                "host",
-                "output",
-                |mut caller: cubedaw_wasm::wasmtime::Caller<'_, StandalonePluginParameters>,
-                 a: OtherV128,
-                 b: OtherV128,
-                 c: OtherV128,
-                 d: OtherV128,
-                 output_idx: u32| {
-                    let data = caller.data_mut();
-                    let Some(output) = data.outputs.get_mut(output_idx as usize) else {
-                        return;
-                    };
-                    let arr: [V128; 4] = [a.into(), b.into(), c.into(), d.into()];
-
-                    *output = bytemuck::must_cast(arr);
-                },
-            )
-            .expect("failed to link");
-        linker
     }
 
     fn register_dummy_node(&mut self, key: ResourceKey) {

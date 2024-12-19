@@ -45,7 +45,12 @@ impl SynthTrackNodeGraph {
             input_buf.buffer.copy_from(input);
         }
 
-        self.0.process(options, state)?;
+        self.0.process(
+            options,
+            state,
+            // TODO
+            &mut crate::plugin::NoopAttributeMap,
+        )?;
 
         let output_node = self.0.get_node(self.0.output_node()).expect("unreachable");
         Ok(&output_node.outputs[0].buffer)

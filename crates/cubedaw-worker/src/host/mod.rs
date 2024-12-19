@@ -5,9 +5,10 @@ use cubedaw_lib::{Buffer, IdMap, InternalBufferType, PreciseSongPos, Range, Stat
 use unwrap_todo::UnwrapTodo;
 
 use crate::{
+    WorkerJob, WorkerOptions,
     common::{HostToWorkerEvent, JobDescriptor, WorkerToHostEvent},
     sync::SyncBuffer,
-    worker, WorkerJob, WorkerOptions,
+    worker,
 };
 mod state;
 pub use state::{
@@ -325,7 +326,7 @@ fn add_jobs(
     let allocate_sync_buffer = |alloc: &'static bumpalo::Bump| -> &'static WorkerJobSyncBuffer {
         let slice = alloc.alloc_slice_fill_copy(
             worker_options.buffer_size as usize / InternalBufferType::N,
-            InternalBufferType::splat(0.0),
+            InternalBufferType::ZERO,
         );
         alloc.alloc(SyncBuffer::new(cubedaw_lib::Buffer::new_mut(slice)))
     };
@@ -436,15 +437,13 @@ fn add_jobs(
                         {
                             let section = track_data.section(section_id).unwrap();
                             for (_start_pos, note_id, _note) in section.note_start_positions_in(
-                                section_range.intersect(song_range_that_we_will_process),
+                                section_range.intersect(song_range_that_we_will_process)
+                                    - section_range.start,
                             ) {
-                                worker_track_data.notes.insert(
-                                    note_id,
-                                    WorkerNoteState {
-                                        section_id,
-                                        nodes: worker_track_data.note_nodes.clone(),
-                                    },
-                                );
+                                worker_track_data.notes.insert(note_id, WorkerNoteState {
+                                    section_id,
+                                    nodes: worker_track_data.note_nodes.clone(),
+                                });
                             }
                         }
                     }

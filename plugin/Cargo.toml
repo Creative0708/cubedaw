@@ -9,6 +9,9 @@ members = [
     "postcard-stringify",
 ]
 
+[patch.crates-io]
+proc-macro2 = { path = "proc-macro2-1.0.92" }
+
 [profile.release]
 strip = true
 opt-level = 3

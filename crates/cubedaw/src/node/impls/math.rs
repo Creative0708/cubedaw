@@ -1,9 +1,22 @@
 use anyhow::Result;
-use cubedaw_worker::DynNodeFactory;
+use cubedaw_lib::Buffer;
+use zerocopy::{IntoBytes, TryFromBytes};
 
 use crate::registry::NodeThingy;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+use super::ZerocopyTryFromExt;
+
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+    zerocopy::TryFromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 #[repr(u32)]
 enum MathNodeType {
     Add = 0,
@@ -13,21 +26,6 @@ enum MathNodeType {
 }
 
 impl MathNodeType {
-    fn from_arr(arr: &[u8]) -> Result<Self> {
-        let arr: [u8; 4] = arr.try_into()?;
-
-        Ok(match u32::from_le_bytes(arr) {
-            0 => Self::Add,
-            1 => Self::Subtract,
-            2 => Self::Multiply,
-            3 => Self::Divide,
-            other => anyhow::bail!("invalid index for MathNodeType: {other}"),
-        })
-    }
-    fn to_arr(&self) -> Box<[u8]> {
-        (*self as u32).to_le_bytes().into()
-    }
-
     const fn to_str(&self) -> &'static str {
         match self {
             MathNodeType::Add => "Add",
@@ -38,10 +36,18 @@ impl MathNodeType {
     }
 }
 
+#[repr(C)]
+#[derive(
+    zerocopy::TryFromBytes, zerocopy::IntoBytes, zerocopy::Immutable, zerocopy::KnownLayout,
+)]
+struct MathNodeState {
+    node_type: MathNodeType,
+}
+
 pub struct MathNode;
 
 impl NodeThingy for MathNode {
-    fn create(&self, ctx: &crate::node::NodeCreationContext) -> Box<[u8]> {
+    fn create(&self, ctx: &crate::node::NodeCreationContext) -> Box<Buffer> {
         let node_type = match ctx.alias.as_deref() {
             Some("add") => MathNodeType::Add,
             Some("subtract") => MathNodeType::Subtract,
@@ -50,24 +56,24 @@ impl NodeThingy for MathNode {
 
             _ => MathNodeType::Add,
         };
-        node_type.to_arr()
+        MathNodeState { node_type }.as_bytes().into()
     }
-    fn title(&self, state: &[u8]) -> Result<std::borrow::Cow<'_, str>> {
-        let node_type = MathNodeType::from_arr(state)?;
-        Ok(node_type.to_str().into())
+    fn title(&self, state: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
+        let (node_state, _) = MathNodeState::try_ref_from_prefix(state.as_bytes()).anyhow()?;
+        Ok(node_state.node_type.to_str().into())
     }
     fn ui(
         &self,
-        state: &mut [u8],
+        state: &mut Buffer,
         ui: &mut egui::Ui,
         ctx: &mut dyn crate::node::NodeUiContext,
     ) -> Result<()> {
-        let mut node_type = MathNodeType::from_arr(state)?;
+        let (node_state, _) = MathNodeState::try_mut_from_prefix(state.as_bytes_mut()).anyhow()?;
 
         ctx.output_ui(ui, "Out");
 
         egui::ComboBox::from_id_salt(0)
-            .selected_text(node_type.to_str())
+            .selected_text(node_state.node_type.to_str())
             .show_ui(ui, |ui| {
                 for ty in [
                     MathNodeType::Add,
@@ -75,7 +81,7 @@ impl NodeThingy for MathNode {
                     MathNodeType::Multiply,
                     MathNodeType::Divide,
                 ] {
-                    ui.selectable_value(&mut node_type, ty, ty.to_str());
+                    ui.selectable_value(&mut node_state.node_type, ty, ty.to_str());
                 }
             });
 
@@ -84,8 +90,6 @@ impl NodeThingy for MathNode {
         ctx.input_ui(ui, "A", Default::default());
         ctx.input_ui(ui, "B", Default::default());
         ctx.output_ui(ui, "Out");
-
-        state.copy_from_slice(&node_type.to_arr());
 
         Ok(())
     }

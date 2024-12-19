@@ -1,4 +1,4 @@
-use std::{fmt, ops};
+use std::{fmt, mem, ops};
 
 // TODO figure this out
 // fn resize_boxed_slice<T: Zeroable>(t: &mut Box<[T]>, length: usize) {
@@ -22,23 +22,39 @@ use std::{fmt, ops};
 
 // the internal buffer representation. possibly subject to change in the future
 // (i.e. f32 is too imprecise and is changed to an f64)
+//
+// ...probably not. well, just to be safe i guess
 pub type BufferType = f32;
 
-#[repr(align(16))]
-#[derive(Clone, Copy, Debug, Default)]
+// the _actual_ internal buffer representation
+pub type BufferTypeInt = u32;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(C, align(16))]
 /// A fixed grouping of `BufferType`s with stricter alignment. For optimization purposes. What do you mean "prematurely optimizing"?
 ///
 /// This is also used in `cubedaw-plugin` as plugins operate in chunks of 16 `f32`s (4 `f32x4` `v128`s).
-pub struct InternalBufferType(pub [BufferType; 16]);
+///
+/// This is _also_ also used as args and state for plugins.
+pub struct InternalBufferType(pub [BufferTypeInt; 16]);
+
+const _: () = {
+    const fn assert_zeroable_pod<T: bytemuck::Zeroable + bytemuck::Pod>() {}
+    assert_zeroable_pod::<BufferTypeInt>();
+};
+// SAFETY: BufferTypeInt is Zeroable and Pod so [BufferTypeInt; 16] is Zeroable and Pod so InternalBufferType which is repr(C) is Zeroable and Pod.
 unsafe impl bytemuck::Zeroable for InternalBufferType {}
 unsafe impl bytemuck::Pod for InternalBufferType {}
 
 impl InternalBufferType {
+    pub const BYTES: usize = mem::size_of::<Self>();
     /// The number of `BufferType`s that fit in this object. This is always a power of 2.
-    pub const N: usize = core::mem::size_of::<Self>() / core::mem::size_of::<BufferType>();
+    pub const N: usize = Self::BYTES / mem::size_of::<BufferType>();
+
+    pub const ZERO: Self = Self([0; Self::N]);
 
     pub fn splat(val: BufferType) -> Self {
-        Self([val; Self::N])
+        Self([val.to_bits(); Self::N])
     }
     pub fn as_array(&self) -> &[BufferType; Self::N] {
         bytemuck::must_cast_ref(self)
@@ -50,6 +66,7 @@ const _: () = assert!(
 );
 
 #[repr(transparent)]
+#[derive(PartialEq, Eq)]
 pub struct Buffer([InternalBufferType]);
 impl Buffer {
     pub fn new(inner: &[InternalBufferType]) -> &Self {
@@ -95,6 +112,13 @@ impl Buffer {
         &mut self.0
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::must_cast_slice(&self.0)
+    }
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        bytemuck::must_cast_slice_mut(&mut self.0)
+    }
+
     pub fn copy_from(&mut self, that: &Buffer) {
         self.copy_from_slice(that);
     }
@@ -110,6 +134,11 @@ impl Buffer {
 impl Default for &mut Buffer {
     fn default() -> Self {
         Buffer::new_mut(&mut [])
+    }
+}
+impl Default for Box<Buffer> {
+    fn default() -> Self {
+        Buffer::new_box(Box::new([]))
     }
 }
 impl ops::Deref for Buffer {
@@ -145,6 +174,19 @@ impl Clone for Box<Buffer> {
 impl From<&'_ Buffer> for Box<Buffer> {
     fn from(value: &Buffer) -> Self {
         Buffer::new_box(Box::<[InternalBufferType]>::from(value.as_internal()))
+    }
+}
+impl From<&'_ [u8]> for Box<Buffer> {
+    fn from(value: &'_ [u8]) -> Self {
+        let rounded_up_size =
+            value.len().div_ceil(InternalBufferType::BYTES) * InternalBufferType::BYTES;
+        let mut this = Buffer::new_box_zeroed(
+            rounded_up_size
+                .try_into()
+                .expect("buffer length does not fit in u32"),
+        );
+        this.as_bytes_mut()[..value.len()].copy_from_slice(value);
+        this
     }
 }
 

@@ -1,3 +1,5 @@
+use std::{mem, ptr::NonNull};
+
 use ahash::HashMap;
 use anyhow::Result;
 use cubedaw_lib::InternalBufferType;
@@ -6,9 +8,9 @@ use cubedaw_wasm::{ValType, Value};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
-use crate::WorkerOptions;
+use crate::{WorkerOptions, plugin::Attribute};
 
-use super::PLUGIN_ALIGN;
+use super::{AttributeMap, PLUGIN_ALIGN};
 
 #[derive(Debug)]
 pub struct StandalonePluginFactory {
@@ -36,11 +38,16 @@ impl StandalonePluginFactory {
                         ctx.replace_only_current([]);
                         ctx.add_instruction_raw(Instruction::Call(1));
                     }
+                    CubedawPluginImport::Attribute => {
+                        ctx.replace_only_current([]);
+                        ctx.add_instruction_raw(Instruction::Call(2));
+                    }
                 }
             }),
             [
                 ("input", CubedawPluginImport::Input.ty()),
                 ("output", CubedawPluginImport::Output.ty()),
+                ("attribute", CubedawPluginImport::Attribute.ty()),
             ],
         );
         for node in plugin.exported_nodes() {
@@ -60,7 +67,6 @@ impl StandalonePluginFactory {
         module.export_memory("mem", 0);
         let wasm_module = module.finish();
 
-        std::fs::write("/tmp/a.wasm", &wasm_module).unwrap();
         let module = cubedaw_wasm::Module::new(options.registry.engine(), &wasm_module).todo();
 
         Ok(Self {
@@ -135,7 +141,14 @@ const fn ceil_to_multiple_of_power_of_2(n: u32, logm: u32) -> u32 {
 }
 
 impl StandalonePlugin {
-    pub fn run(&mut self, key: &ResourceKey, args: &[u8], state: &mut [u8]) -> anyhow::Result<()> {
+    /// Runs the plugin. Make sure the input data is set before running this!
+    pub fn run(
+        &mut self,
+        key: &ResourceKey,
+        args: &[u8],
+        state: &mut [u8],
+        attribute_map: &mut dyn AttributeMap,
+    ) -> anyhow::Result<()> {
         assert!(
             args.len() <= u32::MAX as usize,
             "args won't fit in 32-bit assembly"
@@ -181,6 +194,12 @@ impl StandalonePlugin {
                 .expect("unreachable");
         }
 
+        let params = self.store.data_mut();
+        // SAFETY: we're just extending the lifetime here
+        params.attribute_map = unsafe {
+            mem::transmute::<NonNull<_>, NonNull<_>>(NonNull::from_mut(&mut *attribute_map))
+        };
+
         func.call(
             &mut self.store,
             &[
@@ -211,8 +230,103 @@ impl StandalonePlugin {
 pub type StandalonePluginStore = cubedaw_wasm::Store<StandalonePluginParameters>;
 
 /// Parameters for `StandalonePluginStore`.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StandalonePluginParameters {
     pub inputs: Vec<InternalBufferType>,
     pub outputs: Vec<InternalBufferType>,
+
+    attribute_map: NonNull<dyn AttributeMap>,
+}
+impl Default for StandalonePluginParameters {
+    fn default() -> Self {
+        Self {
+            inputs: Default::default(),
+            outputs: Default::default(),
+
+            attribute_map: NonNull::<super::NoopAttributeMap>::dangling(),
+        }
+    }
+}
+impl StandalonePluginParameters {
+    /// # Safety
+    /// The caller must be accessing this from a linker function call, as the attribute map is only valid during the call. Also, like, the returned `AttributeMap` isn't actually `AttributeMap + 'static`; don't share the reference anywhere.
+    unsafe fn attribute_map(&mut self) -> &mut dyn AttributeMap {
+        unsafe { self.attribute_map.as_mut() }
+    }
+}
+
+pub(crate) fn make_linker(
+    engine: &cubedaw_wasm::Engine,
+) -> cubedaw_wasm::Linker<StandalonePluginParameters> {
+    use cubedaw_wasm::{V128, wasmtime::V128 as OtherV128};
+
+    let mut linker = cubedaw_wasm::Linker::new(engine);
+    linker
+        .func_wrap(
+            "host",
+            "input",
+            |caller: cubedaw_wasm::wasmtime::Caller<'_, StandalonePluginParameters>,
+             input_idx: u32|
+             -> (OtherV128, OtherV128, OtherV128, OtherV128) {
+                let data = caller.data();
+                let [a, b, c, d]: [V128; 4] = bytemuck::must_cast(
+                    data.inputs
+                        .get(input_idx as usize)
+                        .copied()
+                        .unwrap_or_else(|| {
+                            log::warn!(
+                                "plugin tried to fetch out of range input index {input_idx}"
+                            );
+                            bytemuck::zeroed()
+                        }),
+                );
+                (a.into(), b.into(), c.into(), d.into())
+            },
+        )
+        .expect("failed to link");
+    linker
+        .func_wrap(
+            "host",
+            "output",
+            |mut caller: cubedaw_wasm::wasmtime::Caller<'_, StandalonePluginParameters>,
+             a: OtherV128,
+             b: OtherV128,
+             c: OtherV128,
+             d: OtherV128,
+             output_idx: u32| {
+                let data = caller.data_mut();
+                let Some(output) = data.outputs.get_mut(output_idx as usize) else {
+                    return;
+                };
+                let arr: [V128; 4] = [a.into(), b.into(), c.into(), d.into()];
+
+                *output = bytemuck::must_cast(arr);
+            },
+        )
+        .expect("failed to link");
+    linker
+        .func_wrap(
+            "host",
+            "attribute",
+            |mut caller: cubedaw_wasm::wasmtime::Caller<'_, StandalonePluginParameters>,
+             attribute_int: u32|
+             -> (OtherV128, OtherV128, OtherV128, OtherV128) {
+                let data = caller.data_mut();
+
+                // SAFETY: we are inside a linker-wrapped function
+                let attribute_map = unsafe { data.attribute_map() };
+                let val = match Attribute::from_int(attribute_int) {
+                    Some(attribute) => attribute_map.attribute(attribute),
+                    None => {
+                        log::warn!("plugin tried to fetch unknown attribute {attribute_int}");
+                        bytemuck::zeroed()
+                    }
+                };
+
+                let [a, b, c, d]: [V128; 4] = bytemuck::must_cast(val);
+                (a.into(), b.into(), c.into(), d.into())
+            },
+        )
+        .expect("failed to link");
+    linker
 }

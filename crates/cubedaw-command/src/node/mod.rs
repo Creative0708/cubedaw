@@ -1,4 +1,4 @@
-use cubedaw_lib::{Id, NodeData, NodeEntry, Track};
+use cubedaw_lib::{Buffer, Id, NodeData, NodeEntry, Track};
 
 use crate::StateCommand;
 
@@ -6,7 +6,7 @@ use crate::StateCommand;
 pub struct NodeStateUpdate {
     id: Id<NodeEntry>,
     track_id: Id<Track>,
-    data: Box<[u8]>,
+    data: Box<Buffer>,
     input_values: Vec<f32>,
     old_input_values: Vec<f32>,
     num_outputs: u32,
@@ -17,7 +17,7 @@ impl NodeStateUpdate {
     pub fn new(
         id: Id<NodeEntry>,
         track_id: Id<Track>,
-        data: Box<[u8]>,
+        data: Box<Buffer>,
         input_values: Vec<f32>,
         old_input_values: Vec<f32>,
         num_outputs: u32,

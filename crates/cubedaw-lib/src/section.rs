@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use meminterval::IntervalTree;
 
@@ -12,7 +12,8 @@ pub struct Section {
 
     note_map: IdMap<Note, (i64, Note)>,
     notes_range: IntervalTree<i64, Id<Note>>,
-    notes_start_position: BTreeMap<i64, Id<Note>>,
+
+    notes_start_position: BTreeSet<(i64, Id<Note>)>,
 }
 
 impl Section {
@@ -23,24 +24,22 @@ impl Section {
 
             note_map: IdMap::new(),
             notes_range: IntervalTree::new(),
-            notes_start_position: BTreeMap::new(),
+
+            notes_start_position: BTreeSet::new(),
         }
     }
 
     pub fn insert_note(&mut self, start_pos: i64, note_id: Id<Note>, note: Note) {
         self.notes_range.insert(note.range_with(start_pos), note_id);
-        self.notes_start_position.insert(start_pos, note_id);
+        self.notes_start_position.insert((start_pos, note_id));
         self.note_map.insert(note_id, (start_pos, note));
     }
 
     pub fn remove_note(&mut self, note_id: Id<Note>) -> (i64, Note) {
         let (start_pos, note) = self.note_map.take(note_id);
         self.notes_range.delete(note.range_with(start_pos));
-        let removed = self.notes_start_position.remove(&start_pos);
-        debug_assert!(
-            removed.is_some(),
-            "notes_start_position desynced with note_map"
-        );
+        let did_remove = self.notes_start_position.remove(&(start_pos, note_id));
+        assert!(did_remove, "notes_start_position desynced with note_map");
         (start_pos, note)
     }
 
@@ -51,12 +50,12 @@ impl Section {
             .expect("note in self.notes but not in state.notes????");
 
         self.notes_range.delete(note.range_with(*start_pos));
-        self.notes_start_position.remove(start_pos);
+        self.notes_start_position.remove(&(*start_pos, note_id));
         note.pitch += pitch_offset;
         *start_pos += pos_offset;
         self.notes_range
             .insert(note.range_with(*start_pos), note_id);
-        self.notes_start_position.insert(*start_pos, note_id);
+        self.notes_start_position.insert((*start_pos, note_id));
     }
 
     pub fn note(&self, id: Id<Note>) -> Option<(i64, &Note)> {
@@ -82,7 +81,7 @@ impl Section {
     pub fn notes(&self) -> impl Iterator<Item = (i64, Id<Note>, &Note)> {
         self.notes_start_position
             .iter()
-            .map(|(&start_pos, &note_id)| {
+            .map(|&(start_pos, note_id)| {
                 (
                     start_pos,
                     note_id,
@@ -100,8 +99,8 @@ impl Section {
         range: Range,
     ) -> impl Iterator<Item = (i64, Id<Note>, &Note)> {
         self.notes_start_position
-            .range(range.start..range.end)
-            .map(|(&start_pos, &note_id)| {
+            .range((range.start, Id::from_raw_or_panic(1))..(range.end, Id::from_raw_or_panic(1)))
+            .map(|&(start_pos, note_id)| {
                 (
                     start_pos,
                     note_id,

@@ -1,8 +1,10 @@
+pub use cubedaw_wasm as wasm;
+
 mod misc;
 pub mod prepare;
 mod stitch;
-use cubedaw_wasm::WasmFeatures;
 pub use stitch::{FunctionStitch, ModuleStitch, ModuleStitchInfo, ShimContext, ShimInfo};
+use wasm::WasmFeatures;
 mod util;
 
 use ahash::{HashMap, HashMapExt};
@@ -137,7 +139,9 @@ impl Plugin {
                             let wasmparser::CompositeInnerType::Func(func) =
                                 ty.composite_type.inner
                             else {
-                                panic!("array/struct type in webassembly module; validator didn't validate");
+                                panic!(
+                                    "array/struct type in webassembly module; validator didn't validate"
+                                );
                             };
                             tys.push(reencoder.func_type(func)?);
                         }
@@ -296,7 +300,7 @@ impl Plugin {
                     assert_eq!(count as usize, func_tys.len());
                 }
                 wasmparser::Payload::CodeSectionEntry(r) => {
-                    let ty_index = func_tys[current_function as usize];
+                    let ty_index = func_tys[current_function];
                     funcs.insert(
                         current_function,
                         PreparedFunction::new(
@@ -476,7 +480,7 @@ impl Plugin {
             return offsets.clone();
         }
 
-        let info = module.get_current_offsets_for(&self);
+        let info = module.get_current_offsets_for(self);
         module.offset_map.insert(self.hash, info.clone());
 
         for ty in &self.tys {
@@ -538,22 +542,22 @@ impl Plugin {
         let parser = wasmparser::Parser::new(0);
 
         for payload in parser.parse_all(buf) {
-            match payload? {
-                wasmparser::Payload::CustomSection(section) => {
-                    if let Some(CubedawSectionType::PluginVersion) =
-                        CubedawSectionType::from_name(section.name())
-                    {
-                        return Ok(semver::Version::parse(
-                            std::str::from_utf8(section.data())
-                                .context("plugin version isn't valid utf-8")?,
-                        )?);
-                    }
+            if let wasmparser::Payload::CustomSection(section) = payload? {
+                if matches!(
+                    CubedawSectionType::from_name(section.name()),
+                    Some(CubedawSectionType::PluginVersion)
+                ) {
+                    return Ok(semver::Version::parse(
+                        std::str::from_utf8(section.data())
+                            .context("plugin version isn't valid utf-8")?,
+                    )?);
                 }
-                _ => (),
             }
         }
 
-        anyhow::bail!("module doesn't have a version (a custom section called \"cubedaw::plugin_version\"). is this actually a cubedaw plugin?");
+        anyhow::bail!(
+            "module doesn't have a version (a custom section called \"cubedaw::plugin_version\"). is this actually a cubedaw plugin?"
+        );
     }
 }
 
@@ -585,17 +589,20 @@ pub enum CubedawPluginImport {
     SampleRate = 0,
     Input = 1,
     Output = 2,
+    Attribute = 3,
 }
 
 impl CubedawPluginImport {
-    pub const SIZE: usize = 3;
-    pub const ALL: [Self; Self::SIZE] = [Self::SampleRate, Self::Input, Self::Output];
+    pub const SIZE: usize = 4;
+    pub const ALL: [Self; Self::SIZE] =
+        [Self::SampleRate, Self::Input, Self::Output, Self::Attribute];
 
     pub fn new(name: &str) -> Option<Self> {
         Some(match name {
             "sample_rate" => Self::SampleRate,
             "input" => Self::Input,
             "output" => Self::Output,
+            "attribute" => Self::Attribute,
             _ => return None,
         })
     }
@@ -605,21 +612,19 @@ impl CubedawPluginImport {
             Self::SampleRate => "sample_rate",
             Self::Input => "input",
             Self::Output => "output",
+            Self::Attribute => "attribute",
         }
     }
 
     pub fn ty(self) -> wasm_encoder::FuncType {
         match self {
             Self::SampleRate => wasm_encoder::FuncType::new([], [wasm_encoder::ValType::I32]),
-            Self::Input => wasm_encoder::FuncType::new(
-                [wasm_encoder::ValType::I32],
-                [
-                    wasm_encoder::ValType::V128,
-                    wasm_encoder::ValType::V128,
-                    wasm_encoder::ValType::V128,
-                    wasm_encoder::ValType::V128,
-                ],
-            ),
+            Self::Input => wasm_encoder::FuncType::new([wasm_encoder::ValType::I32], [
+                wasm_encoder::ValType::V128,
+                wasm_encoder::ValType::V128,
+                wasm_encoder::ValType::V128,
+                wasm_encoder::ValType::V128,
+            ]),
             Self::Output => wasm_encoder::FuncType::new(
                 [
                     wasm_encoder::ValType::V128,
@@ -630,6 +635,12 @@ impl CubedawPluginImport {
                 ],
                 [],
             ),
+            Self::Attribute => wasm_encoder::FuncType::new([wasm_encoder::ValType::I32], [
+                wasm_encoder::ValType::V128,
+                wasm_encoder::ValType::V128,
+                wasm_encoder::ValType::V128,
+                wasm_encoder::ValType::V128,
+            ]),
         }
     }
 }

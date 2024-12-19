@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
-use cubedaw_lib::ResourceKey;
+use cubedaw_lib::{Buffer, ResourceKey};
 use cubedaw_worker::DynNodeFactory;
 
 use crate::node::{NodeCreationContext, NodeInputUiOptions, NodeUiContext};
 
 // TODO get a better name
 pub trait NodeThingy: 'static + Send + Sync {
-    fn create(&self, ctx: &NodeCreationContext) -> Box<[u8]>;
-    fn title(&self, state: &[u8]) -> Result<std::borrow::Cow<'_, str>>;
-    fn ui(&self, state: &mut [u8], ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) -> Result<()>;
+    fn create(&self, ctx: &NodeCreationContext) -> Box<Buffer>;
+    fn title(&self, state: &Buffer) -> Result<std::borrow::Cow<'_, str>>;
+    fn ui(&self, state: &mut Buffer, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) -> Result<()>;
 
     fn make_nodefactory(&self) -> DynNodeFactory {
         DynNodeFactory(Box::new(|_| Box::new([])))
@@ -73,13 +73,10 @@ impl NodeRegistry {
         name: &str,
         node_thingy: Box<dyn NodeThingy>,
     ) {
-        self.entries.insert(
-            key.clone(),
-            NodeRegistryEntry {
-                key: key.clone(),
-                node_thingy,
-            },
-        );
+        self.entries.insert(key.clone(), NodeRegistryEntry {
+            key: key.clone(),
+            node_thingy,
+        });
         self.name_entries.push(NameEntry {
             name: name.into(),
             node_key: key,

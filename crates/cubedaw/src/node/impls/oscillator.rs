@@ -1,31 +1,18 @@
 use anyhow::Result;
+use cubedaw_lib::Buffer;
+use zerocopy::{IntoBytes, TryFromBytes};
 
-use crate::{node::NodeInputUiOptions, registry::NodeThingy};
+use crate::{
+    node::{NodeInputUiOptions, ui::PitchState},
+    registry::NodeThingy,
+};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(u32)]
-pub enum OscillatorNodeType {
-    Sine = 0,
-    Saw = 1,
-    Square = 2,
-    Triangle = 3,
-}
+mod schema;
+pub use schema::*;
+
+use super::ZerocopyTryFromExt;
+
 impl OscillatorNodeType {
-    fn from_arr(arr: &[u8]) -> Result<Self> {
-        let arr: [u8; 4] = arr.try_into()?;
-
-        Ok(match u32::from_le_bytes(arr) {
-            0 => Self::Sine,
-            1 => Self::Saw,
-            2 => Self::Square,
-            3 => Self::Triangle,
-            other => anyhow::bail!("invalid index for MathNodeType: {other}"),
-        })
-    }
-    fn to_arr(self) -> Box<[u8]> {
-        (self as u32).to_le_bytes().into()
-    }
-
     const fn to_str(self) -> &'static str {
         match self {
             OscillatorNodeType::Sine => "Sine",
@@ -34,36 +21,49 @@ impl OscillatorNodeType {
             OscillatorNodeType::Triangle => "Triangle",
         }
     }
+    fn from_str(str: &str) -> Option<Self> {
+        Some(match str {
+            "sine" => Self::Sine,
+            "saw" => Self::Saw,
+            "square" => Self::Square,
+            "triangle" => Self::Triangle,
+
+            _ => return None,
+        })
+    }
 }
 
 pub struct OscillatorNode;
 
 impl NodeThingy for OscillatorNode {
-    fn create(&self, ctx: &crate::node::NodeCreationContext) -> Box<[u8]> {
-        let node_type = match ctx.alias.as_deref() {
-            Some("sine") => OscillatorNodeType::Sine,
-            Some("saw") => OscillatorNodeType::Saw,
-            Some("square") => OscillatorNodeType::Square,
-            Some("triangle") => OscillatorNodeType::Triangle,
-
-            _ => OscillatorNodeType::Sine,
-        };
-        node_type.to_arr()
+    fn create(&self, ctx: &crate::node::NodeCreationContext) -> Box<Buffer> {
+        OscillatorNodeArgs {
+            node_type: ctx
+                .alias
+                .as_deref()
+                .and_then(OscillatorNodeType::from_str)
+                .unwrap_or(OscillatorNodeType::Sine),
+            pitch_state: PitchState::Relative,
+            _pad1: Default::default(),
+        }
+        .as_bytes()
+        .into()
     }
-    fn title(&self, state: &[u8]) -> anyhow::Result<std::borrow::Cow<'_, str>> {
-        let node_type = OscillatorNodeType::from_arr(state)?;
-        Ok(node_type.to_str().into())
+    fn title(&self, state_buf: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
+        let (state, _) = OscillatorNodeArgs::try_ref_from_prefix(state_buf.as_bytes()).anyhow()?;
+        Ok(state.node_type.to_str().into())
     }
     fn ui(
         &self,
-        state: &mut [u8],
+        state_buf: &mut Buffer,
         ui: &mut egui::Ui,
         ctx: &mut dyn crate::node::NodeUiContext,
-    ) -> anyhow::Result<()> {
-        let mut node_type = OscillatorNodeType::from_arr(state)?;
+    ) -> Result<()> {
+        let (state, _) =
+            OscillatorNodeArgs::try_mut_from_prefix(state_buf.as_bytes_mut()).anyhow()?;
 
         egui::ComboBox::from_id_salt(0)
-            .selected_text(node_type.to_str())
+            .selected_text(state.node_type.to_str())
             .show_ui(ui, |ui| {
                 for ty in [
                     OscillatorNodeType::Sine,
@@ -71,16 +71,18 @@ impl NodeThingy for OscillatorNode {
                     OscillatorNodeType::Square,
                     OscillatorNodeType::Triangle,
                 ] {
-                    ui.selectable_value(&mut node_type, ty, ty.to_str());
+                    ui.selectable_value(&mut state.node_type, ty, ty.to_str());
                 }
             });
 
         // TODO implement plot
 
-        ctx.input_ui(ui, "Pitch", NodeInputUiOptions::pitch());
+        ctx.input_ui(
+            ui,
+            "Pitch",
+            NodeInputUiOptions::pitch_choice(&mut state.pitch_state),
+        );
         ctx.output_ui(ui, "Out");
-
-        state.copy_from_slice(&node_type.to_arr());
 
         Ok(())
     }

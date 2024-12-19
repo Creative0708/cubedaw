@@ -52,7 +52,7 @@ impl WorkerHostHandle {
     }
 
     pub fn reset(&mut self) {
-        self.tx.send(AppToWorkerHostEvent::Reset);
+        self.tx.send(AppToWorkerHostEvent::Reset).unwrap();
     }
 
     pub fn start_processing(&mut self, from: i64) {

@@ -50,7 +50,7 @@ impl UiTrackAddOrRemove {
                     id_note_output,
                     NodeData::new_disconnected(
                         resourcekey::literal!("builtin:note_output"),
-                        Box::new([]),
+                        Default::default(),
                     ),
                     vec![0.0],
                     1,
@@ -59,7 +59,7 @@ impl UiTrackAddOrRemove {
                     id_track_output,
                     NodeData::new_disconnected(
                         resourcekey::literal!("builtin:track_output"),
-                        Box::new([]),
+                        Default::default(),
                     ),
                     vec![0.0],
                     0,
@@ -77,22 +77,16 @@ impl UiTrackAddOrRemove {
                 patch: crate::state::ui::PatchUiState {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
-                        map.insert(
-                            id_note_output,
-                            crate::state::ui::NodeUiState {
-                                selected: false,
-                                pos: egui::pos2(-80.0, 0.0),
-                                width: 128.0,
-                            },
-                        );
-                        map.insert(
-                            id_track_output,
-                            crate::state::ui::NodeUiState {
-                                selected: false,
-                                pos: egui::pos2(240.0, 0.0),
-                                width: 128.0,
-                            },
-                        );
+                        map.insert(id_note_output, crate::state::ui::NodeUiState {
+                            selected: false,
+                            pos: egui::pos2(-80.0, 0.0),
+                            width: 128.0,
+                        });
+                        map.insert(id_track_output, crate::state::ui::NodeUiState {
+                            selected: false,
+                            pos: egui::pos2(240.0, 0.0),
+                            width: 128.0,
+                        });
                         map
                     },
                 },
@@ -120,7 +114,7 @@ impl UiTrackAddOrRemove {
                     id_track_input,
                     NodeData::new_disconnected(
                         resourcekey::literal!("builtin:track_input"),
-                        Box::new([]),
+                        Default::default(),
                     ),
                     vec![0.0],
                     1,
@@ -129,7 +123,7 @@ impl UiTrackAddOrRemove {
                     id_track_output,
                     NodeData::new_disconnected(
                         resourcekey::literal!("builtin:track_output"),
-                        Box::new([]),
+                        Default::default(),
                     ),
                     vec![0.0],
                     0,
@@ -147,22 +141,16 @@ impl UiTrackAddOrRemove {
                 patch: crate::state::ui::PatchUiState {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
-                        map.insert(
-                            id_track_input,
-                            crate::state::ui::NodeUiState {
-                                selected: false,
-                                pos: egui::pos2(-80.0, 0.0),
-                                width: 128.0,
-                            },
-                        );
-                        map.insert(
-                            id_track_output,
-                            crate::state::ui::NodeUiState {
-                                selected: false,
-                                pos: egui::pos2(240.0, 0.0),
-                                width: 128.0,
-                            },
-                        );
+                        map.insert(id_track_input, crate::state::ui::NodeUiState {
+                            selected: false,
+                            pos: egui::pos2(-80.0, 0.0),
+                            width: 128.0,
+                        });
+                        map.insert(id_track_output, crate::state::ui::NodeUiState {
+                            selected: false,
+                            pos: egui::pos2(240.0, 0.0),
+                            width: 128.0,
+                        });
                         map
                     },
                 },

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, PreciseSongPos, Range, Section, Track};
-use egui::{Color32, Pos2, Rangef, Rect, Rounding, pos2, vec2};
+use egui::{Color32, Pos2, Rangef, Rect, Rounding, Stroke, pos2, vec2};
 
 use crate::{
     app::Tab,
@@ -118,7 +118,7 @@ impl PianoRollTab {
         let screen_pos_to_note_pos = |screen_pos: Pos2| -> (i64, i32) {
             (
                 screen_x_to_note_x(screen_pos.x),
-                ((screen_pos.y - top_left.y) / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
+                MAX_NOTE_SHOWN - ((screen_pos.y - top_left.y) / self.units_per_pitch) as i32,
             )
         };
         let precise_x_to_screen_x = |pos: PreciseSongPos| -> f32 {
@@ -134,7 +134,7 @@ impl PianoRollTab {
         let note_pos_to_screen_pos = |(pos, pitch): (i64, i32)| -> Pos2 {
             pos2(
                 note_x_to_screen_x(pos),
-                (pitch - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch + top_left.y,
+                (MAX_NOTE_SHOWN - pitch) as f32 * self.units_per_pitch + top_left.y,
             )
         };
         let pos_range_to_screen_range = |range: Range| -> Rangef {
@@ -144,16 +144,11 @@ impl PianoRollTab {
             )
         };
 
-        let (min_pos, min_pitch) = (
-            (viewport.left() / self.units_per_tick) as i64 + ctx.state.song_boundary.start
-                - SONG_PADDING,
-            (viewport.top() / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
-        );
-        let (max_pos, max_pitch) = (
-            (viewport.right() / self.units_per_tick) as i64 + ctx.state.song_boundary.start
-                - SONG_PADDING,
-            (viewport.bottom() / self.units_per_pitch) as i32 + MIN_NOTE_SHOWN,
-        );
+        let translated_viewport = viewport.translate(top_left);
+
+        let (min_pos, min_pitch) = screen_pos_to_note_pos(translated_viewport.left_bottom());
+        let (max_pos, max_pitch) = screen_pos_to_note_pos(translated_viewport.right_top());
+
         let pos_view_range = Range {
             start: min_pos,
             end: max_pos,
@@ -173,7 +168,8 @@ impl PianoRollTab {
 
         // The horizontal "note lines"
         for row in min_pitch..=max_pitch {
-            if row % 2 == 0 {
+            // TODO not hardcode this, probably after MVP
+            if matches!(row % 12, 0 | 2 | 4 | 5 | 7 | 9 | 11) {
                 let row_pos = note_pos_to_screen_pos((0, row)).y;
                 painter.rect_filled(
                     Rect::from_x_y_ranges(
@@ -476,8 +472,10 @@ impl PianoRollTab {
                             egui::Sense::click_and_drag(),
                         );
                         if note_interaction.dragged() {
-                            prepared
-                                .set_scale((1.0 / self.units_per_tick, 1.0 / self.units_per_pitch));
+                            prepared.set_scale((
+                                1.0 / self.units_per_tick,
+                                -1.0 / self.units_per_pitch,
+                            ));
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
                         prepared.process_interaction(
@@ -657,23 +655,6 @@ impl PianoRollTab {
                 egui::FontId::proportional(12.0),
                 ui.visuals().widgets.hovered.text_color(),
             );
-        }
-
-        let finished_drag_offset = result.movement;
-
-        if let Some(finished_drag_offset) = finished_drag_offset {
-            let finished_drag_offset = finished_drag_offset.x.round() as i64;
-
-            for (section_range, section_id, _section) in track.sections() {
-                if track_ui.sections.force_get(section_id).selected {
-                    ctx.tracker.add(SectionMove::new(
-                        track_id,
-                        section_range,
-                        section_range.start + finished_drag_offset,
-                    ));
-                }
-            }
-            track.check_overlap();
         }
 
         response.context_menu(|ui| {

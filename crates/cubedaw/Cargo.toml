@@ -21,6 +21,7 @@ replace_with = { workspace = true }
 ahash = { workspace = true }
 smallvec = { workspace = true }
 bytemuck = { workspace = true }
+zerocopy = { workspace = true }
 log = { workspace = true }
 unwrap_todo = { workspace = true }
 bitflags = "2.6.0"
