@@ -274,7 +274,7 @@ pub(crate) fn make_linker(
                         .get(input_idx as usize)
                         .copied()
                         .unwrap_or_else(|| {
-                            log::warn!(
+                            tracing::warn!(
                                 "plugin tried to fetch out of range input index {input_idx}"
                             );
                             bytemuck::zeroed()
@@ -318,7 +318,7 @@ pub(crate) fn make_linker(
                 let val = match Attribute::from_int(attribute_int) {
                     Some(attribute) => attribute_map.attribute(attribute),
                     None => {
-                        log::warn!("plugin tried to fetch unknown attribute {attribute_int}");
+                        tracing::warn!("plugin tried to fetch unknown attribute {attribute_int}");
                         bytemuck::zeroed()
                     }
                 };

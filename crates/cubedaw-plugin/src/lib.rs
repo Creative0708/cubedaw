@@ -381,7 +381,7 @@ impl Plugin {
                     contents: _contents,
                     range: _range,
                 } => {
-                    log::warn!("unknown section with id {id}");
+                    tracing::warn!("unknown section with id {id}");
                 }
                 wasmparser::Payload::End(_end_length) => {}
             }

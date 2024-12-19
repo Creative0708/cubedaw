@@ -32,7 +32,7 @@ mod workerhost;
 fn main() -> eframe::Result<()> {
     use app::CubedawApp;
 
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     eframe::run_native(
         "cubedaw",

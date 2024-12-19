@@ -268,7 +268,7 @@ impl WorkerHost {
         }
         for join_handle in join_handles {
             if let Err(err) = join_handle.join() {
-                log::warn!("error during thread join: {err:?}");
+                tracing::warn!("error during thread join: {err:?}");
             }
         }
     }

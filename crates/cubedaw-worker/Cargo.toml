@@ -18,7 +18,7 @@ cubedaw-plugin = { path = "../cubedaw-plugin" }
 cubedaw-wasm = { path = "../cubedaw-wasm" }
 crossbeam-channel = { workspace = true }
 replace_with = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
 bumpalo = { workspace = true }
 work-queue = { workspace = true }
 unwrap_todo = { workspace = true }
