@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use crate::registry::NodeRegistry;
 
 mod ui;
-use ahash::{HashMap, HashMapExt};
+use ahash::HashMapExt;
 pub use ui::{NodeInputUiOptions, NodeUiContext};
 
 mod impls;

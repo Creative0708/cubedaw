@@ -5,7 +5,7 @@ use anyhow::Result;
 use cubedaw_lib::{Buffer, ResourceKey};
 use cubedaw_worker::DynNodeFactory;
 
-use crate::node::{NodeCreationContext, NodeInputUiOptions, NodeUiContext};
+use crate::node::{NodeCreationContext, NodeUiContext};
 
 // TODO get a better name
 pub trait NodeThingy: 'static + Send + Sync {

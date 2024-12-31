@@ -3,35 +3,37 @@ use std::any::Any;
 use cubedaw_lib::{Id, IdMap, PreciseSongPos, State};
 
 use crate::{
+    EphemeralState, Screen, UiState,
     app::Tab,
     command::{IntoUiStateCommand, UiStateCommand, UiStateCommandWrapper},
     registry::NodeRegistry,
-    EphemeralState, Screen, UiState,
 };
 
 pub struct Context<'a> {
-    // State: global data required to render the music; i.e. volumes, notes, etc
-    // This can't be mutated directly, but instead done through commands that can be tracked (for the undo system, synchronizing state to workers, etc.)
+    /// Global data required to render the music; i.e. volumes, notes, etc
+    /// This can't be mutated directly, but instead done through commands that can be tracked (for the undo system, synchronizing state to workers, etc.)
     pub state: &'a State,
 
-    // Ui State: global data saved and persisted across launches, but not required to render the music; track names, track ordering, etc.
-    // This also can't be mutated directly and is only modifiable through commands.
+    /// Global data saved and persisted across launches, but not required to render the music; track names, track ordering, etc.
+    /// This also can't be mutated directly and is only modifiable through commands.
     pub ui_state: &'a UiState,
 
-    // Ephemeral State: global data not persisted across launches and is not required to render the music; Drag state
-    // This can be mutated directly and is not tracked.
+    /// Global data not persisted across launches and is not required to render the music; Drag state
+    /// This can be mutated directly and is not tracked.
     pub ephemeral_state: &'a mut EphemeralState,
 
-    // Tabs: per-tab state persisted across launches; scroll position, zoom, etc.
-    // Also mutable directly and not tracked.
+    /// Per-tab state not persisted across launches; scroll position, zoom, etc.
+    /// Also mutable directly and not tracked.
     pub tabs: &'a mut Tabs,
 
-    // App-associated node registry. See [`cubedaw_lib::NodeRegistry`] for more information.
+    /// App-associated node registry. See [`cubedaw_lib::NodeRegistry`] for more information.
     pub node_registry: &'a NodeRegistry,
 
-    // State tracker to track events that mutate state or ui_state.
+    /// State tracker to track events that mutate state or ui_state.
     pub tracker: UiStateTracker,
 
+    // TODO: user preferences
+    // pub theme/keybinds/whatever: UserPreferences
     focused_tab: Option<Id<Tab>>,
 
     time_since_last_frame: f32,

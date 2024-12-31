@@ -1,7 +1,7 @@
 use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, PreciseSongPos, Range, Section, Track};
-use egui::{Color32, Pos2, Rangef, Rect, Rounding, Stroke, pos2, vec2};
+use egui::{Color32, CursorIcon, Pos2, Rangef, Rect, Rounding, pos2, vec2};
 
 use crate::{
     app::Tab,
@@ -270,7 +270,9 @@ impl PianoRollTab {
                         top_bar_rect.y_range(),
                     );
 
-                    let header_resp = ui.allocate_rect(header_rect, egui::Sense::click_and_drag());
+                    let header_resp = ui
+                        .allocate_rect(header_rect, egui::Sense::click_and_drag())
+                        .on_hover_cursor(CursorIcon::Grab);
 
                     painter.rect_filled(
                         header_rect,
@@ -309,6 +311,7 @@ impl PianoRollTab {
 
                     if header_resp.dragged() {
                         prepared.set_scale((1.0 / self.units_per_tick, 0.0));
+                        ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
                     }
                     prepared.process_interaction(
                         section_id.cast(),
@@ -467,16 +470,18 @@ impl PianoRollTab {
                         // let ui_data = ctx.ui_state.notes.get(note_id);
 
                         const STRETCH_AREA_WIDTH: f32 = 4.0;
-                        let note_interaction = ui.allocate_rect(
-                            note_rect.expand2(vec2(STRETCH_AREA_WIDTH / 2.0, 0.0)),
-                            egui::Sense::click_and_drag(),
-                        );
+                        let note_interaction = ui
+                            .allocate_rect(
+                                note_rect.expand2(vec2(STRETCH_AREA_WIDTH / 2.0, 0.0)),
+                                egui::Sense::click_and_drag(),
+                            )
+                            .on_hover_cursor(CursorIcon::Grab);
                         if note_interaction.dragged() {
                             prepared.set_scale((
                                 1.0 / self.units_per_tick,
                                 -1.0 / self.units_per_pitch,
                             ));
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                         }
                         prepared.process_interaction(
                             note_id.cast(),

@@ -1,6 +1,5 @@
-use std::{any::TypeId, borrow::Cow};
 
-use egui::{Rangef, WidgetText};
+use egui::Rangef;
 
 use crate::widget::{ValueHandler, ValueHandlerContext};
 

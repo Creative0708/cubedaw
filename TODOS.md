@@ -1,7 +1,5 @@
 # Stuff to do for MVP
 
-- [ ] Ui for track add/remove
-- [ ] Ui for sections in track tab
 - [ ] Saving/loading (just dump State & UiState via serde-json, probably)
 
 - [ ] More nodes
@@ -10,7 +8,14 @@
     - [ ] Either merge LFO with the oscillator (<-- probably best solution) or make a new node
       - Most user-ergonomic: make the frequency slider go below 0 into the lfo range
 
-- [ ] convert `log` to `tracing`
+- [x] convert `log` to `tracing`
+
+- [ ] flesh out track tab
+
+  - [ ] Ui for track add/remove
+  - [ ] Ui for sections in track tab
+
+- [ ] add a `kick()` function to the plugin api to give plugins more control over the note finish detection
 
 # Stuff to do after MVP
 
@@ -19,3 +24,4 @@
 - [ ] Implement different types of sockets
 - uuughhhghhghhghgghhghghg
 - Optimize everything
+  - [ ] change hashmaps to more efficient data structures
