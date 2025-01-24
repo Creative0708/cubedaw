@@ -710,7 +710,7 @@ impl<'a> Prepared<'a> {
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
-                for (&node_id, node_ui) in &patch_ui.nodes {
+                for (node_id, node_ui) in &patch_ui.nodes {
                     if node_ui.selected {
                         self.tracker
                             .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
@@ -735,7 +735,7 @@ impl<'a> Prepared<'a> {
             ..
         } = *self;
         let mut deleted_cables: IdSet<Cable> = IdSet::new();
-        for (&node_id, node_ui) in &patch_ui.nodes {
+        for (node_id, node_ui) in &patch_ui.nodes {
             if !node_ui.selected {
                 continue;
             }

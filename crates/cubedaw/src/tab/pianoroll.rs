@@ -293,8 +293,8 @@ impl PianoRollTab {
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
-                for (&track_id2, track_ui) in &ctx.ui_state.tracks {
-                    for (&section_id2, section_ui) in &track_ui.sections {
+                for (track_id2, track_ui) in &ctx.ui_state.tracks {
+                    for (section_id2, section_ui) in &track_ui.sections {
                         if section_ui.selected
                             && selection_changes.get(&(track_id2, section_id2)).copied()
                                 != Some(true)
@@ -455,9 +455,9 @@ impl PianoRollTab {
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
-                for (&track_id2, track_ui) in &ctx.ui_state.tracks {
-                    for (&section_id2, section_ui) in &track_ui.sections {
-                        for (&note_id2, note_ui) in &section_ui.notes {
+                for (track_id2, track_ui) in &ctx.ui_state.tracks {
+                    for (section_id2, section_ui) in &track_ui.sections {
+                        for (note_id2, note_ui) in &section_ui.notes {
                             if note_ui.selected
                                 && selection_changes
                                     .get(&(track_id2, section_id2, note_id2))
@@ -500,8 +500,8 @@ impl PianoRollTab {
                 let pos_offset = finished_drag_offset.x.round() as i64;
                 let pitch_offset = finished_drag_offset.y.round() as i32;
 
-                for (&section_id, section_ui) in &track_ui.sections {
-                    for (&note_id, note_ui) in &section_ui.notes {
+                for (section_id, section_ui) in &track_ui.sections {
+                    for (note_id, note_ui) in &section_ui.notes {
                         if note_ui.selected {
                             ctx.tracker.add(NoteMove::new(
                                 track_id,
@@ -625,9 +625,9 @@ impl PianoRollTab {
         {
             // we should really store the selected sections/notes/whatever
             // so we don't have to iterate over _every_ note in order to find the selected ones
-            for (&track_id2, track_ui) in &ctx.ui_state.tracks {
-                for (&section_id2, section_ui) in &track_ui.sections {
-                    for (&note_id2, note_ui) in &section_ui.notes {
+            for (track_id2, track_ui) in &ctx.ui_state.tracks {
+                for (section_id2, section_ui) in &track_ui.sections {
+                    for (note_id2, note_ui) in &section_ui.notes {
                         if note_ui.selected {
                             ctx.tracker.add(UiNoteAddOrRemove::removal(
                                 track_id2,
