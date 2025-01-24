@@ -19,7 +19,7 @@ mod private {
 impl UiState {
     pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
         let mut single_selected_track = None;
-        for (&track_id, track_ui_state) in &self.tracks {
+        for (track_id, track_ui_state) in &self.tracks {
             if track_ui_state.selected {
                 if single_selected_track.is_some() {
                     // more than one selected track, give up

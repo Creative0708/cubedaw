@@ -3,7 +3,7 @@ pub use drag_value::{DefaultValueDisplay, DragValue, ValueHandler, ValueHandlerC
 mod editable_label;
 pub use editable_label::EditableLabel;
 mod song_viewer;
-pub use song_viewer::SongViewer;
+pub use song_viewer::{SongViewer, SongViewerPrepared};
 
 bitflags::bitflags! {
     /// Generic input modifiers that can be rebound (in the future, that is. key remapping isn't available right now)

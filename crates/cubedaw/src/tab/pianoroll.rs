@@ -1,16 +1,16 @@
 use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
-use cubedaw_lib::{Id, Note, PreciseSongPos, Range, Section, Track};
-use egui::{Color32, CursorIcon, Pos2, Rangef, Rect, Rounding, pos2, vec2};
+use cubedaw_lib::{Id, Note, Range, Section, Track};
+use egui::{Color32, CursorIcon, Pos2, Rangef, Rect, Rounding, Vec2, pos2, vec2};
 
 use crate::{
     app::Tab,
     command::{
-        misc::UiSetPlayhead,
         note::{UiNoteAddOrRemove, UiNoteSelect},
         section::{UiSectionAddOrRemove, UiSectionSelect},
     },
     state::ui::SectionUiState,
+    widget::{SongViewer, SongViewerPrepared},
 };
 
 #[derive(Debug)]
@@ -21,8 +21,6 @@ pub struct PianoRollTab {
 
     // Vertical zoom. Each note is this tall
     units_per_pitch: f32,
-    // Horizontal zoom. Each tick is this wide
-    units_per_tick: f32,
 
     last_mouse_position: (i64, i32),
 
@@ -31,15 +29,10 @@ pub struct PianoRollTab {
 
 // Number of empty ticks to display on either side of the song
 const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
+
+// Inclusive range. Standard 88-key keyboard, I think?
 const MIN_NOTE_SHOWN: i32 = -39;
 const MAX_NOTE_SHOWN: i32 = 47;
-
-fn snap_pos(pos: i64, units_per_tick: f32) -> i64 {
-    let step = ((Range::UNITS_PER_BEAT as f32 / units_per_tick * 0.05).min(256.0) as u32)
-        .next_power_of_two() as i64;
-
-    (pos + step / 2).div_floor(step) * step
-}
 
 impl crate::Screen for PianoRollTab {
     fn create(state: &cubedaw_lib::State, ui_state: &crate::UiState) -> Self {
@@ -56,7 +49,6 @@ impl crate::Screen for PianoRollTab {
             }),
 
             units_per_pitch: 16.0,
-            units_per_tick: 0.5,
 
             last_mouse_position: (0, 0),
 
@@ -74,22 +66,28 @@ impl crate::Screen for PianoRollTab {
 
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            egui::ScrollArea::both().show_viewport(ui, |ui, viewport| {
-                if let Some(track_id) = self.track_id
-                    && ctx.state.tracks.has(track_id)
-                {
-                    self.pianoroll(ctx, ui, viewport);
-                } else {
-                    self.pianoroll_empty(ui);
-                }
-            })
+            if let Some(track_id) = self.track_id
+                && ctx.state.tracks.has(track_id)
+            {
+                // TODO: allow persistent state in SongViewer
+                SongViewer::new().ui(ctx, ui, |ctx, ui, prepared| {
+                    self.pianoroll(ctx, ui, prepared)
+                });
+            } else {
+                self.pianoroll_empty(ui);
+            }
         });
         Ok(())
     }
 }
 
 impl PianoRollTab {
-    fn pianoroll(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui, viewport: Rect) {
+    fn pianoroll(
+        &mut self,
+        ctx: &mut crate::Context,
+        ui: &mut egui::Ui,
+        view: &SongViewerPrepared,
+    ) {
         let Some(track_id) = self.track_id else {
             unreachable!()
         };
@@ -103,67 +101,41 @@ impl PianoRollTab {
             unreachable!()
         };
 
-        let max_rect = ui.max_rect();
-        let top_left = max_rect.left_top().to_vec2();
-        let painter = ui.painter_at(viewport.translate(top_left));
+        let anchor = view.anchor();
 
-        let screen_rect = viewport.translate(top_left);
+        let screen_rect = view.screen_rect;
 
-        painter.rect_filled(screen_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
-
-        let screen_x_to_note_x = |pos: f32| -> i64 {
-            ((pos - top_left.x) / self.units_per_tick) as i64 + ctx.state.song_boundary.start
-                - SONG_PADDING
+        let screen_y_to_note_y = |screen_y: f32| -> i32 {
+            MAX_NOTE_SHOWN - ((screen_y - anchor.y) / self.units_per_pitch) as i32
         };
         let screen_pos_to_note_pos = |screen_pos: Pos2| -> (i64, i32) {
             (
-                screen_x_to_note_x(screen_pos.x),
-                MAX_NOTE_SHOWN - ((screen_pos.y - top_left.y) / self.units_per_pitch) as i32,
+                view.screen_x_to_song_x(screen_pos.x),
+                screen_y_to_note_y(screen_pos.y),
             )
-        };
-        let precise_x_to_screen_x = |pos: PreciseSongPos| -> f32 {
-            (pos - PreciseSongPos::from_song_pos(ctx.state.song_boundary.start - SONG_PADDING))
-                .to_song_pos_f32()
-                * self.units_per_tick
-                + top_left.x
-        };
-        let note_x_to_screen_x = |pos: i64| -> f32 {
-            (pos - (ctx.state.song_boundary.start - SONG_PADDING)) as f32 * self.units_per_tick
-                + top_left.x
         };
         let note_pos_to_screen_pos = |(pos, pitch): (i64, i32)| -> Pos2 {
             pos2(
-                note_x_to_screen_x(pos),
-                (MAX_NOTE_SHOWN - pitch) as f32 * self.units_per_pitch + top_left.y,
-            )
-        };
-        let pos_range_to_screen_range = |range: Range| -> Rangef {
-            Rangef::new(
-                note_x_to_screen_x(range.start as _),
-                note_x_to_screen_x(range.end as _),
+                view.song_x_to_screen_x(pos),
+                (MAX_NOTE_SHOWN - pitch) as f32 * self.units_per_pitch + anchor.y,
             )
         };
 
-        let translated_viewport = viewport.translate(top_left);
+        let song_view_range = view.song_view_range;
 
-        let (min_pos, min_pitch) = screen_pos_to_note_pos(translated_viewport.left_bottom());
-        let (max_pos, max_pitch) = screen_pos_to_note_pos(translated_viewport.right_top());
+        let min_pitch = screen_y_to_note_y(screen_rect.bottom());
+        let max_pitch = screen_y_to_note_y(screen_rect.top());
 
-        let pos_view_range = Range {
-            start: min_pos,
-            end: max_pos,
-        };
-
-        let (_, response) = ui.allocate_exact_size(
-            vec2(
-                (ctx.state.song_boundary.length() + SONG_PADDING * 2) as f32 * self.units_per_tick,
-                (MAX_NOTE_SHOWN - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
-            ),
-            egui::Sense::click_and_drag(),
+        let bg_response = view.ui_background(
+            ctx,
+            ui,
+            (MAX_NOTE_SHOWN - MIN_NOTE_SHOWN) as f32 * self.units_per_pitch,
         );
-        let snapped_hover_pos = response.hover_pos().map(|pos2| {
-            let (pos, pitch) = screen_pos_to_note_pos(pos2);
-            (snap_pos(pos, self.units_per_tick), pitch)
+        let snapped_hover_pos = bg_response.hover_pos().map(|hover_pos| {
+            (
+                view.input_screen_x_to_song_x(hover_pos.x),
+                screen_y_to_note_y(hover_pos.y),
+            )
         });
 
         // The horizontal "note lines"
@@ -171,7 +143,7 @@ impl PianoRollTab {
             // TODO not hardcode this, probably after MVP
             if matches!(row % 12, 0 | 2 | 4 | 5 | 7 | 9 | 11) {
                 let row_pos = note_pos_to_screen_pos((0, row)).y;
-                painter.rect_filled(
+                ui.painter().rect_filled(
                     Rect::from_x_y_ranges(
                         screen_rect.x_range(),
                         Rangef::new(row_pos, row_pos + self.units_per_pitch),
@@ -182,56 +154,12 @@ impl PianoRollTab {
             }
         }
 
-        // Vertical bar/beat/whatever indicators
-
-        let vbar_step = ((Range::UNITS_PER_BEAT as f32 / self.units_per_tick * 0.1).min(256.0)
-            as u32)
-            .next_power_of_two() as i64;
-
-        // TODO make this not hardcoded
-        const BEATS_PER_BAR: i64 = 4;
-
-        for i in min_pos.div_ceil(vbar_step)..=max_pos.div_floor(vbar_step) {
-            let pos = i * vbar_step;
-            let stroke = if pos % (BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64) == 0 {
-                ui.visuals().widgets.hovered.bg_stroke
-            } else {
-                let division = pos
-                    .trailing_zeros()
-                    .min(Range::UNITS_PER_BEAT.trailing_zeros());
-                egui::Stroke::new(
-                    1.0,
-                    ui.visuals().widgets.hovered.bg_stroke.color.gamma_multiply(
-                        (division as f32 / Range::UNITS_PER_BEAT.trailing_zeros() as f32).powi(2),
-                    ),
-                )
-            };
-            painter.vline(
-                painter.round_to_pixel(note_x_to_screen_x(pos as _)),
-                screen_rect.y_range(),
-                stroke,
-            );
-        }
+        let top_bar_interaction = view.ui_top_bar(ctx, ui);
 
         // Sections
 
         // TODO implement section colors
         const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
-
-        // Top area (for displaying sections, etc)
-        const TOP_BAR_HEIGHT: f32 = 18.0;
-        let top_bar_rect = Rect::from_x_y_ranges(
-            screen_rect.x_range(),
-            Rangef::new(screen_rect.top(), screen_rect.top() + TOP_BAR_HEIGHT),
-        );
-        let top_bar_interaction = ui.allocate_rect(top_bar_rect, egui::Sense::click_and_drag());
-
-        painter.rect_filled(top_bar_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
-        painter.hline(
-            top_bar_rect.x_range(),
-            top_bar_rect.bottom(),
-            ui.visuals().window_stroke,
-        );
 
         // Sections
         struct RenderedSection<'a> {
@@ -244,7 +172,12 @@ impl PianoRollTab {
 
         let result = ctx.ephemeral_state.drag.handle_snapped(
             Id::new("section"),
-            |unsnapped| vec2(snap_pos(unsnapped.x as _, self.units_per_tick) as _, 0.0),
+            |unsnapped| {
+                vec2(
+                    view.song_x_to_screen_x(view.input_screen_x_to_song_x(unsnapped.x)),
+                    0.0,
+                )
+            },
             |prepared| {
                 for (section_range, section_id, section) in track.sections() {
                     let section_ui = track_ui.sections.force_get(section_id);
@@ -259,22 +192,22 @@ impl PianoRollTab {
                         section_range
                     };
 
-                    if !pos_view_range.intersects(section_range) {
+                    if !song_view_range.intersects(section_range) {
                         continue;
                     }
 
-                    let section_screen_range_x = pos_range_to_screen_range(section_range);
+                    let section_screen_range_x = view.song_range_to_screen_range(section_range);
 
                     let header_rect = Rect::from_x_y_ranges(
                         section_screen_range_x.expand(1.0),
-                        top_bar_rect.y_range(),
+                        view.top_bar_rect.y_range(),
                     );
 
                     let header_resp = ui
                         .allocate_rect(header_rect, egui::Sense::click_and_drag())
                         .on_hover_cursor(CursorIcon::Grab);
 
-                    painter.rect_filled(
+                    ui.painter().rect_filled(
                         header_rect,
                         Rounding {
                             nw: 6.0,
@@ -296,7 +229,7 @@ impl PianoRollTab {
                     );
 
                     let padding = header_rect.height() * 0.5;
-                    painter.text(
+                    ui.painter().text(
                         pos2(header_rect.left() + padding, header_rect.top() + padding),
                         egui::Align2::LEFT_CENTER,
                         &section.name,
@@ -310,7 +243,7 @@ impl PianoRollTab {
                     );
 
                     if header_resp.dragged() {
-                        prepared.set_scale((1.0 / self.units_per_tick, 0.0));
+                        prepared.set_scale((1.0 / view.units_per_tick, 0.0));
                         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
                     }
                     prepared.process_interaction(
@@ -326,20 +259,20 @@ impl PianoRollTab {
                             .gamma_multiply(0.5 * if section_ui.selected { 1.5 } else { 1.0 }),
                     );
 
-                    let section_screen_range_x = pos_range_to_screen_range(section_range);
+                    let section_screen_range_x = view.song_range_to_screen_range(section_range);
 
-                    painter.rect_filled(
+                    ui.painter().rect_filled(
                         Rect::from_x_y_ranges(section_screen_range_x, screen_rect.y_range()),
                         Rounding::ZERO,
                         SECTION_COLOR
                             .gamma_multiply(0.2 * if section_ui.selected { 1.5 } else { 1.0 }),
                     );
-                    painter.vline(
+                    ui.painter().vline(
                         section_screen_range_x.min,
                         screen_rect.y_range(),
                         section_stroke,
                     );
-                    painter.vline(
+                    ui.painter().vline(
                         section_screen_range_x.max,
                         screen_rect.y_range(),
                         section_stroke,
@@ -356,7 +289,7 @@ impl PianoRollTab {
         );
         {
             let should_deselect_everything =
-                result.should_deselect_everything || response.clicked();
+                result.should_deselect_everything || bg_response.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
@@ -409,9 +342,9 @@ impl PianoRollTab {
 
         let result = ctx.ephemeral_state.drag.handle_snapped(
             Id::new("notes"),
-            |egui::Vec2 { x, y }| {
+            |Vec2 { x, y }| {
                 vec2(
-                    snap_pos(x.round() as _, self.units_per_tick) as _,
+                    view.song_x_to_screen_x(view.input_screen_x_to_song_x(x)),
                     y.round(),
                 )
             },
@@ -429,7 +362,7 @@ impl PianoRollTab {
                         note_range += movement.x as i64;
                         note_pitch += movement.y as i32;
                     }
-                    let note_screen_range_x = pos_range_to_screen_range(note_range);
+                    let note_screen_range_x = view.song_range_to_screen_range(note_range);
 
                     let note_y = note_pos_to_screen_pos((0, note_pitch)).y;
                     let note_rect = Rect::from_x_y_ranges(
@@ -444,14 +377,15 @@ impl PianoRollTab {
                             .rect()
                             .intersects(note_rect)
                     {
-                        painter.rect(
+                        ui.painter().rect(
                             note_rect,
                             Rounding::ZERO,
                             Color32::DEBUG_COLOR,
                             egui::Stroke::new(3.0, Color32::WHITE),
                         );
                     } else {
-                        painter.rect_filled(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR);
+                        ui.painter()
+                            .rect_filled(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR);
                     }
                     if ctx
                         .ephemeral_state
@@ -478,7 +412,7 @@ impl PianoRollTab {
                             .on_hover_cursor(CursorIcon::Grab);
                         if note_interaction.dragged() {
                             prepared.set_scale((
-                                1.0 / self.units_per_tick,
+                                1.0 / view.units_per_tick,
                                 -1.0 / self.units_per_pitch,
                             ));
                             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -517,7 +451,7 @@ impl PianoRollTab {
         );
         {
             let should_deselect_everything =
-                result.should_deselect_everything || response.clicked();
+                result.should_deselect_everything || bg_response.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
@@ -584,7 +518,7 @@ impl PianoRollTab {
 
         {
             // Handle drawn note
-            if response.hovered() && ui.input(|i| i.modifiers.ctrl) {
+            if bg_response.hovered() && ui.input(|i| i.modifiers.ctrl) {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::None);
                 if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
                     && let Some((pos, pitch)) = snapped_hover_pos
@@ -626,13 +560,14 @@ impl PianoRollTab {
                     note.length = (pos - starting_pos).max(0) as _;
                 }
 
+                // that little vertical line that shows you where the next note would be drawn
                 if let Some((pos, mut pitch)) = snapped_hover_pos {
                     if let Some((_, ref note)) = self.currently_drawn_note {
                         pitch = note.pitch;
                     }
 
                     let screen_pos = note_pos_to_screen_pos((pos, pitch));
-                    painter.vline(
+                    ui.painter().vline(
                         screen_pos.x,
                         Rangef::new(screen_pos.y, screen_pos.y + self.units_per_pitch),
                         if self.currently_drawn_note.is_some() {
@@ -648,21 +583,7 @@ impl PianoRollTab {
             }
         }
 
-        // Bar indicators
-        for bar in min_pos.div_floor(BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64)
-            ..=max_pos.div_ceil(BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64)
-        {
-            let pos = bar * (BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64);
-            painter.text(
-                pos2(note_x_to_screen_x(pos as _), top_bar_rect.center().y),
-                egui::Align2::CENTER_CENTER,
-                bar.to_string(),
-                egui::FontId::proportional(12.0),
-                ui.visuals().widgets.hovered.text_color(),
-            );
-        }
-
-        response.context_menu(|ui| {
+        bg_response.context_menu(|ui| {
             if ui.button("Add section").clicked() {
                 let section_range = Range::surrounding_pos(self.last_mouse_position.0);
                 ctx.tracker.add(UiSectionAddOrRemove::addition(
@@ -678,10 +599,10 @@ impl PianoRollTab {
         // if interaction.clicked() && single_thing_clicked.is_none() {
         //     single_thing_clicked = Some(None);
         // }
-        if self.currently_drawn_note.is_none() || response.drag_stopped() {
+        if self.currently_drawn_note.is_none() || bg_response.drag_stopped() {
             ctx.ephemeral_state
                 .selection_rect
-                .process_interaction(&response, self.id);
+                .process_interaction(&bg_response, self.id);
         }
 
         // if let Some(single_thing_clicked) = single_thing_clicked {
@@ -696,50 +617,6 @@ impl PianoRollTab {
         //         }
         //     }
         // }
-
-        // playhead
-        let playhead_screen_x =
-            painter.round_to_pixel(ctx.currently_playing_playhead_pos().map_or_else(
-                || note_x_to_screen_x(ctx.ui_state.playhead_pos),
-                precise_x_to_screen_x,
-            ));
-        if screen_rect
-            .x_range()
-            .expand(8.0)
-            .contains(playhead_screen_x)
-        {
-            let playhead_stroke = ui.visuals().widgets.inactive.fg_stroke;
-            // add a small amount to screen_rect.top() so the line doesn't poke through the triangle
-            ui.painter().vline(
-                playhead_screen_x,
-                Rangef::new(screen_rect.top() + 3.0, screen_rect.bottom()),
-                playhead_stroke,
-            );
-            let playhead_top_pos = pos2(playhead_screen_x, top_bar_rect.top());
-            ui.painter().add(egui::Shape::convex_polygon(
-                vec![
-                    pos2(playhead_top_pos.x + 5.0, playhead_top_pos.y),
-                    pos2(playhead_top_pos.x, playhead_top_pos.y + 7.0),
-                    pos2(playhead_top_pos.x - 5.0, playhead_top_pos.y),
-                ],
-                playhead_stroke.color,
-                egui::Stroke::NONE,
-            ));
-        }
-        if top_bar_interaction.contains_pointer()
-            && let Some(pointer_pos) = ui.input(|i| {
-                if i.pointer.primary_clicked() {
-                    i.pointer.interact_pos()
-                } else {
-                    None
-                }
-            })
-        {
-            ctx.tracker.add_weak(UiSetPlayhead::new(snap_pos(
-                screen_x_to_note_x(pointer_pos.x),
-                self.units_per_tick,
-            ) as _));
-        }
 
         if ctx.focused_tab() == Some(self.id)
             && ui
@@ -766,6 +643,8 @@ impl PianoRollTab {
         if let Some(hover_pos) = snapped_hover_pos {
             self.last_mouse_position = hover_pos;
         }
+
+        view.ui_playhead(ctx, ui);
     }
 
     fn pianoroll_empty(&mut self, ui: &mut egui::Ui) {

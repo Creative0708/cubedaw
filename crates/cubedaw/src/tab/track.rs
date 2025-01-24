@@ -6,7 +6,10 @@ use cubedaw_lib::{Id, IdMap, Range, Track, TrackInner};
 use egui::{Color32, CursorIcon, Rect, Sense, Stroke};
 
 use crate::{
-    app::Tab, command::track::UiTrackSelect, state::ui::TrackUiState, widget::EditableLabel,
+    app::Tab,
+    command::track::UiTrackSelect,
+    state::ui::TrackUiState,
+    widget::{EditableLabel, SongViewer, SongViewerPrepared},
 };
 
 #[derive(Debug)]
@@ -17,9 +20,6 @@ pub struct TrackTab {
     vertical_zoom: f32,
     // Horizontal zoom. Each tick is this wide
     horizontal_zoom: f32,
-
-    track_whose_name_is_being_edited: Option<(Id<Track>, String)>,
-    track_whose_name_was_being_edited_last_frame: Option<Id<Track>>,
 }
 
 const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
@@ -34,9 +34,6 @@ impl crate::Screen for TrackTab {
 
             vertical_zoom: 1.0,
             horizontal_zoom: 0.125,
-
-            track_whose_name_is_being_edited: None,
-            track_whose_name_was_being_edited_last_frame: None,
         }
     }
 
@@ -49,25 +46,34 @@ impl crate::Screen for TrackTab {
     }
 
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
-        let mut prepared = Prepared::new(ctx, ui, self);
-
-        // egui::ScrollArea::vertical().show(ui, |ui| {
-        prepared.update(ui);
-        // });
+        let mut song_viewer = SongViewer {
+            units_per_tick: 1.0 / 16.0,
+        };
+        let mut prepared = Prepared::new(ctx, ui, self, &song_viewer);
+        egui::SidePanel::left(egui::Id::new(self.id)).show_inside(ui, |ui| {
+            prepared.ui_left_sidebar(ctx, ui);
+        });
+        egui::CentralPanel::default()
+            .frame(Default::default())
+            .show_inside(ui, |ui| {
+                song_viewer.ui(ctx, ui, |ctx, ui, view| {
+                    prepared.central_panel(ui, ctx, view);
+                })
+            });
 
         Ok(())
     }
 }
 
-struct Prepared<'a, 'b> {
-    ctx: &'a mut crate::Context<'b>,
-    tab: &'a mut TrackTab,
-
+struct Prepared<'ctx> {
     /// If the user is dragging and released the drag, would the drag succeed?
     ///
     /// Basically, is the drag in range of the track headers.
     dragging_would_succeed: bool,
-    track_list: Vec<TrackListEntry<'b>>,
+    track_list: Vec<TrackListEntry<'ctx>>,
+    total_track_height: f32,
+
+    horizontal_zoom: f32,
 }
 
 #[derive(Debug)]
@@ -96,7 +102,6 @@ impl TrackListEntry<'_> {
         rect: egui::Rect,
         should_highlight: bool,
         id_source: u32,
-        tab: &mut TrackTab,
     ) {
         let visuals = if should_highlight {
             &ui.visuals().widgets.hovered
@@ -117,15 +122,9 @@ impl TrackListEntry<'_> {
                     .max_rect(rect.shrink(4.0))
                     .id_salt(id_source),
             ),
-            tab,
         );
     }
-    fn track_header_inner(
-        &self,
-        tracker: &mut crate::context::UiStateTracker,
-        ui: &mut egui::Ui,
-        tab: &mut TrackTab,
-    ) {
+    fn track_header_inner(&self, tracker: &mut crate::context::UiStateTracker, ui: &mut egui::Ui) {
         let Self {
             track_id, track_ui, ..
         } = *self;
@@ -148,10 +147,15 @@ impl TrackListEntry<'_> {
     }
 }
 
-impl<'a, 'b> Prepared<'a, 'b> {
-    fn new(ctx: &'a mut crate::Context<'b>, ui: &mut egui::Ui, tab: &'a mut TrackTab) -> Self {
+impl<'ctx> Prepared<'ctx> {
+    fn new(
+        ctx: &mut crate::Context<'ctx>,
+        ui: &mut egui::Ui,
+        tab: &mut TrackTab,
+        view: &SongViewer,
+    ) -> Self {
         let mut track_list: Vec<TrackListEntry> = vec![];
-        let mut current_y = ui.max_rect().top();
+        let mut current_y = view.anchor(ui).y;
         if ctx.state.tracks.get(ctx.state.root_track).is_some() {
             // traverse the track list in order
 
@@ -236,7 +240,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
             let mut current_y = ui.max_rect().top();
             for track_entry in not_dragging_tracks.into_iter().map(Some).chain([None]) {
                 while dragging_tracks.front().is_some_and(|front| {
-                    track_entry.as_ref().map_or(true, |track_entry| {
+                    track_entry.as_ref().is_none_or(|track_entry| {
                         front.position + raw_movement_y < current_y + track_entry.height * 0.5
                     })
                 }) {
@@ -266,35 +270,15 @@ impl<'a, 'b> Prepared<'a, 'b> {
         }
 
         Self {
-            ctx,
-            tab,
             dragging_would_succeed,
+            total_track_height: track_list.iter().map(|track| track.height).sum(),
             track_list,
+
+            horizontal_zoom: tab.horizontal_zoom,
         }
     }
 
-    fn update(&mut self, ui: &mut egui::Ui) {
-        egui::SidePanel::left(egui::Id::new(self.tab.id)).show_inside(ui, |ui| {
-            self.track_header_left_sidebar(ui);
-        });
-
-        egui::CentralPanel::default().frame(Default::default()).show_inside(ui, |ui| {
-            egui::ScrollArea::horizontal()
-                .auto_shrink(egui::Vec2b::FALSE)
-                .show_viewport(ui, |ui, viewport| {
-                    ui.scope_builder(
-                        egui::UiBuilder::new().sense(egui::Sense::click_and_drag()),
-                        |ui| {
-                            self.central_panel(ui, viewport);
-                        },
-                    );
-                });
-        });
-    }
-
-    fn track_header_left_sidebar(&mut self, ui: &mut egui::Ui) {
-        let ctx = &mut *self.ctx;
-
+    fn ui_left_sidebar(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         let result = ctx.ephemeral_state.drag.handle(
             Id::new("tracks"),
             |prepared: &mut crate::util::Prepared<'_, Id<Track>>| {
@@ -356,7 +340,6 @@ impl<'a, 'b> Prepared<'a, 'b> {
                                 rect,
                                 track_entry.is_highlighted,
                                 0,
-                                self.tab,
                             );
                         },
                     );
@@ -395,7 +378,6 @@ impl<'a, 'b> Prepared<'a, 'b> {
                                 transformed_rect,
                                 true,
                                 1,
-                                self.tab,
                             );
                         });
                     }
@@ -465,23 +447,21 @@ impl<'a, 'b> Prepared<'a, 'b> {
         }
     }
 
-    fn central_panel(&mut self, ui: &mut egui::Ui, viewport: Rect) {
-        let ctx = &mut *self.ctx;
-
+    fn central_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &mut crate::Context,
+        view: &SongViewerPrepared,
+    ) {
         let mut track_entry_map: IdMap<Track, &TrackListEntry> = IdMap::new();
         for track_entry in &self.track_list {
             track_entry_map.insert(track_entry.track_id, track_entry);
         }
 
-        let max_rect = ui.max_rect();
-        let top_left = max_rect.left_top();
-        let screen_rect = viewport.translate(top_left.to_vec2());
+        let anchor = view.anchor();
+        let screen_rect = view.screen_rect;
 
-        ui.painter().rect_filled(
-            screen_rect,
-            egui::Rounding::ZERO,
-            ui.visuals().extreme_bg_color,
-        );
+        view.ui_background(ctx, ui, self.total_track_height);
         // let rect = egui::Rect::from_x_y_ranges(
         //     screen_rect,
         //     // ui.max_rect().left()
@@ -496,9 +476,8 @@ impl<'a, 'b> Prepared<'a, 'b> {
 
         let _todo = response;
 
-        let note_x_to_screen_x = |pos: i64| -> f32 {
-            (pos + SONG_PADDING) as f32 * self.tab.horizontal_zoom + top_left.x
-        };
+        let note_x_to_screen_x =
+            |pos: i64| -> f32 { (pos + SONG_PADDING) as f32 * self.horizontal_zoom + anchor.x };
         let track_pos_to_screen_pos = |range: Range, entry: &TrackListEntry| -> Rect {
             Rect::from_x_y_ranges(
                 note_x_to_screen_x(range.start)..=note_x_to_screen_x(range.end),
@@ -506,7 +485,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
             )
         };
         let screen_x_to_note_x =
-            |pos: f32| -> i64 { ((pos - top_left.x) / self.tab.horizontal_zoom).floor() as i64 };
+            |pos: f32| -> i64 { ((pos - anchor.x) / self.horizontal_zoom).floor() as i64 };
         let screen_pos_to_track_pos = |rect: Rect| -> Option<(Range, &TrackListEntry)> {
             let entry_index = self
                 .track_list
@@ -552,7 +531,7 @@ impl<'a, 'b> Prepared<'a, 'b> {
             }
 
             // sections
-            ctx.ephemeral_state.drag.handle_snapped(Id::new("section"), snap_fn, f)
+            // ctx.ephemeral_state.drag.handle_snapped(Id::new("section"), snap_fn, f)
 
             let track = track_entry.track;
 
@@ -584,5 +563,9 @@ impl<'a, 'b> Prepared<'a, 'b> {
                 }
             }
         }
+
+        view.ui_top_bar(ctx, ui);
+
+        view.ui_playhead(ctx, ui);
     }
 }

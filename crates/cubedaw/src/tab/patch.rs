@@ -323,7 +323,7 @@ impl<'a> Prepared<'a> {
         });
     }
 
-    fn handle_node(
+    fn ui_node(
         &mut self,
         ui: &mut egui::Ui,
         prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
@@ -630,7 +630,7 @@ impl<'a> Prepared<'a> {
                 let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
 
                 let (result, dragged_node_slot_for_this_node, hovered_node_slot_for_this_node) =
-                    self.handle_node(ui, prepared, node_data, Some(node_id), node_ui)?;
+                    self.ui_node(ui, prepared, node_data, Some(node_id), node_ui)?;
 
                 dragged_node_slot = dragged_node_slot.or(dragged_node_slot_for_this_node);
                 hovered_node_slot = hovered_node_slot.or(hovered_node_slot_for_this_node);
@@ -643,12 +643,11 @@ impl<'a> Prepared<'a> {
             {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
                 let fake_entry = NodeEntry::new(node_data, 0, 0);
-                let (result, ..) =
-                    self.handle_node(ui, prepared, &fake_entry, None, &NodeUiState {
-                        selected: true,
-                        pos: hover_pos,
-                        width: 128.0,
-                    })?;
+                let (result, ..) = self.ui_node(ui, prepared, &fake_entry, None, &NodeUiState {
+                    selected: true,
+                    pos: hover_pos,
+                    width: 128.0,
+                })?;
                 let node_data = fake_entry.data;
                 if primary_clicked {
                     // place the node
@@ -685,7 +684,7 @@ impl<'a> Prepared<'a> {
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 // TODO rename these
-                for (&node_id2, node_ui) in &patch_ui.nodes {
+                for (node_id2, node_ui) in &patch_ui.nodes {
                     if node_ui.selected
                         && !matches!(selection_changes.get(&(track_id, node_id2)), Some(true))
                     {

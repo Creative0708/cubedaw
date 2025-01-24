@@ -1,6 +1,7 @@
 use std::ops;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug, Default)]
+/// Cubedaw range. Describes an inclusive start position and an exclusive end position.
 pub struct Range {
     pub start: i64,
     pub end: i64,
@@ -78,26 +79,59 @@ impl Range {
         }
     }
 
-    pub fn length(&self) -> i64 {
+    pub fn length(self) -> i64 {
         self.end - self.start
     }
-    pub fn valid(&self) -> bool {
+    pub fn valid(self) -> bool {
         self.length() >= 0
     }
 
-    pub fn contains(&self, pos: i64) -> bool {
+    pub fn contains(self, pos: i64) -> bool {
         pos >= self.start && pos < self.end
     }
 
-    pub fn intersect(&self, other: Self) -> Self {
+    pub fn intersect(self, other: Self) -> Self {
         Self {
             start: self.start.max(other.start),
             end: self.end.min(other.end),
         }
     }
-    pub fn intersects(&self, other: Self) -> bool {
+    pub fn intersects(self, other: Self) -> bool {
         self.start < other.end && self.end > other.start
     }
+
+    pub fn iter_snap_to(self, snap: i64) -> impl Iterator<Item = i64> {
+        self.iter_snap_to2(snap).map(|(_, x)| x)
+    }
+    pub fn iter_snap_to2(self, snap: i64) -> impl Iterator<Item = (i64, i64)> {
+        let start = div_ceil(self.start, snap);
+        let end = div_floor(self.end, snap);
+        (start..=end).map(move |x| (x, x * snap))
+    }
+}
+
+// copied from rust std
+const fn div_ceil(this: i64, rhs: i64) -> i64 {
+    let d = this / rhs;
+    let r = this % rhs;
+
+    // When remainder is non-zero we have a.div_ceil(b) == 1 + a.div_floor(b),
+    // so we can re-use the algorithm from div_floor, just adding 1.
+    let correction = 1 + ((this ^ rhs) >> (i64::BITS - 1));
+    if r != 0 { d + correction } else { d }
+}
+const fn div_floor(this: i64, rhs: i64) -> i64 {
+    let d = this / rhs;
+    let r = this % rhs;
+
+    // If the remainder is non-zero, we need to subtract one if the
+    // signs of self and rhs differ, as this means we rounded upwards
+    // instead of downwards. We do this branchlessly by creating a mask
+    // which is all-ones iff the signs differ, and 0 otherwise. Then by
+    // adding this mask (which corresponds to the signed value -1), we
+    // get our correction.
+    let correction = (this ^ rhs) >> (i64::BITS - 1);
+    if r != 0 { d + correction } else { d }
 }
 
 impl ops::Add<i64> for Range {

@@ -21,7 +21,7 @@ impl WorkerHostState {
     pub fn new(state: &State, options: &WorkerOptions) -> Self {
         let mut section_tracks = IdMap::new();
         let mut group_tracks = IdMap::new();
-        for (&track_id, track) in &state.tracks {
+        for (track_id, track) in &state.tracks {
             let mut node_map = IdMap::new();
             for (node_id, node) in track.patch.nodes() {
                 let entry = options.registry.get(&node.data.key).unwrap_or_else(|| {
@@ -64,7 +64,7 @@ impl WorkerHostState {
         worker_options: &WorkerOptions,
     ) -> anyhow::Result<()> {
         let mut tracks_to_delete = Vec::new();
-        for (&track_id, _) in &self.group_tracks {
+        for (track_id, _) in &self.group_tracks {
             if !state.tracks.has(track_id) {
                 tracks_to_delete.push(track_id);
             }
@@ -74,11 +74,11 @@ impl WorkerHostState {
         }
 
         let mut notes_to_delete = Vec::new();
-        for (&track_id, worker_track_data) in &mut self.section_tracks {
+        for (track_id, worker_track_data) in &mut self.section_tracks {
             match state.tracks.get(track_id) {
                 Some(track) => {
                     let track_data = track.inner.section().unwrap();
-                    for (&note_id, WorkerNoteState { section_id, .. }) in &worker_track_data.notes {
+                    for (note_id, WorkerNoteState { section_id, .. }) in &worker_track_data.notes {
                         if track_data
                             .section(*section_id)
                             .and_then(|section| section.note(note_id))
@@ -100,7 +100,7 @@ impl WorkerHostState {
             self.section_tracks.remove(track_id);
         }
 
-        for (&track_id, track) in &state.tracks {
+        for (track_id, track) in &state.tracks {
             match &track.inner {
                 cubedaw_lib::TrackInner::Group(inner) => {
                     if let Some(worker_track) = self.group_tracks.get_mut(track_id) {

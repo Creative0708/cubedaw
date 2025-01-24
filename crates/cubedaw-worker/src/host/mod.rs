@@ -364,11 +364,11 @@ fn add_jobs(
         song_range_that_we_will_process
     });
 
-    for (&track_id, section_track_data) in &mut worker_state.section_tracks {
+    for (track_id, section_track_data) in &mut worker_state.section_tracks {
         section_track_id_to_mutable_reference_to_section_track_data
             .insert(track_id, section_track_data);
     }
-    for (&track_id, group_track_data) in &mut worker_state.group_tracks {
+    for (track_id, group_track_data) in &mut worker_state.group_tracks {
         group_track_id_to_mutable_reference_to_group_track_data.insert(track_id, group_track_data);
     }
 
@@ -412,7 +412,7 @@ fn add_jobs(
                 };
 
                 // live notes
-                for (&live_note_id, note_state) in &mut worker_track_data.live_notes {
+                for (live_note_id, note_state) in &mut worker_track_data.live_notes {
                     work_tx
                         .send(WorkerJob::NoteProcess {
                             track_id,
@@ -449,7 +449,7 @@ fn add_jobs(
                     }
 
                     // ...then process all notes
-                    for (&note_id, note_state) in &mut worker_track_data.notes {
+                    for (note_id, note_state) in &mut worker_track_data.notes {
                         let (start_pos, note) = track_data
                             .section(note_state.section_id)
                             .unwrap()

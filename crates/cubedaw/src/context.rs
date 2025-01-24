@@ -85,6 +85,12 @@ impl<'a> Context<'a> {
     pub fn currently_playing_playhead_pos(&self) -> Option<PreciseSongPos> {
         self.currently_playing_playhead_pos
     }
+    pub fn playhead_pos(&self) -> PreciseSongPos {
+        match self.currently_playing_playhead_pos() {
+            Some(pos) => pos,
+            None => PreciseSongPos::from_song_pos(self.ui_state.playhead_pos),
+        }
+    }
 
     pub fn finish(self) -> ContextResult {
         self.ephemeral_state.selection_rect.finish();

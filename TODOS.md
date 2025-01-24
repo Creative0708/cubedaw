@@ -17,6 +17,8 @@
 
 - [ ] add a `kick()` function to the plugin api to give plugins more control over the note finish detection
 
+- [ ] remove the entirety of `cubedaw-command` (move `StateCommand` to `cubedaw-worker` and use [dyn upcasting](https://github.com/rust-lang/rust/issues/65991) to coerce `UiStateCommand` (or just have the `StateCommandWrapper` do that))
+
 # Stuff to do after MVP
 
 - [ ] Implement stereo sound

@@ -153,29 +153,32 @@ impl<T> Ord for Id<T> {
 
 // TODO if these are a performance bottleneck copy egui's id hasher implementation
 #[derive(Clone)]
-pub struct IdMap<T: 'static, V = T> {
-    map: HashMap<Id<T>, V>,
+pub struct IdMap<T, V = T> {
+    // use an Id<()> to not generate impls of HashMap for separate Id<T>s
+    map: HashMap<Id, V>,
+    _marker: PhantomData<Id<T>>,
 }
 
 impl<T, V> IdMap<T, V> {
     pub fn new() -> Self {
         Self {
             map: Default::default(),
+            _marker: PhantomData,
         }
     }
 
     pub fn has(&self, id: Id<T>) -> bool {
-        self.map.contains_key(&id)
+        self.map.contains_key(&id.cast())
     }
 
     pub fn get(&self, id: Id<T>) -> Option<&V> {
-        self.map.get(&id)
+        self.map.get(&id.cast())
     }
     pub fn get_mut(&mut self, id: Id<T>) -> Option<&mut V> {
-        self.map.get_mut(&id)
+        self.map.get_mut(&id.cast())
     }
     pub fn get_mut_or_insert(&mut self, id: Id<T>, f: impl FnOnce() -> V) -> &mut V {
-        self.map.entry(id).or_insert_with(f)
+        self.map.entry(id.cast()).or_insert_with(f)
     }
     pub fn get_mut_or_insert_default(&mut self, id: Id<T>) -> &mut V
     where
@@ -187,7 +190,7 @@ impl<T, V> IdMap<T, V> {
     where
         V: Default,
     {
-        self.map.entry(id).or_default()
+        self.map.entry(id.cast()).or_default()
     }
     pub fn force_get(&self, id: Id<T>) -> &V {
         match self.get(id) {
@@ -202,12 +205,12 @@ impl<T, V> IdMap<T, V> {
         }
     }
     pub fn insert(&mut self, id: Id<T>, val: V) {
-        if self.map.insert(id, val).is_some() {
+        if self.map.insert(id.cast(), val).is_some() {
             panic!("tried to insert already existing id into IdMap");
         }
     }
     pub fn replace(&mut self, id: Id<T>, val: V) -> Option<V> {
-        self.map.insert(id, val)
+        self.map.insert(id.cast(), val)
     }
     pub fn insert_and_get_mut(&mut self, id: Id<T>, val: V) -> &mut V {
         // TODO currently there's no way to not have two hashmap accesses, change this when entry_insert is stabilized
@@ -219,7 +222,7 @@ impl<T, V> IdMap<T, V> {
         // if let Some(ref mut events) = self.events {
         //     events.push(TrackingMapEvent::Delete(id));
         // }
-        self.map.remove(&id)
+        self.map.remove(&id.cast())
     }
     pub fn take(&mut self, id: Id<T>) -> V {
         self.remove(id)
@@ -230,20 +233,20 @@ impl<T, V> IdMap<T, V> {
     }
 
     // TODO make these functions give Id<T> instead of &Id<T>
-    pub fn keys(&self) -> hash_map::Keys<'_, Id<T>, V> {
-        self.map.keys()
+    pub fn keys(&self) -> impl Iterator<Item = Id<T>> + '_ {
+        self.map.keys().map(|id| id.cast())
     }
-    pub fn values(&self) -> hash_map::Values<'_, Id<T>, V> {
+    pub fn values(&self) -> impl Iterator<Item = &V> {
         self.map.values()
     }
-    pub fn values_mut(&mut self) -> hash_map::ValuesMut<'_, Id<T>, V> {
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.map.values_mut()
     }
-    pub fn iter(&self) -> hash_map::Iter<'_, Id<T>, V> {
-        self.map.iter()
+    pub fn iter(&self) -> Iter<'_, T, V> {
+        Iter(self.map.iter(), PhantomData)
     }
-    pub fn iter_mut(&mut self) -> hash_map::IterMut<'_, Id<T>, V> {
-        self.map.iter_mut()
+    pub fn iter_mut(&mut self) -> IterMut<'_, T, V> {
+        IterMut(self.map.iter_mut(), PhantomData)
     }
 
     pub fn len(&self) -> usize {
@@ -260,34 +263,57 @@ impl<T, V> Default for IdMap<T, V> {
     }
 }
 
-impl<T, V> IntoIterator for IdMap<T, V> {
-    type IntoIter = hash_map::IntoIter<Id<T>, V>;
-    type Item = (Id<T>, V);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.map.into_iter()
-    }
-}
-impl<'a, T, V> IntoIterator for &'a IdMap<T, V> {
-    type IntoIter = hash_map::Iter<'a, Id<T>, V>;
-    type Item = (&'a Id<T>, &'a V);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-impl<'a, T, V> IntoIterator for &'a mut IdMap<T, V> {
-    type IntoIter = hash_map::IterMut<'a, Id<T>, V>;
-    type Item = (&'a Id<T>, &'a mut V);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
 impl<T, V: Debug> Debug for IdMap<T, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.map.fmt(f)
     }
 }
 
+// TODO make this a wrapper type
 pub type IdSet<T> = HashSet<Id<T>>;
+
+pub struct IntoIter<T, V>(hash_map::IntoIter<Id, V>, PhantomData<Id<T>>);
+impl<T, V> Iterator for IntoIter<T, V> {
+    type Item = (Id<T>, V);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(id, v)| (id.cast(), v))
+    }
+}
+impl<T, V> IntoIterator for IdMap<T, V> {
+    type IntoIter = IntoIter<T, V>;
+    type Item = (Id<T>, V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter(self.map.into_iter(), PhantomData)
+    }
+}
+pub struct Iter<'a, T, V>(hash_map::Iter<'a, Id, V>, PhantomData<Id<T>>);
+impl<'a, T, V> Iterator for Iter<'a, T, V> {
+    type Item = (Id<T>, &'a V);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(id, v)| (id.cast(), v))
+    }
+}
+impl<'a, T, V> IntoIterator for &'a IdMap<T, V> {
+    type IntoIter = Iter<'a, T, V>;
+    type Item = (Id<T>, &'a V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+pub struct IterMut<'a, T, V>(hash_map::IterMut<'a, Id, V>, PhantomData<Id<T>>);
+impl<'a, T, V> Iterator for IterMut<'a, T, V> {
+    type Item = (Id<T>, &'a mut V);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(id, v)| (id.cast(), v))
+    }
+}
+impl<'a, T, V> IntoIterator for &'a mut IdMap<T, V> {
+    type IntoIter = IterMut<'a, T, V>;
+    type Item = (Id<T>, &'a mut V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}

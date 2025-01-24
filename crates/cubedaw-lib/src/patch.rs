@@ -78,7 +78,7 @@ impl Patch {
         Some(entry)
     }
     pub fn nodes(&self) -> impl Iterator<Item = (Id<NodeEntry>, &NodeEntry)> {
-        self.nodes.iter().map(|(&id, data)| (id, data))
+        self.nodes.iter().map(|(id, data)| (id, data))
     }
     pub fn node(&self, id: Id<NodeEntry>) -> Option<&NodeData> {
         self.nodes.get(id).map(|entry| &entry.data)
@@ -94,7 +94,7 @@ impl Patch {
     }
 
     pub fn cables(&self) -> impl Iterator<Item = (Id<Cable>, &Cable)> {
-        self.cables.iter().map(|(&id, data)| (id, data))
+        self.cables.iter().map(|(id, data)| (id, data))
     }
     pub fn cable(&self, id: Id<Cable>) -> Option<&Cable> {
         self.cables.get(id)
@@ -310,7 +310,7 @@ impl Patch {
             }
         }
 
-        let node_ids: Vec<Id<NodeEntry>> = self.nodes.keys().cloned().collect();
+        let node_ids: Vec<Id<NodeEntry>> = self.nodes.keys().collect();
         for node_id in node_ids {
             if visited.replace(node_id, VisitedState::Inactive).is_some() {
                 continue;
