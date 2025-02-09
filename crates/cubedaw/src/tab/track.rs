@@ -18,8 +18,8 @@ pub struct TrackTab {
 
     // Vertical zoom. Each track height is multiplied by this
     vertical_zoom: f32,
-    // Horizontal zoom. Each tick is this wide
-    horizontal_zoom: f32,
+
+    song_viewer: SongViewer,
 }
 
 const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
@@ -33,7 +33,10 @@ impl crate::Screen for TrackTab {
             id: Id::arbitrary(),
 
             vertical_zoom: 1.0,
-            horizontal_zoom: 0.125,
+
+            song_viewer: SongViewer {
+                units_per_tick: 1.0 / 16.0,
+            },
         }
     }
 
@@ -46,17 +49,14 @@ impl crate::Screen for TrackTab {
     }
 
     fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
-        let mut song_viewer = SongViewer {
-            units_per_tick: 1.0 / 16.0,
-        };
-        let mut prepared = Prepared::new(ctx, ui, self, &song_viewer);
+        let mut prepared = Prepared::new(ctx, ui, self);
         egui::SidePanel::left(egui::Id::new(self.id)).show_inside(ui, |ui| {
             prepared.ui_left_sidebar(ctx, ui);
         });
         egui::CentralPanel::default()
             .frame(Default::default())
             .show_inside(ui, |ui| {
-                song_viewer.ui(ctx, ui, |ctx, ui, view| {
+                self.song_viewer.ui(ctx, ui, |ctx, ui, view| {
                     prepared.central_panel(ui, ctx, view);
                 })
             });
@@ -72,8 +72,6 @@ struct Prepared<'ctx> {
     dragging_would_succeed: bool,
     track_list: Vec<TrackListEntry<'ctx>>,
     total_track_height: f32,
-
-    horizontal_zoom: f32,
 }
 
 #[derive(Debug)]
@@ -148,14 +146,9 @@ impl TrackListEntry<'_> {
 }
 
 impl<'ctx> Prepared<'ctx> {
-    fn new(
-        ctx: &mut crate::Context<'ctx>,
-        ui: &mut egui::Ui,
-        tab: &mut TrackTab,
-        view: &SongViewer,
-    ) -> Self {
+    fn new(ctx: &mut crate::Context<'ctx>, ui: &mut egui::Ui, tab: &mut TrackTab) -> Self {
         let mut track_list: Vec<TrackListEntry> = vec![];
-        let mut current_y = view.anchor(ui).y;
+        let mut current_y = tab.song_viewer.anchor(ui).y;
         if ctx.state.tracks.get(ctx.state.root_track).is_some() {
             // traverse the track list in order
 
@@ -210,72 +203,76 @@ impl<'ctx> Prepared<'ctx> {
 
         let drag = &ctx.ephemeral_state.drag;
         let width_of_track_header_panel = ui.max_rect().width();
-        if drag.is_being_dragged(Id::new("tracks"))
-            && let Some(egui::Vec2 {
-                x: raw_movement_x,
-                y: raw_movement_y,
-            }) = drag.raw_movement()
-            && (-width_of_track_header_panel..=width_of_track_header_panel)
-                .contains(&raw_movement_x)
-        {
-            dragging_would_succeed = true;
+        // if let Some(egui::Vec2 {
+        //     x: raw_movement_x,
+        //     y: raw_movement_y,
+        // }) = drag.raw_movement_for(Id::new("tracks"))
+        //     && (-width_of_track_header_panel..=width_of_track_header_panel)
+        //         .contains(&raw_movement_x)
+        // {
+        //     dragging_would_succeed = true;
 
-            assert!(
-                track_list.len() <= u32::MAX as usize,
-                "there are more than u32::MAX tracks. wat"
-            );
+        //     assert!(
+        //         track_list.len() <= u32::MAX as usize,
+        //         "there are more than u32::MAX tracks. wat"
+        //     );
 
-            let mut dragging_track_list = Vec::new();
-            let mut dragging_tracks = VecDeque::new();
-            let mut not_dragging_tracks = Vec::new();
+        //     let mut dragging_track_list = Vec::new();
+        //     let mut dragging_tracks = VecDeque::new();
+        //     let mut not_dragging_tracks = Vec::new();
 
-            for track_entry in track_list.into_iter() {
-                if track_entry.would_be_dragged {
-                    dragging_tracks.push_back(track_entry);
-                } else {
-                    not_dragging_tracks.push(track_entry);
-                }
-            }
+        //     for track_entry in track_list.into_iter() {
+        //         if track_entry.would_be_dragged {
+        //             dragging_tracks.push_back(track_entry);
+        //         } else {
+        //             not_dragging_tracks.push(track_entry);
+        //         }
+        //     }
 
-            let mut current_y = ui.max_rect().top();
-            for track_entry in not_dragging_tracks.into_iter().map(Some).chain([None]) {
-                while dragging_tracks.front().is_some_and(|front| {
-                    track_entry.as_ref().is_none_or(|track_entry| {
-                        front.position + raw_movement_y < current_y + track_entry.height * 0.5
-                    })
-                }) {
-                    let front = dragging_tracks.pop_front().unwrap();
-                    let position = {
-                        let y = current_y;
-                        current_y += front.height;
-                        y
-                    };
-                    dragging_track_list.push(TrackListEntry { position, ..front });
-                }
+        //     let mut current_y = ui.max_rect().top();
+        //     for track_entry in not_dragging_tracks.into_iter().map(Some).chain([None]) {
+        //         while dragging_tracks.front().is_some_and(|front| {
+        //             track_entry.as_ref().is_none_or(|track_entry| {
+        //                 front.position + raw_movement_y < current_y + track_entry.height * 0.5
+        //             })
+        //         }) {
+        //             let front = dragging_tracks.pop_front().unwrap();
+        //             let position = {
+        //                 let y = current_y;
+        //                 current_y += front.height;
+        //                 y
+        //             };
+        //             dragging_track_list.push(TrackListEntry { position, ..front });
+        //         }
 
-                if let Some(track_entry) = track_entry {
-                    let position = {
-                        let y = current_y;
-                        current_y += track_entry.height;
-                        y
-                    };
-                    dragging_track_list.push(TrackListEntry {
-                        position,
-                        ..track_entry
-                    });
-                }
-            }
+        //         if let Some(track_entry) = track_entry {
+        //             let position = {
+        //                 let y = current_y;
+        //                 current_y += track_entry.height;
+        //                 y
+        //             };
+        //             dragging_track_list.push(TrackListEntry {
+        //                 position,
+        //                 ..track_entry
+        //             });
+        //         }
+        //     }
 
-            track_list = dragging_track_list;
-        }
+        //     track_list = dragging_track_list;
+        // }
 
         Self {
             dragging_would_succeed,
             total_track_height: track_list.iter().map(|track| track.height).sum(),
             track_list,
-
-            horizontal_zoom: tab.horizontal_zoom,
         }
+    }
+
+    fn entry_at_y(&self, y: f32) -> Option<&TrackListEntry> {
+        let partition_point = self
+            .track_list
+            .partition_point(|entry| entry.actual_pos + entry.height < y);
+        self.track_list.get(partition_point)
     }
 
     fn ui_left_sidebar(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
@@ -462,43 +459,30 @@ impl<'ctx> Prepared<'ctx> {
         let screen_rect = view.screen_rect;
 
         view.ui_background(ctx, ui, self.total_track_height);
-        // let rect = egui::Rect::from_x_y_ranges(
-        //     screen_rect,
-        //     // ui.max_rect().left()
-        //     //     ..=ui.max_rect().left()
-        //     //         + self.tab.horizontal_zoom
-        //     //             * (ctx.state.song_boundary.length() + 2 * SONG_PADDING)
-        //     //                 as f32,
-        //     // track_entry.position..=track_entry.position + track_entry.height,
-        // );
 
         let response = ui.response();
 
         let _todo = response;
 
-        let note_x_to_screen_x =
-            |pos: i64| -> f32 { (pos + SONG_PADDING) as f32 * self.horizontal_zoom + anchor.x };
         let track_pos_to_screen_pos = |range: Range, entry: &TrackListEntry| -> Rect {
             Rect::from_x_y_ranges(
-                note_x_to_screen_x(range.start)..=note_x_to_screen_x(range.end),
+                view.song_range_to_screen_range(range),
                 entry.actual_pos..=entry.actual_pos + entry.height,
             )
         };
-        let screen_x_to_note_x =
-            |pos: f32| -> i64 { ((pos - anchor.x) / self.horizontal_zoom).floor() as i64 };
-        let screen_pos_to_track_pos = |rect: Rect| -> Option<(Range, &TrackListEntry)> {
-            let entry_index = self
-                .track_list
-                .partition_point(|track_entry| track_entry.actual_pos < rect.top());
-            let entry = self.track_list.get(entry_index)?;
+        // let screen_pos_to_track_pos = |rect: Rect| -> Option<(Range, &TrackListEntry)> {
+        //     let entry_index = self
+        //         .track_list
+        //         .partition_point(|track_entry| track_entry.actual_pos < rect.top());
+        //     let entry = self.track_list.get(entry_index)?;
 
-            let range = Range::new(
-                screen_x_to_note_x(rect.left()),
-                screen_x_to_note_x(rect.right()),
-            );
+        //     let range = Range::new(
+        //         screen_x_to_note_x(rect.left()),
+        //         screen_x_to_note_x(rect.right()),
+        //     );
 
-            Some((range, entry))
-        };
+        //     Some((view.song_range_to_screen_range(range), entry))
+        // };
 
         for track_entry in &self.track_list {
             let highlighted = track_entry.is_highlighted;

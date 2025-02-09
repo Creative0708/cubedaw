@@ -1,5 +1,3 @@
-use std::mem;
-
 use cubedaw_lib::{PreciseSongPos, Range};
 use egui::{NumExt, Pos2, Rangef, Rect, Response, Rounding, Vec2};
 
@@ -138,6 +136,12 @@ impl<'a> SongViewerPrepared<'a> {
             self.song_x_to_screen_x(range.end),
         )
     }
+    pub fn screen_range_to_song_range(&self, range: Rangef) -> Range {
+        Range::new(
+            self.screen_x_to_song_x(range.min),
+            self.screen_x_to_song_x(range.max),
+        )
+    }
 
     /// Like `self.screen_x_to_note_x()`, but snaps to the nearest vertical line.
     pub fn input_screen_x_to_song_x(&self, pos: f32) -> i64 {
@@ -147,12 +151,7 @@ impl<'a> SongViewerPrepared<'a> {
     }
 
     // ui functions
-    pub fn ui_background(
-        &self,
-        ctx: &mut crate::Context,
-        ui: &mut egui::Ui,
-        height: f32,
-    ) -> Response {
+    pub fn ui_background(&self, ctx: &crate::Context, ui: &mut egui::Ui, height: f32) -> Response {
         let height = (TOP_BAR_HEIGHT + height).at_least(self.screen_rect.height());
 
         // Background rectangle

@@ -16,14 +16,14 @@ impl NoteMove {
         track_id: Id<Track>,
         section_id: Id<Section>,
         note_id: Id<Note>,
-        pos_offset: i64,
+        time_offset: i64,
         pitch_offset: i32,
     ) -> Self {
         Self {
             track_id,
             section_id,
             note_id,
-            pos_offset,
+            pos_offset: time_offset,
             pitch_offset,
         }
     }

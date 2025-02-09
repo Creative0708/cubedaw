@@ -21,9 +21,12 @@
 
 # Stuff to do after MVP
 
-- [ ] Implement stereo sound
+- [ ] Implement stereo sound (yes, MVP is gonna be mono :/)
   - Not everything is stereo, so this would be locked behind implementing different types of sockets
 - [ ] Implement different types of sockets
 - uuughhhghhghhghgghhghghg
 - Optimize everything
   - [ ] change hashmaps to more efficient data structures
+  - [ ] add a hashset for selected notes/sections/whatever that's kept in sync with everything
+- [ ] Add tempo automation
+  - Have to use a curve that's easily integratable so we don't run into timing performance issues (see [https://ardour.org/timing.html])
