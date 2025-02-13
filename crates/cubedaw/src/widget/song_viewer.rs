@@ -1,5 +1,5 @@
 use cubedaw_lib::{PreciseSongPos, Range};
-use egui::{NumExt, Pos2, Rangef, Rect, Response, Rounding, Vec2};
+use egui::{CornerRadius, NumExt, Pos2, Rangef, Rect, Response, Vec2};
 
 // TODO make these not hardcoded
 const BEATS_PER_BAR: i64 = 4;
@@ -157,7 +157,7 @@ impl<'a> SongViewerPrepared<'a> {
         // Background rectangle
         ui.painter().rect_filled(
             self.screen_rect,
-            Rounding::ZERO,
+            CornerRadius::ZERO,
             ui.visuals().extreme_bg_color,
         );
 
@@ -207,8 +207,11 @@ impl<'a> SongViewerPrepared<'a> {
 
         // background
         {
-            ui.painter()
-                .rect_filled(top_bar_rect, Rounding::ZERO, ui.visuals().extreme_bg_color);
+            ui.painter().rect_filled(
+                top_bar_rect,
+                CornerRadius::ZERO,
+                ui.visuals().extreme_bg_color,
+            );
             ui.painter().hline(
                 top_bar_rect.x_range(),
                 top_bar_rect.bottom(),

@@ -62,7 +62,7 @@ impl ModuleStitch {
         };
         for (name, ty) in imports {
             let func_idx = this.tys.len();
-            this.tys.func_type(&ty);
+            this.tys.ty().func_type(&ty);
             this.imports
                 .import("host", name, wasm_encoder::EntityType::Function(func_idx));
         }
@@ -88,7 +88,7 @@ impl ModuleStitch {
     pub fn add_function(&mut self, func: FunctionStitch) -> u32 {
         let (func_type, code) = func.finish();
         let type_idx = self.tys.len();
-        self.tys.func_type(&func_type.into());
+        self.tys.ty().func_type(&func_type.into());
         let func_idx = self.funcs.len();
         self.funcs.function(type_idx);
         self.code.function(&code);

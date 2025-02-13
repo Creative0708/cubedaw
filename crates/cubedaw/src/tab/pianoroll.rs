@@ -3,7 +3,10 @@ use std::ops;
 use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, Range, Section, SectionTrack, Track};
-use egui::{Color32, CursorIcon, Pos2, Rangef, Rect, Response, Rounding, Vec2, pos2, vec2};
+use egui::{
+    Color32, CornerRadius, CursorIcon, Pos2, Rangef, Rect, Response, Stroke, StrokeKind, Vec2,
+    pos2, vec2,
+};
 
 use crate::{
     app::Tab,
@@ -158,7 +161,7 @@ impl PianoRollTab {
                         screen_rect.x_range(),
                         Rangef::new(row_pos, row_pos + self.units_per_pitch),
                     ),
-                    Rounding::ZERO,
+                    CornerRadius::ZERO,
                     ui.visuals().faint_bg_color,
                 );
             }
@@ -346,11 +349,11 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
                     ui.painter().rect_filled(
                         header_rect,
-                        Rounding {
-                            nw: 6.0,
-                            ne: 6.0,
-                            sw: 0.0,
-                            se: 0.0,
+                        CornerRadius {
+                            nw: 6,
+                            ne: 6,
+                            sw: 0,
+                            se: 0,
                         },
                         if section_ui.selected
                             || ctx
@@ -399,7 +402,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
                     ui.painter().rect_filled(
                         Rect::from_x_y_ranges(section_screen_range_x, screen_rect.y_range()),
-                        Rounding::ZERO,
+                        CornerRadius::ZERO,
                         SECTION_COLOR
                             .gamma_multiply(0.2 * if section_ui.selected { 1.5 } else { 1.0 }),
                     );
@@ -524,13 +527,14 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         if is_selected || selection_rect.rect().intersects(note_rect) {
             ui.painter().rect(
                 note_rect,
-                Rounding::ZERO,
+                CornerRadius::ZERO,
                 Color32::DEBUG_COLOR,
-                egui::Stroke::new(3.0, Color32::WHITE),
+                Stroke::new(2.0, Color32::WHITE),
+                StrokeKind::Outside,
             );
         } else {
             ui.painter()
-                .rect_filled(note_rect, Rounding::ZERO, Color32::DEBUG_COLOR);
+                .rect_filled(note_rect, CornerRadius::ZERO, Color32::DEBUG_COLOR);
         }
         if selection_rect
             .released_rect(tab_id)

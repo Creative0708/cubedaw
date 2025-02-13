@@ -1,5 +1,5 @@
 use cubedaw_lib::Id;
-use egui::Pos2;
+use egui::{CornerRadius, Pos2, StrokeKind};
 
 use crate::app::Tab;
 
@@ -58,9 +58,10 @@ impl SelectionRect {
                 let rect = egui::Rect::from_two_pos(drag_start_pos, pointer_pos);
                 ui.painter().rect(
                     rect,
-                    egui::Rounding::ZERO,
+                    CornerRadius::ZERO,
                     SELECTION_COLOR.gamma_multiply(0.3),
                     (2.0, SELECTION_COLOR.gamma_multiply(0.7)),
+                    StrokeKind::Middle,
                 );
                 self.rect = Some(rect);
             }

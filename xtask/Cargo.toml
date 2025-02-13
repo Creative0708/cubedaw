@@ -7,8 +7,8 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
-toml = "0.8.19"
-xshell = "0.2.6"
+toml = "0.8.20"
+xshell = "0.2.7"
 
 [lints]
 workspace = true

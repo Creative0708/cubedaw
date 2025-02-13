@@ -25,21 +25,21 @@ unusual_byte_groupings = "allow" # misunderstands floating-point binary represen
 needless_lifetimes = "allow"     # false positives :(
 
 [workspace.dependencies]
-egui = "0.29.1"
+egui = "0.31.0"
 tracing = "0.1.41"
-anyhow = "1.0.89"
+anyhow = "1.0.95"
 ahash = "0.8.11"
 smallvec = "1.13.2"
-bytemuck = "1.15.0"
-zerocopy = { version = "0.8.13", features = ["derive"] }
+bytemuck = "1.21.0"
+zerocopy = { version = "0.8.17", features = ["derive"] }
 crossbeam = "0.8.4"
-crossbeam-channel = "0.5.13"
+crossbeam-channel = "0.5.14"
 replace_with = "0.1.7"
-bumpalo = "3.16.0"
+bumpalo = "3.17.0"
 work-queue = "0.1.4"
-semver = "1.0.23"
+semver = "1.0.25"
 ascii = "1.1.0"
-serde = "1.0.210"
+serde = "1.0.217"
 # TODO meminterval works but it's missing some features (like iterating over an entire IntervalTree).
 # however there doesn't seem to be a viable alternative for a low-dependency mutable interval tree already on crates.io
 # possibly contribute back to meminterval if they're fine with it or fork it?

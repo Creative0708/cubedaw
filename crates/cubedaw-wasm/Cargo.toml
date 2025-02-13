@@ -13,11 +13,11 @@ bytemuck = { workspace = true, features = [
     "min_const_generics",
     "const_zeroed",
 ] }
-bitflags = "2.6.0"
+bitflags = "2.8.0"
 paste = "^1.0"
 cfg-if = "1.0.0"
-wasmparser = { version = "0.215.0", optional = true }
-wasm-encoder = { version = "0.215.0", optional = true }
+wasmparser = { version = "0.225.0", optional = true }
+wasm-encoder = { version = "0.225.0", optional = true }
 
 [features]
 default = ["runtime", "v128", "fmt"]
@@ -28,7 +28,7 @@ wasmparser = ["dep:wasmparser"]
 wasm-encoder = ["dep:wasm-encoder"]
 
 [target.'cfg(not(target_os = "wasm"))'.dependencies]
-wasmtime = { version = "25.0.2", default-features = false, features = [
+wasmtime = { version = "29.0.1", default-features = false, features = [
     "runtime",
     "cranelift",
     "cache",

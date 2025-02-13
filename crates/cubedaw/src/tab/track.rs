@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use anyhow::Result;
 use cubedaw_lib::{Id, IdMap, Range, Track, TrackInner};
-use egui::{Color32, CursorIcon, Rect, Sense, Stroke};
+use egui::{Color32, CursorIcon, Rect, Sense, Stroke, StrokeKind};
 
 use crate::{
     app::Tab,
@@ -106,8 +106,7 @@ impl TrackListEntry<'_> {
         } else {
             &ui.visuals().widgets.inactive
         };
-        ui.painter()
-            .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
+        ui.painter().rect_filled(rect, 0.0, visuals.bg_fill);
         ui.painter()
             .hline(rect.x_range(), rect.top(), visuals.fg_stroke);
         ui.painter()
@@ -539,6 +538,7 @@ impl<'ctx> Prepared<'ctx> {
                                 0.5
                             }),
                             Stroke::new(2.0, SECTION_COLOR),
+                            StrokeKind::Inside,
                         );
                     }
                 }

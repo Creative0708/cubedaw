@@ -7,7 +7,11 @@ use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{
     Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, NodeData, NodeEntry, Track,
 };
-use egui::{Pos2, Rangef, Rect, Vec2, emath::TSTransform, pos2};
+use egui::{
+    Align, Area, CentralPanel, Color32, CornerRadius, CursorIcon, Direction, Frame, Key, Layout,
+    Pos2, Rangef, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2,
+    WidgetText, emath::TSTransform, epaint, layers::ShapeIdx, pos2, vec2,
+};
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
@@ -77,14 +81,14 @@ impl crate::Screen for PatchTab {
         self.id
     }
 
-    fn title(&self) -> egui::WidgetText {
+    fn title(&self) -> WidgetText {
         "Patch Tab".into()
     }
 
-    fn update(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) -> Result<()> {
+    fn update(&mut self, ctx: &mut crate::Context, ui: &mut Ui) -> Result<()> {
         let Self { track_id, id, .. } = *self;
 
-        egui::CentralPanel::default()
+        CentralPanel::default()
             .show_inside(ui, |ui| -> Result<()> {
                 if track_id.is_some() {
                     let parent_layer_id = ui.layer_id();
@@ -93,7 +97,7 @@ impl crate::Screen for PatchTab {
 
                     // we use an area here because it's the only way to render something with custom transforms above another layer.
                     // kinda jank (and there doesn't seem to be a way to delete an area), but oh well.
-                    egui::Area::new(parent_layer_id.id.with((parent_layer_id.order, id)))
+                    Area::new(parent_layer_id.id.with((parent_layer_id.order, id)))
                         .movable(false)
                         .constrain_to(screen_viewport)
                         .order(parent_layer_id.order)
@@ -106,7 +110,7 @@ impl crate::Screen for PatchTab {
                             let viewport_interaction = ui.interact(
                                 viewport,
                                 layer_id.id.with("patch_move"),
-                                egui::Sense::click_and_drag(),
+                                Sense::click_and_drag(),
                             );
                             if viewport_interaction.contains_pointer() {
                                 let (scroll_delta, zoom) =
@@ -149,7 +153,7 @@ impl crate::Screen for PatchTab {
                             prepared.background(ui);
                             prepared.show_add_node_menu(ui);
                             // cables are rendered below the nodes; save a ShapeIdx for them!
-                            let cable_shapeidx = ui.painter().add(egui::Shape::Noop);
+                            let cable_shapeidx = ui.painter().add(Shape::Noop);
                             let node_results = prepared.handle_nodes(ui)?;
                             let cable_result = prepared.do_cable_interactions(ui, &node_results);
                             prepared.draw_cables(ui, &node_results, cable_result, cable_shapeidx);
@@ -159,7 +163,7 @@ impl crate::Screen for PatchTab {
                         .inner?;
                 } else {
                     ui.with_layout(
-                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        Layout::centered_and_justified(Direction::LeftToRight),
                         |ui| {
                             ui.label("No track selected");
                         },
@@ -200,7 +204,7 @@ struct Prepared<'a> {
 
     // patch_ephemeral: &'a mut crate::state::ephemeral::
     viewport: Rect,
-    viewport_interaction: &'a egui::Response,
+    viewport_interaction: &'a Response,
     pointer_pos: Option<Pos2>,
 
     primary_clicked: bool,
@@ -212,8 +216,8 @@ impl<'a> Prepared<'a> {
     pub fn new(
         tab: &'a mut PatchTab,
         ctx: &'a mut crate::Context,
-        ui: &mut egui::Ui,
-        viewport_interaction: &'a egui::Response,
+        ui: &mut Ui,
+        viewport_interaction: &'a Response,
         pointer_pos: Option<Pos2>,
     ) -> Self {
         let viewport = ui.clip_rect();
@@ -247,16 +251,12 @@ impl<'a> Prepared<'a> {
             screen_hover_pos,
         }
     }
-    pub fn background(&mut self, ui: &mut egui::Ui) {
+    pub fn background(&mut self, ui: &mut Ui) {
         let Self { viewport, .. } = *self;
 
         let painter = ui.painter();
 
-        painter.rect_filled(
-            viewport,
-            egui::Rounding::ZERO,
-            ui.visuals().extreme_bg_color,
-        );
+        painter.rect_filled(viewport, CornerRadius::ZERO, ui.visuals().extreme_bg_color);
         const DOT_SPACING: f32 = 16.0;
         const DOT_RADIUS: f32 = 1.5;
 
@@ -280,7 +280,7 @@ impl<'a> Prepared<'a> {
             }
         }
     }
-    pub fn show_add_node_menu(&mut self, _ui: &mut egui::Ui) {
+    pub fn show_add_node_menu(&mut self, _ui: &mut Ui) {
         let Self {
             ref mut tab,
             node_registry,
@@ -325,7 +325,7 @@ impl<'a> Prepared<'a> {
 
     fn ui_node(
         &mut self,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
         prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
         node_data: &NodeEntry,
         node_id: Option<Id<NodeEntry>>,
@@ -376,7 +376,7 @@ impl<'a> Prepared<'a> {
         );
 
         let mut frame_ui = ui.new_child(
-            egui::UiBuilder::new()
+            UiBuilder::new()
                 .max_rect(node_max_rect)
                 .id_salt(node_id.unwrap_or(Id::new("currently_held_node"))),
         );
@@ -390,14 +390,13 @@ impl<'a> Prepared<'a> {
             // node isn't visible, hide it
             frame_ui.set_invisible();
         }
-        frame_ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
+        frame_ui.spacing_mut().item_spacing = vec2(8.0, 4.0);
 
-        let mut frame = egui::Frame::window(ui.style()).inner_margin(8.0);
+        let mut frame = Frame::window(ui.style()).inner_margin(8.0);
         if node_ui.selected {
             // TODO actually implement selection colors/strokes
-            frame.stroke =
-                egui::Stroke::new(frame.stroke.width * 1.2, egui::Color32::from_gray(96));
-            frame.fill = egui::Color32::from_gray(32);
+            frame.stroke = Stroke::new(frame.stroke.width * 1.2, Color32::from_gray(96));
+            frame.fill = Color32::from_gray(32);
         }
 
         let mut default_node_ephemeral = NodeEphemeralState::default();
@@ -426,7 +425,7 @@ impl<'a> Prepared<'a> {
             if let Some(node_id) = node_id {
                 let drag_response = frame_ui.allocate_rect(
                     Rect::from_min_size(node_ui.pos, ui_ctx.node_ephemeral.size),
-                    egui::Sense::click_and_drag(),
+                    Sense::click_and_drag(),
                 );
                 prepared.process_interaction(
                     node_id.cast(),
@@ -490,7 +489,7 @@ impl<'a> Prepared<'a> {
 
     fn handle_node_slots_for(
         &mut self,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
         node_id: Option<Id<NodeEntry>>,
         node_result: &CubedawNodeUiContextResult,
     ) -> (Option<InteractedNodeSlot>, Option<InteractedNodeSlot>) {
@@ -549,9 +548,9 @@ impl<'a> Prepared<'a> {
                 .allocate_rect(
                     Rect::from_min_size(pos, Vec2::ZERO)
                         .expand(slot_radius + 4.0 + ui.input(|i| i.aim_radius())),
-                    egui::Sense::drag(),
+                    Sense::drag(),
                 )
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                .on_hover_cursor(CursorIcon::PointingHand);
 
             let hovered = response.contains_pointer();
 
@@ -599,7 +598,7 @@ impl<'a> Prepared<'a> {
         (dragged_node_slot, hovered_node_slot)
     }
 
-    fn handle_nodes(&mut self, ui: &mut egui::Ui) -> Result<NodeResults> {
+    fn handle_nodes(&mut self, ui: &mut Ui) -> Result<NodeResults> {
         let Self {
             drag: ref mut drag_orig,
             ui_state,
@@ -641,7 +640,7 @@ impl<'a> Prepared<'a> {
             if let Some(hover_pos) = viewport_interaction.hover_pos()
                 && let Some(node_data) = self.tab.currently_held_node.take()
             {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::AllScroll);
+                ui.ctx().set_cursor_icon(CursorIcon::AllScroll);
                 let fake_entry = NodeEntry::new(node_data, 0, 0);
                 let (result, ..) = self.ui_node(ui, prepared, &fake_entry, None, &NodeUiState {
                     selected: true,
@@ -719,7 +718,7 @@ impl<'a> Prepared<'a> {
             }
         }
 
-        if ui.input(|input| input.key_pressed(egui::Key::X)) {
+        if ui.input(|input| input.key_pressed(Key::X)) {
             self.delete_selected_nodes();
         }
 
@@ -752,7 +751,7 @@ impl<'a> Prepared<'a> {
 
     fn do_cable_interactions(
         &mut self,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
         node_results: &NodeResults,
     ) -> Option<CableInteractionResult> {
         let Self {
@@ -1000,10 +999,10 @@ impl<'a> Prepared<'a> {
 
     fn draw_cables(
         &mut self,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
         node_results: &NodeResults,
         cable_result: Option<CableInteractionResult>,
-        shapeidx: egui::layers::ShapeIdx,
+        shapeidx: ShapeIdx,
     ) {
         let Self {
             viewport, patch, ..
@@ -1011,13 +1010,13 @@ impl<'a> Prepared<'a> {
 
         // cables
 
-        let mut cable_shapes: Vec<egui::Shape> = Vec::new();
+        let mut cable_shapes: Vec<Shape> = Vec::new();
         let mut draw_cable = |input_pos: Pos2, output_pos: Pos2, tag: CableTag| {
             // TODO make this configurable
-            let cable_stroke = egui::Stroke::new(4.0, match tag {
+            let cable_stroke = Stroke::new(4.0, match tag {
                 CableTag::Invalid => ui.visuals().error_fg_color,
-                CableTag::Valid => egui::Color32::from_gray(128),
-                CableTag::Disconnected => egui::Color32::from_gray(100),
+                CableTag::Valid => Color32::from_gray(128),
+                CableTag::Disconnected => Color32::from_gray(100),
             });
 
             if !viewport.intersects(Rect::from_points(&[input_pos, output_pos])) {
@@ -1031,7 +1030,7 @@ impl<'a> Prepared<'a> {
             }
 
             cable_shapes.push(
-                egui::epaint::CubicBezierShape {
+                epaint::CubicBezierShape {
                     points: [
                         output_pos,
                         output_pos + Vec2::new(control_point_distance, 0.0),
@@ -1039,7 +1038,7 @@ impl<'a> Prepared<'a> {
                         input_pos,
                     ],
                     closed: false,
-                    fill: egui::Color32::TRANSPARENT,
+                    fill: Color32::TRANSPARENT,
                     stroke: cable_stroke.into(),
                 }
                 .into(),
@@ -1069,7 +1068,7 @@ impl<'a> Prepared<'a> {
             draw_cable(start_pos, end_pos, tag);
         }
 
-        ui.painter().set(shapeidx, egui::Shape::Vec(cable_shapes));
+        ui.painter().set(shapeidx, Shape::Vec(cable_shapes));
     }
 }
 
@@ -1137,12 +1136,7 @@ impl<'a> CubedawNodeUiContext<'a> {
 }
 
 impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
-    fn input_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        name: &str,
-        options: crate::node::NodeInputUiOptions,
-    ) {
+    fn input_ui(&mut self, ui: &mut Ui, name: &str, options: crate::node::NodeInputUiOptions) {
         // the index of this current input.
         let input_index = self.inputs.len() as u32;
         let input = self.node_data.inputs().get(input_index as usize);
@@ -1252,17 +1246,17 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                     indicator_top_y = indicator_rect.top();
                 }
 
-                let indicator_stroke =
-                    egui::Stroke::new(1.5, ui.visuals().widgets.inactive.bg_fill);
-                ui.painter().with_clip_rect(indicator_rect).rect(
-                    indicator_rect.translate(indicator_rect.size() * -0.5),
-                    egui::Rounding {
-                        se: 4.0,
-                        ..Default::default()
-                    },
-                    egui::Color32::TRANSPARENT,
-                    indicator_stroke,
-                );
+                let indicator_stroke = Stroke::new(1.5, ui.visuals().widgets.inactive.bg_fill);
+                // TODO use a bezier curve or the like
+                // ui.painter().with_clip_rect(indicator_rect).rect_stroke(
+                //     indicator_rect.translate(indicator_rect.size() * -0.5),
+                //     CornerRadius {
+                //         se: 4,
+                //         ..Default::default()
+                //     },
+                //     indicator_stroke,
+                //     StrokeKind::Inside
+                // );
 
                 if let Some(id) = self.node_id {
                     let command = cubedaw_command::node::NodeMultiplierChange::new(
@@ -1306,11 +1300,9 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
             cables: cable_connections,
         });
     }
-    fn output_ui(&mut self, ui: &mut egui::Ui, name: &str) {
+    fn output_ui(&mut self, ui: &mut Ui, name: &str) {
         let response = ui
-            .with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                ui.add(egui::Label::new(name))
-            })
+            .with_layout(Layout::right_to_left(Align::Min), |ui| ui.label(name))
             .inner;
 
         self.outputs.push(CubedawNodeUiContextOutputData {
@@ -1411,7 +1403,7 @@ impl NodeResults {
 #[derive(Debug)]
 struct InteractedNodeSlot {
     pub descriptor: NodeSlotDescriptor,
-    pub response: egui::Response,
+    pub response: Response,
 }
 
 #[derive(Debug)]

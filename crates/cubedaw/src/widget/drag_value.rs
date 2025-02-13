@@ -130,7 +130,7 @@ impl<'a> Widget for DragValue<'a> {
             let id = ui.next_auto_id();
 
             let is_kb_editing = ui.memory_mut(|mem| {
-                mem.interested_in_focus(id);
+                mem.interested_in_focus(id, ui.layer_id());
                 mem.has_focus(id)
             });
 
@@ -305,7 +305,7 @@ impl<'a> Widget for DragValue<'a> {
 
                     // non-text display
                     {
-                        painter.rect(rect.expand(visuals.expansion), visuals.rounding, visuals.bg_fill, visuals.bg_stroke);
+                        painter.rect(rect.expand(visuals.expansion), visuals.corner_radius, visuals.bg_fill, visuals.bg_stroke, StrokeKind::Middle);
 
                         let portion_filled =
                             inverse_lerp(display_range.into(), *reference).unwrap_or(display_range.min);
@@ -315,7 +315,7 @@ impl<'a> Widget for DragValue<'a> {
                                     rect.x_range(),
                                     portion_filled,
                                 ))),
-                            visuals.rounding,
+                            visuals.corner_radius,
                             ui.visuals().selection.bg_fill,
                         );
                     }

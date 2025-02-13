@@ -9,8 +9,8 @@ default-run = "cubedaw"
 cubedaw-command = { path = "../cubedaw-command" }
 egui = { workspace = true }
 anyhow = { workspace = true }
-eframe = "0.29.1"
-egui_dock = "0.14.0"
+eframe = "0.31.0"
+egui_dock = "0.16.0"
 cubedaw-lib = { path = "../cubedaw-lib" }
 cubedaw-worker = { path = "../cubedaw-worker" }
 cubedaw-plugin = { path = "../cubedaw-plugin" }
@@ -23,7 +23,7 @@ bytemuck = { workspace = true }
 zerocopy = { workspace = true }
 tracing = { workspace = true }
 unwrap_todo = { workspace = true }
-bitflags = "2.6.0"
+bitflags = "2.8.0"
 
 cpal = "0.15.3"
 tracing-subscriber = "0.3.19"

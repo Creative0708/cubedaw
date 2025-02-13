@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub use cubedaw_wasm as wasm;
 
 mod misc;
@@ -384,6 +386,7 @@ impl Plugin {
                     tracing::warn!("unknown section with id {id}");
                 }
                 wasmparser::Payload::End(_end_length) => {}
+                other => tracing::warn!("unknown section {other:?} found, ignoring"),
             }
         }
 
@@ -484,7 +487,7 @@ impl Plugin {
         module.offset_map.insert(self.hash, info.clone());
 
         for ty in &self.tys {
-            module.tys.func_type(ty);
+            module.tys.ty().func_type(ty);
         }
         for func in &self.funcs {
             module.add_function(func.encode_standalone(&info));
@@ -506,11 +509,15 @@ impl Plugin {
                 } => module.elems.active(
                     Some(table_index),
                     &offset.encode(&info),
-                    wasm_encoder::Elements::Functions(&elem.items),
+                    wasm_encoder::Elements::Functions(Cow::Borrowed(&elem.items)),
                 ),
-                misc::ElementKind::Passive => module
-                    .elems
-                    .passive(wasm_encoder::Elements::Functions(&elem.items)),
+                misc::ElementKind::Passive => {
+                    module
+                        .elems
+                        .passive(wasm_encoder::Elements::Functions(Cow::Borrowed(
+                            &elem.items,
+                        )))
+                }
             };
         }
         for data in &self.datas {
