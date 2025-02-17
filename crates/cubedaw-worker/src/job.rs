@@ -3,6 +3,7 @@ use cubedaw_lib::{Buffer, Id, Note, PreciseSongPos, Track};
 
 use crate::{
     WorkerState,
+    common::JobDescriptor,
     node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
     sync,
     worker::WorkerScratch,
@@ -44,6 +45,7 @@ impl WorkerJob {
         worker_state: &mut WorkerState,
         scratch: &mut WorkerScratch,
     ) -> Result<WorkerJobResult> {
+        let _ = (state, start_pos, scratch);
         Ok(match self {
             Self::NoteProcess {
                 track_id,
@@ -56,6 +58,7 @@ impl WorkerJob {
                     NoteDescriptor::Live { note, .. } => note,
                 };
 
+                // TODO: tail detection and note autoremoval
                 let buffer = nodes.process(worker_options, worker_state, note)?;
 
                 let job_to_add = output.lock(|output_buf| {
@@ -63,7 +66,10 @@ impl WorkerJob {
                 });
 
                 WorkerJobResult {
-                    finished_job_descriptor: None,
+                    finished_job_descriptor: Some(JobDescriptor::NoteProcess {
+                        track_id,
+                        note_descriptor,
+                    }),
                     job_to_add,
                 }
             }
@@ -82,7 +88,7 @@ impl WorkerJob {
                 });
 
                 WorkerJobResult {
-                    finished_job_descriptor: None,
+                    finished_job_descriptor: Some(JobDescriptor::TrackProcess { track_id }),
                     job_to_add,
                 }
             }
@@ -101,7 +107,7 @@ impl WorkerJob {
                 });
 
                 WorkerJobResult {
-                    finished_job_descriptor: None,
+                    finished_job_descriptor: Some(JobDescriptor::TrackGroup { track_id }),
                     job_to_add,
                 }
             }
@@ -126,6 +132,8 @@ pub struct WorkerJobResult {
 /// A descriptor for a [`cubedaw_lib::Note`]. Either a path to a note in the State, or a "live"
 /// note not attached to the state.
 #[derive(Copy, Clone, Debug)]
+// TODO: use these
+#[allow(unused)]
 pub enum NoteDescriptor {
     State {
         note_id: Id<Note>,

@@ -1,10 +1,10 @@
-use cubedaw_lib::{Buffer, Id, NodeData, NodeEntry, Track};
+use cubedaw_lib::{Buffer, Id, NodeData, Node, Track};
 
 use crate::StateCommand;
 
 #[derive(Clone)]
 pub struct NodeStateUpdate {
-    id: Id<NodeEntry>,
+    id: Id<Node>,
     track_id: Id<Track>,
     data: Box<Buffer>,
     input_values: Vec<f32>,
@@ -15,7 +15,7 @@ pub struct NodeStateUpdate {
 
 impl NodeStateUpdate {
     pub fn new(
-        id: Id<NodeEntry>,
+        id: Id<Node>,
         track_id: Id<Track>,
         data: Box<Buffer>,
         input_values: Vec<f32>,
@@ -39,11 +39,11 @@ impl NodeStateUpdate {
     pub fn track_id(&self) -> Id<Track> {
         self.track_id
     }
-    pub fn id(&self) -> Id<NodeEntry> {
+    pub fn id(&self) -> Id<Node> {
         self.id
     }
 
-    fn node<'a>(&mut self, state: &'a mut cubedaw_lib::State) -> Option<&'a mut NodeEntry> {
+    fn node<'a>(&mut self, state: &'a mut cubedaw_lib::State) -> Option<&'a mut Node> {
         Some(
             state
                 .tracks
@@ -104,7 +104,7 @@ impl StateCommand for NodeStateUpdate {
 
 #[derive(Clone)]
 pub struct NodeAddOrRemove {
-    id: Id<NodeEntry>,
+    id: Id<Node>,
     track_id: Id<Track>,
     data: Option<NodeData>,
     inputs: Vec<f32>,
@@ -114,7 +114,7 @@ pub struct NodeAddOrRemove {
 
 impl NodeAddOrRemove {
     pub fn addition(
-        id: Id<NodeEntry>,
+        id: Id<Node>,
         data: NodeData,
         inputs: Vec<f32>,
         num_outputs: u32,
@@ -129,7 +129,7 @@ impl NodeAddOrRemove {
             is_removal: false,
         }
     }
-    pub fn removal(id: Id<NodeEntry>, track_id: Id<Track>) -> Self {
+    pub fn removal(id: Id<Node>, track_id: Id<Track>) -> Self {
         Self {
             id,
             track_id,
@@ -140,7 +140,7 @@ impl NodeAddOrRemove {
         }
     }
 
-    pub fn id(&self) -> Id<NodeEntry> {
+    pub fn id(&self) -> Id<Node> {
         self.id
     }
     pub fn track_id(&self) -> Id<Track> {
@@ -207,7 +207,7 @@ impl StateCommand for NodeAddOrRemove {
 
 #[derive(Clone)]
 pub struct NodeBiasChange {
-    id: Id<NodeEntry>,
+    id: Id<Node>,
     track_id: Id<Track>,
     input_index: u32,
     old_value: f32,
@@ -216,7 +216,7 @@ pub struct NodeBiasChange {
 
 impl NodeBiasChange {
     pub fn new(
-        id: Id<NodeEntry>,
+        id: Id<Node>,
         track_id: Id<Track>,
         input_index: u32,
         old_value: f32,
@@ -273,7 +273,7 @@ impl StateCommand for NodeBiasChange {
 
 #[derive(Clone)]
 pub struct NodeMultiplierChange {
-    id: Id<NodeEntry>,
+    id: Id<Node>,
     track_id: Id<Track>,
     input_index: u32,
     cable_index: u32,
@@ -283,7 +283,7 @@ pub struct NodeMultiplierChange {
 
 impl NodeMultiplierChange {
     pub fn new(
-        id: Id<NodeEntry>,
+        id: Id<Node>,
         track_id: Id<Track>,
         input_index: u32,
         cable_index: u32,

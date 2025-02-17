@@ -4,8 +4,7 @@ use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, Range, Section, SectionTrack, Track};
 use egui::{
-    Color32, CornerRadius, CursorIcon, Pos2, Rangef, Rect, Response, Stroke, StrokeKind, Vec2,
-    pos2, vec2,
+    Color32, CornerRadius, CursorIcon, Pos2, Rangef, Rect, Response, Stroke, StrokeKind, pos2, vec2,
 };
 
 use crate::{
@@ -313,8 +312,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
         let mut rendered_sections: Vec<RenderedSection> = Vec::new();
 
-        let result = ctx.ephemeral_state.drag.handle_snapped(
-            Id::new("section"),
+        let result = ctx.ephemeral_state.section_drag.handle_snapped(
             |unsnapped| view.input_screen_x_to_song_x(unsnapped.x),
             |prepared| {
                 for (section_range, section_id, section) in track.sections() {
@@ -431,16 +429,13 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                 result.should_deselect_everything || bg_response.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
-                // TODO rename these
-                for (track_id2, track_ui) in &ctx.ui_state.tracks {
-                    for (section_id2, section_ui) in &track_ui.sections {
-                        if section_ui.selected
-                            && selection_changes.get(&(track_id2, section_id2)).copied()
-                                != Some(true)
-                        {
-                            ctx.tracker
-                                .add(UiSectionSelect::new(track_id2, section_id2, false));
-                        }
+                // only deselect the sections in this track
+                for (section_id2, section_ui) in &track_ui.sections {
+                    if section_ui.selected
+                        && selection_changes.get(&(track_id, section_id2)).copied() != Some(true)
+                    {
+                        ctx.tracker
+                            .add(UiSectionSelect::new(track_id, section_id2, false));
                     }
                 }
                 for (&(track_id, section_id), &selected) in &selection_changes {
@@ -466,7 +461,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                 for (section_range, section_id, _section) in track.sections() {
                     let section_ui = track_ui.sections.force_get(section_id);
                     if section_ui.selected {
-                        ctx.tracker.add(SectionMove::new(
+                        ctx.tracker.add(SectionMove::same(
                             track_id,
                             section_range,
                             section_range.start + finished_drag_offset,
@@ -577,57 +572,53 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         let Self {
             track_id,
             track_ui,
-            tab_id,
+
             view,
             ntspc,
             ..
         } = *self;
 
-        let result = ctx
-            .ephemeral_state
-            .drag
-            .handle_snapped::<(Id<Track>, Id<Section>, Id<Note>), _, _, _>(
-                Id::new("notes"),
-                move |Pos2 { x, y }| PianoRollPos {
-                    time: view.input_screen_x_to_song_x(x),
-                    pitch: ntspc.screen_y_to_note_y(y),
-                },
-                |prepared| {
-                    for &RenderedSection {
-                        id: section_id,
-                        range,
-                        state: section,
-                        ui_state: section_ui,
-                    } in rendered_sections
-                    {
-                        // Notes
-                        for (note_start, note_id, note) in section.notes() {
-                            self.handle_note(
-                                ui,
-                                &mut ctx.ephemeral_state.selection_rect,
-                                &mut ctx.tracker,
-                                prepared,
-                                range.start + note_start,
-                                note,
-                                Some((section_id, note_id)),
-                                section_ui.notes.force_get(note_id).selected,
-                            );
-                        }
-                    }
-                    if let Some((start_pos, ref note)) = tab.currently_drawn_note {
+        let result = ctx.ephemeral_state.note_drag.handle_snapped(
+            move |Pos2 { x, y }| PianoRollPos {
+                time: view.input_screen_x_to_song_x(x),
+                pitch: ntspc.screen_y_to_note_y(y),
+            },
+            |prepared| {
+                for &RenderedSection {
+                    id: section_id,
+                    range,
+                    state: section,
+                    ui_state: section_ui,
+                } in rendered_sections
+                {
+                    // Notes
+                    for (note_start, note_id, note) in section.notes() {
                         self.handle_note(
                             ui,
                             &mut ctx.ephemeral_state.selection_rect,
                             &mut ctx.tracker,
                             prepared,
-                            start_pos,
+                            range.start + note_start,
                             note,
-                            None,
-                            true,
+                            Some((section_id, note_id)),
+                            section_ui.notes.force_get(note_id).selected,
                         );
                     }
-                },
-            );
+                }
+                if let Some((start_pos, ref note)) = tab.currently_drawn_note {
+                    self.handle_note(
+                        ui,
+                        &mut ctx.ephemeral_state.selection_rect,
+                        &mut ctx.tracker,
+                        prepared,
+                        start_pos,
+                        note,
+                        None,
+                        true,
+                    );
+                }
+            },
+        );
         {
             let should_deselect_everything =
                 result.should_deselect_everything || self.bg_response.clicked();

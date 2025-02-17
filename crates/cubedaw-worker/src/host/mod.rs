@@ -257,11 +257,7 @@ impl WorkerHost {
 
         let mut join_handles = Vec::with_capacity(worker_handles.len());
         for worker_handle in worker_handles.into_vec() {
-            let WorkerHandle {
-                index: _,
-                tx,
-                join_handle,
-            } = worker_handle;
+            let WorkerHandle { tx, join_handle } = worker_handle;
 
             drop(tx);
             join_handles.push(join_handle);
@@ -283,7 +279,6 @@ impl WorkerHost {
 
 #[derive(Debug)]
 struct WorkerHandle {
-    pub index: u32,
     pub tx: crossbeam_channel::Sender<HostToWorkerEvent>,
     pub join_handle: thread::JoinHandle<()>,
 }
@@ -299,7 +294,6 @@ impl WorkerHandle {
     ) -> Self {
         let (tx, worker_rx) = crossbeam_channel::unbounded();
         Self {
-            index,
             tx,
             join_handle: thread::Builder::new()
                 .name(format!("Audio Worker #{index}"))

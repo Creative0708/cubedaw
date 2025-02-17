@@ -1,5 +1,6 @@
+use anyhow::Result;
 use cubedaw_lib::{
-    Buffer, GroupTrack, Id, IdMap, NodeEntry, Note, Patch, Section, SectionTrack, State, Track,
+    Buffer, GroupTrack, Id, IdMap, Node, Note, Patch, Section, SectionTrack, State, Track,
     TrackInner,
 };
 
@@ -175,10 +176,10 @@ impl WorkerSectionTrackState {
 
         // hella inefficient bc we're doing an unnecessary topo sort every time but i cannot be bothered (yet)
         for (_note_id, note_state) in &mut self.notes {
-            note_state.sync_with(track, options);
+            note_state.sync_with(track, options)?;
         }
         for (_note_id, note_state) in &mut self.live_notes {
-            note_state.sync_with(track, options);
+            note_state.sync_with(track, options)?;
         }
 
         Ok(())
@@ -192,7 +193,7 @@ impl WorkerSectionTrackState {
                                num_inputs: u32,
                                num_outputs: u32,
                                inner: Box<Buffer>|
-         -> Id<NodeEntry> {
+         -> Id<Node> {
             let id = Id::arbitrary();
             fake_patch.insert_node(
                 id,
@@ -238,8 +239,8 @@ pub struct WorkerNoteState {
     pub nodes: SynthNoteNodeGraph,
 }
 impl WorkerNoteState {
-    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) {
-        self.nodes.sync_with(&track.patch, options);
+    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) -> Result<()> {
+        self.nodes.sync_with(&track.patch, options)
     }
 }
 
@@ -251,8 +252,8 @@ pub struct WorkerLiveNoteState {
     pub samples_elapsed: u64,
 }
 impl WorkerLiveNoteState {
-    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) {
-        self.nodes.sync_with(&track.patch, options);
+    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) -> Result<()> {
+        self.nodes.sync_with(&track.patch, options)
     }
 }
 
@@ -296,7 +297,7 @@ impl WorkerGroupTrackState {
                                num_inputs: u32,
                                num_outputs: u32,
                                inner: Box<Buffer>|
-         -> Id<NodeEntry> {
+         -> Id<Node> {
             let id = Id::arbitrary();
             fake_patch.insert_node(
                 id,

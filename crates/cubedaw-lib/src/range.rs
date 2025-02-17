@@ -1,7 +1,7 @@
 use std::ops;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug, Default)]
-/// Cubedaw range. Describes an inclusive start position and an exclusive end position.
+/// cubedaw range. Describes an inclusive start position and an exclusive end position.
 pub struct Range {
     pub start: i64,
     pub end: i64,
@@ -18,16 +18,16 @@ impl Range {
     pub fn new(start: i64, end: i64) -> Self {
         Self { start, end }
     }
-    pub fn start_length(start: i64, length: u64) -> Self {
+    pub fn from_start_length(start: i64, length: u64) -> Self {
         Self {
             start,
-            end: if cfg!(debug_assertions) {
-                start
-                    .checked_add_unsigned(length)
-                    .expect("i64 + u64 overflow")
-            } else {
-                start + length as i64
-            },
+            end: start + length as i64,
+        }
+    }
+    pub fn from_start_length_signed(start: i64, length: i64) -> Self {
+        Self {
+            start,
+            end: start + length,
         }
     }
     pub fn from_beats(start: i64, end: i64) -> Self {
@@ -79,6 +79,10 @@ impl Range {
         }
     }
 
+    pub fn with_start_pos(self, start: i64) -> Self {
+        Self::from_start_length_signed(start, self.length())
+    }
+
     pub fn length(self) -> i64 {
         self.end - self.start
     }
@@ -101,12 +105,12 @@ impl Range {
     }
 
     pub fn iter_snap_to(self, snap: i64) -> impl Iterator<Item = i64> {
-        self.iter_snap_to2(snap).map(|(_, x)| x)
+        self.multiples_within_range(snap).map(move |x| x * snap)
     }
-    pub fn iter_snap_to2(self, snap: i64) -> impl Iterator<Item = (i64, i64)> {
+    pub fn multiples_within_range(self, snap: i64) -> std::ops::RangeInclusive<i64> {
         let start = div_ceil(self.start, snap);
         let end = div_floor(self.end, snap);
-        (start..=end).map(move |x| (x, x * snap))
+        start..=end
     }
 }
 

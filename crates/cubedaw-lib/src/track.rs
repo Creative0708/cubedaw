@@ -87,7 +87,9 @@ impl SectionTrack {
         for &range in self.sections.keys() {
             if let Some(prev_range) = prev_range {
                 if range.intersects(prev_range) {
-                    panic!("Section of range {range:?} would overlap with other section of range {prev_range:?}");
+                    panic!(
+                        "Section of range {range:?} would overlap with other section of range {prev_range:?}"
+                    );
                 }
             }
             prev_range = Some(range);
@@ -122,7 +124,7 @@ impl SectionTrack {
         start_pos: i64,
         section: Section,
     ) -> &mut Section {
-        let section_range = Range::start_length(start_pos, section.length);
+        let section_range = Range::from_start_length(start_pos, section.length);
         self.check_overlap_with(section_range);
 
         let section = self.section_map.insert_and_get_mut(section_id, section);
@@ -132,13 +134,23 @@ impl SectionTrack {
 
     pub fn remove_section(&mut self, section_id: Id<Section>, start_pos: i64) -> Section {
         let section = self.section_map.take(section_id);
-        assert!(
-            self.sections
-                .remove(&Range::start_length(start_pos, section.length))
-                == Some(section_id),
+        let removed = self
+            .sections
+            .remove(&Range::from_start_length(start_pos, section.length));
+        assert_eq!(
+            removed,
+            Some(section_id),
             "section id in track internal map doesn't match removed id"
         );
         section
+    }
+    pub fn remove_section_from_range(&mut self, section_range: Range) -> (Id<Section>, Section) {
+        let section_id = self
+            .sections
+            .remove(&section_range)
+            .expect("section range does not exist");
+        let section = self.section_map.take(section_id);
+        (section_id, section)
     }
 
     pub fn move_section(&mut self, section_range: Range, new_start_pos: i64) {

@@ -4,6 +4,7 @@ use std::{
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
     num::{NonZero, NonZeroU64},
+    thread::ThreadId,
 };
 
 use ahash::{AHasher, HashMap, HashSet, RandomState};
@@ -23,7 +24,12 @@ type IdInner = u64;
 // This is definitely _not_ what generics are meant to be used for, but it's convenient soooo......
 // Also this may result in unneeded generic impls for stuff like IdMap. :shrug:
 #[repr(transparent)]
-pub struct Id<T = ()>(NonZero<IdInner>, PhantomData<T>);
+// pointer because... reasons
+pub struct Id<T = ()>(NonZero<IdInner>, PhantomData<*const T>);
+
+// SAFETY: Id<T> doesn't actually store a T, it's a NonZero<u64> which is Send and Sync
+unsafe impl<T> Send for Id<T> {}
+unsafe impl<T> Sync for Id<T> {}
 
 fn new_impl(source: impl Hash) -> NonZero<IdInner> {
     let mut hasher = new_hasher();
@@ -41,11 +47,18 @@ fn with_impl(source: NonZero<IdInner>, child: impl Hash) -> NonZero<IdInner> {
 fn arbitrary_impl() -> NonZero<IdInner> {
     use std::cell::Cell;
     thread_local! {
+        // std::thread::current().id() isn't cached for some reason sooooo
+        // (change this if/when the id is changed to be cached)
+        static THREAD_ID: ThreadId = std::thread::current().id();
         static COUNTER: Cell<u64> = const { Cell::new(0) };
     }
 
-    COUNTER.set(COUNTER.get() + 1);
-    new_impl((COUNTER.get(), std::thread::current().id()))
+    let val = COUNTER.with(|cell| {
+        let val = cell.get() + 1;
+        cell.set(val);
+        val
+    });
+    THREAD_ID.with(|id| new_impl((val, id)))
 }
 
 impl<T> Id<T> {
@@ -76,10 +89,12 @@ impl<T> Id<T> {
         Id::from_raw(with_impl(self.raw(), child))
     }
 
+    /// Creates an arbitrary `Id<T>`. This is guaranteed to be unique across _all_ threads (unless there's a collision).
     pub fn arbitrary() -> Self {
         Self::from_raw(arbitrary_impl())
     }
 
+    /// Casts the `Id<T>` into an `Id<U>`, preserving the value.
     pub const fn cast<U>(self) -> Id<U> {
         Id::from_raw(self.raw())
     }
@@ -219,10 +234,13 @@ impl<T, V> IdMap<T, V> {
     }
 
     pub fn remove(&mut self, id: Id<T>) -> Option<V> {
-        // if let Some(ref mut events) = self.events {
-        //     events.push(TrackingMapEvent::Delete(id));
-        // }
         self.map.remove(&id.cast())
+    }
+    pub fn remove_or_default(&mut self, id: Id<T>) -> V
+    where
+        V: Default,
+    {
+        self.remove(id).unwrap_or_default()
     }
     pub fn take(&mut self, id: Id<T>) -> V {
         self.remove(id)
@@ -315,5 +333,21 @@ impl<'a, T, V> IntoIterator for &'a mut IdMap<T, V> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+// utilities for specific cases
+impl IdMap<crate::Track> {
+    pub fn force_get_section(&self, id: Id<crate::Track>) -> &crate::SectionTrack {
+        self.force_get(id)
+            .inner
+            .section()
+            .expect("expected section track")
+    }
+    pub fn force_get_section_mut(&mut self, id: Id<crate::Track>) -> &mut crate::SectionTrack {
+        self.force_get_mut(id)
+            .inner
+            .section_mut()
+            .expect("expected section track")
     }
 }

@@ -5,20 +5,24 @@ use anyhow::Result;
 
 use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{
-    Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, NodeData, NodeEntry, Track,
+    Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, Node, NodeData, Track,
 };
 use egui::{
     Align, Area, CentralPanel, Color32, CornerRadius, CursorIcon, Direction, Frame, Key, Layout,
-    Pos2, Rangef, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2,
-    WidgetText, emath::TSTransform, epaint, layers::ShapeIdx, pos2, vec2,
+    Pos2, Rangef, Rect, Response, Sense, Shape, Stroke, Ui, UiBuilder, Vec2, WidgetText,
+    emath::TSTransform, epaint, layers::ShapeIdx, pos2, vec2,
 };
 use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
 use crate::{
+    Context, EphemeralState,
     command::node::{UiNodeAddOrRemove, UiNodeMove, UiNodeSelect},
     context::UiStateTracker,
-    state::{ephemeral::NodeEphemeralState, ui::NodeUiState},
+    state::{
+        ephemeral::{NodeEphemeralState, PatchEphemeralState},
+        ui::NodeUiState,
+    },
     util::DragHandler,
     widget::DragValue,
 };
@@ -90,7 +94,7 @@ impl crate::Screen for PatchTab {
 
         CentralPanel::default()
             .show_inside(ui, |ui| -> Result<()> {
-                if track_id.is_some() {
+                if let Some(track_id) = track_id {
                     let parent_layer_id = ui.layer_id();
                     let screen_viewport = ui.max_rect();
                     let transform = transform_viewport(self.transform, screen_viewport);
@@ -145,18 +149,25 @@ impl crate::Screen for PatchTab {
                                 self,
                                 ctx,
                                 ui,
-                                &viewport_interaction,
+                                viewport_interaction,
                                 ui.input(|i| i.pointer.hover_pos())
                                     .map(|pos| transform.inverse() * pos),
                             );
 
-                            prepared.background(ui);
-                            prepared.show_add_node_menu(ui);
+                            prepared.background(ui, ctx);
+                            prepared.show_add_node_menu(ui, ctx);
                             // cables are rendered below the nodes; save a ShapeIdx for them!
                             let cable_shapeidx = ui.painter().add(Shape::Noop);
-                            let node_results = prepared.handle_nodes(ui)?;
-                            let cable_result = prepared.do_cable_interactions(ui, &node_results);
-                            prepared.draw_cables(ui, &node_results, cable_result, cable_shapeidx);
+                            let node_results = prepared.handle_nodes(ui, ctx)?;
+                            let cable_result =
+                                prepared.do_cable_interactions(ui, ctx, &node_results);
+                            prepared.draw_cables(
+                                ui,
+                                ctx,
+                                &node_results,
+                                cable_result,
+                                cable_shapeidx,
+                            );
 
                             Ok(())
                         })
@@ -187,24 +198,15 @@ impl PatchTab {
     }
 }
 
-struct Prepared<'a> {
-    tab: &'a mut PatchTab,
-
-    drag: &'a mut crate::util::DragHandler,
-
-    ui_state: &'a crate::UiState,
+struct Prepared<'tab, 'ctx> {
+    tab: &'tab mut PatchTab,
 
     track_id: Id<Track>,
-    patch: &'a cubedaw_lib::Patch,
-    patch_ui: &'a crate::state::ui::PatchUiState,
-    patch_ephemeral: &'a mut crate::state::ephemeral::PatchEphemeralState,
+    patch: &'ctx cubedaw_lib::Patch,
+    patch_ui: &'ctx crate::state::ui::PatchUiState,
 
-    tracker: &'a mut crate::context::UiStateTracker,
-    node_registry: &'a crate::NodeRegistry,
-
-    // patch_ephemeral: &'a mut crate::state::ephemeral::
     viewport: Rect,
-    viewport_interaction: &'a Response,
+    viewport_interaction: Response,
     pointer_pos: Option<Pos2>,
 
     primary_clicked: bool,
@@ -212,12 +214,12 @@ struct Prepared<'a> {
     screen_hover_pos: Option<Pos2>,
 }
 
-impl<'a> Prepared<'a> {
+impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
     pub fn new(
-        tab: &'a mut PatchTab,
-        ctx: &'a mut crate::Context,
+        tab: &'tab mut PatchTab,
+        ctx: &mut crate::Context<'ctx>,
         ui: &mut Ui,
-        viewport_interaction: &'a Response,
+        viewport_interaction: Response,
         pointer_pos: Option<Pos2>,
     ) -> Self {
         let viewport = ui.clip_rect();
@@ -235,14 +237,9 @@ impl<'a> Prepared<'a> {
         Self {
             tab,
             track_id,
-            ui_state: ctx.ui_state,
             patch: &ctx.state.tracks.force_get(track_id).patch,
             patch_ui: &ctx.ui_state.tracks.force_get(track_id).patch,
-            patch_ephemeral: &mut ctx.ephemeral_state.tracks.force_get_mut(track_id).patch,
-            drag: &mut ctx.ephemeral_state.drag,
 
-            tracker: &mut ctx.tracker,
-            node_registry: ctx.node_registry,
             viewport,
             viewport_interaction,
             pointer_pos,
@@ -251,7 +248,15 @@ impl<'a> Prepared<'a> {
             screen_hover_pos,
         }
     }
-    pub fn background(&mut self, ui: &mut Ui) {
+
+    fn patch_ephemeral(
+        &self,
+        ephemeral: &'ctx mut EphemeralState,
+    ) -> &'ctx mut PatchEphemeralState {
+        &mut ephemeral.tracks.force_get_mut(self.track_id).patch
+    }
+
+    pub fn background(&mut self, ui: &mut Ui, _ctx: &mut crate::Context<'ctx>) {
         let Self { viewport, .. } = *self;
 
         let painter = ui.painter();
@@ -280,11 +285,10 @@ impl<'a> Prepared<'a> {
             }
         }
     }
-    pub fn show_add_node_menu(&mut self, _ui: &mut Ui) {
+    pub fn show_add_node_menu(&mut self, _ui: &mut Ui, ctx: &mut crate::Context<'ctx>) {
         let Self {
-            ref mut tab,
-            node_registry,
-            viewport_interaction,
+            tab: &mut ref mut tab,
+            ref viewport_interaction,
             ..
         } = *self;
 
@@ -309,7 +313,7 @@ impl<'a> Prepared<'a> {
                 if let Some(key) = node_added {
                     ui.close_menu();
 
-                    let entry = node_registry.get(&key).expect("wut");
+                    let entry = ctx.node_registry.get(&key).expect("wut");
                     tab.currently_held_node = Some(NodeData::new_disconnected(
                         key,
                         entry
@@ -326,9 +330,12 @@ impl<'a> Prepared<'a> {
     fn ui_node(
         &mut self,
         ui: &mut Ui,
-        prepared: &mut crate::util::Prepared<(Id<Track>, Id<NodeEntry>)>,
-        node_data: &NodeEntry,
-        node_id: Option<Id<NodeEntry>>,
+        ctx: &mut crate::Context<'ctx>,
+        // we use the drag handler somewhere else soooooooo
+        patch_ephemeral_node_map: &mut IdMap<Node, NodeEphemeralState>,
+        prepared: &mut crate::util::Prepared<Id<Node>>,
+        node_data: &Node,
+        node_id: Option<Id<Node>>,
         node_ui: &NodeUiState,
     ) -> Result<(
         CubedawNodeUiContextResult,
@@ -337,13 +344,10 @@ impl<'a> Prepared<'a> {
     )> {
         let Self {
             ref mut tab,
-            node_registry,
 
-            ref mut patch_ephemeral,
             viewport,
 
             track_id,
-            ref mut tracker,
             ..
         } = *self;
 
@@ -352,7 +356,7 @@ impl<'a> Prepared<'a> {
         let mut real_node_data = node_id.map(|node_id| {
             (
                 node_id,
-                patch_ephemeral.nodes.get_mut_or_insert_default(node_id),
+                patch_ephemeral_node_map.get_mut_or_insert_default(node_id),
             )
         });
 
@@ -430,7 +434,7 @@ impl<'a> Prepared<'a> {
                 prepared.process_interaction(
                     node_id.cast(),
                     &drag_response,
-                    (track_id, node_id),
+                    node_id,
                     node_ui.selected,
                 );
             }
@@ -438,7 +442,8 @@ impl<'a> Prepared<'a> {
             let mut node_state_copy: Box<Buffer> = node_state.into();
 
             // TODO add header colors
-            let node_thingy = node_registry
+            let node_thingy = ctx
+                .node_registry
                 .get(&node_data.data.key)
                 .todo()
                 .node_thingy
@@ -457,7 +462,7 @@ impl<'a> Prepared<'a> {
             if *node_state_copy != *node_state
                 && let Some(node_id) = node_id
             {
-                tracker.add(NodeStateUpdate::new(
+                ctx.tracker.add(NodeStateUpdate::new(
                     node_id,
                     track_id,
                     node_state_copy,
@@ -474,7 +479,7 @@ impl<'a> Prepared<'a> {
         }
         frame_prepared.paint(&frame_ui);
 
-        ui_ctx.apply(tracker);
+        ui_ctx.apply(&mut ctx.tracker);
 
         let result = ui_ctx.finish(frame_rect);
 
@@ -490,14 +495,10 @@ impl<'a> Prepared<'a> {
     fn handle_node_slots_for(
         &mut self,
         ui: &mut Ui,
-        node_id: Option<Id<NodeEntry>>,
+        node_id: Option<Id<Node>>,
         node_result: &CubedawNodeUiContextResult,
     ) -> (Option<InteractedNodeSlot>, Option<InteractedNodeSlot>) {
-        let CubedawNodeUiContextResult {
-            node_rect,
-            inputs,
-            outputs,
-        } = node_result;
+        let CubedawNodeUiContextResult { node_rect, .. } = node_result;
 
         let mut dragged_node_slot = None;
         let mut hovered_node_slot = None;
@@ -598,30 +599,26 @@ impl<'a> Prepared<'a> {
         (dragged_node_slot, hovered_node_slot)
     }
 
-    fn handle_nodes(&mut self, ui: &mut Ui) -> Result<NodeResults> {
+    fn handle_nodes(&mut self, ui: &mut Ui, ctx: &mut crate::Context<'ctx>) -> Result<NodeResults> {
         let Self {
-            drag: ref mut drag_orig,
-            ui_state,
             track_id,
             patch,
             patch_ui,
-            viewport_interaction,
             primary_clicked,
             secondary_clicked,
             ..
         } = *self;
 
-        // replace self.drag with a temporary value to satisfy borrow checker shenanigans
-        let mut drag = mem::replace(&mut **drag_orig, DragHandler::new());
-
-        let result = drag.handle(Id::new("nodes"), |prepared| -> Result<_> {
+        // cursed hack to satisfy the borrow checker... i mean i guess it makes sense but jeez
+        let mut track_ephem = ctx.ephemeral_state.tracks.take(track_id);
+        let result = track_ephem.patch.node_drag.handle(|prepared| -> Result<_> {
             let mut dragged_node_slot: Option<InteractedNodeSlot> = None;
             let mut hovered_node_slot: Option<InteractedNodeSlot> = None;
 
-            let mut node_results_map: IdMap<NodeEntry, CubedawNodeUiContextResult> = IdMap::new();
+            let mut node_results_map: IdMap<Node, CubedawNodeUiContextResult> = IdMap::new();
 
             // nodes
-            if viewport_interaction.secondary_clicked() {
+            if self.viewport_interaction.secondary_clicked() {
                 self.tab.currently_held_node = None;
             }
 
@@ -629,7 +626,15 @@ impl<'a> Prepared<'a> {
                 let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
 
                 let (result, dragged_node_slot_for_this_node, hovered_node_slot_for_this_node) =
-                    self.ui_node(ui, prepared, node_data, Some(node_id), node_ui)?;
+                    self.ui_node(
+                        ui,
+                        ctx,
+                        &mut track_ephem.patch.nodes,
+                        prepared,
+                        node_data,
+                        Some(node_id),
+                        node_ui,
+                    )?;
 
                 dragged_node_slot = dragged_node_slot.or(dragged_node_slot_for_this_node);
                 hovered_node_slot = hovered_node_slot.or(hovered_node_slot_for_this_node);
@@ -637,20 +642,28 @@ impl<'a> Prepared<'a> {
                 node_results_map.insert(node_id, result);
             }
 
-            if let Some(hover_pos) = viewport_interaction.hover_pos()
+            if let Some(hover_pos) = self.viewport_interaction.hover_pos()
                 && let Some(node_data) = self.tab.currently_held_node.take()
             {
                 ui.ctx().set_cursor_icon(CursorIcon::AllScroll);
-                let fake_entry = NodeEntry::new(node_data, 0, 0);
-                let (result, ..) = self.ui_node(ui, prepared, &fake_entry, None, &NodeUiState {
-                    selected: true,
-                    pos: hover_pos,
-                    width: 128.0,
-                })?;
+                let fake_entry = Node::new(node_data, 0, 0);
+                let (result, ..) = self.ui_node(
+                    ui,
+                    ctx,
+                    &mut track_ephem.patch.nodes,
+                    prepared,
+                    &fake_entry,
+                    None,
+                    &NodeUiState {
+                        selected: true,
+                        pos: hover_pos,
+                        width: 128.0,
+                    },
+                )?;
                 let node_data = fake_entry.data;
                 if primary_clicked {
                     // place the node
-                    self.tracker.add(UiNodeAddOrRemove::addition(
+                    ctx.tracker.add(UiNodeAddOrRemove::addition(
                         Id::arbitrary(),
                         node_data,
                         result.inputs.into_iter().map(|input| input.value).collect(),
@@ -675,43 +688,40 @@ impl<'a> Prepared<'a> {
                 hovered_node_slot,
             })
         });
-
-        *self.drag = drag;
+        ctx.ephemeral_state.tracks.insert(track_id, track_ephem);
         {
             let should_deselect_everything =
-                result.should_deselect_everything || viewport_interaction.clicked();
+                result.should_deselect_everything || self.viewport_interaction.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
-                // TODO rename these
                 for (node_id2, node_ui) in &patch_ui.nodes {
-                    if node_ui.selected
-                        && !matches!(selection_changes.get(&(track_id, node_id2)), Some(true))
-                    {
-                        self.tracker
+                    if node_ui.selected && !matches!(selection_changes.get(&node_id2), Some(true)) {
+                        ctx.tracker
                             .add(UiNodeSelect::new(track_id, node_id2, false));
                     }
                 }
-                for (&(track_id, node_id), &selected) in &selection_changes {
+                for (&node_id, &selected) in &selection_changes {
                     if selected
-                        && !ui_state
+                        && !ctx
+                            .ui_state
                             .tracks
                             .get(track_id)
                             .and_then(|t| t.patch.nodes.get(node_id))
                             .is_some_and(|n| n.selected)
                     {
-                        self.tracker.add(UiNodeSelect::new(track_id, node_id, true));
+                        ctx.tracker.add(UiNodeSelect::new(track_id, node_id, true));
                     }
                 }
             } else {
-                for (&(track_id, node_id), &selected) in &selection_changes {
-                    self.tracker
+                for (&node_id, &selected) in &selection_changes {
+                    ctx.tracker
                         .add(UiNodeSelect::new(track_id, node_id, selected));
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
                 for (node_id, node_ui) in &patch_ui.nodes {
                     if node_ui.selected {
-                        self.tracker
+                        ctx.tracker
                             .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
                     }
                 }
@@ -719,18 +729,17 @@ impl<'a> Prepared<'a> {
         }
 
         if ui.input(|input| input.key_pressed(Key::X)) {
-            self.delete_selected_nodes();
+            self.delete_selected_nodes(ctx);
         }
 
         Ok(result.inner?)
     }
 
-    fn delete_selected_nodes(&mut self) {
+    fn delete_selected_nodes(&mut self, ctx: &mut crate::Context<'ctx>) {
         let Self {
             patch_ui,
             patch,
             track_id,
-            ref mut tracker,
             ..
         } = *self;
         let mut deleted_cables: IdSet<Cable> = IdSet::new();
@@ -742,22 +751,28 @@ impl<'a> Prepared<'a> {
 
             for cable_id in node.connected_cables() {
                 if deleted_cables.insert(cable_id) {
-                    tracker.add(CableAddOrRemove::removal(cable_id, track_id));
+                    ctx.tracker
+                        .add(CableAddOrRemove::removal(cable_id, track_id));
                 }
             }
-            tracker.add(UiNodeAddOrRemove::removal(node_id, track_id));
+            ctx.tracker
+                .add(UiNodeAddOrRemove::removal(node_id, track_id));
         }
     }
 
     fn do_cable_interactions(
         &mut self,
         ui: &mut Ui,
+        ctx: &mut crate::Context<'ctx>,
         node_results: &NodeResults,
     ) -> Option<CableInteractionResult> {
+        // this is gonna be used later, i can feel it
+        // TODO: remove this line
+        let _ = ui;
+
         let Self {
             ref mut tab,
             patch,
-            ref mut tracker,
             track_id,
             pointer_pos,
             ..
@@ -767,6 +782,8 @@ impl<'a> Prepared<'a> {
             hovered_node_slot,
             ..
         } = node_results;
+
+        let tracker = &mut ctx.tracker;
 
         if let Some(InteractedNodeSlot {
             descriptor,
@@ -1000,6 +1017,7 @@ impl<'a> Prepared<'a> {
     fn draw_cables(
         &mut self,
         ui: &mut Ui,
+        ctx: &mut crate::Context<'ctx>,
         node_results: &NodeResults,
         cable_result: Option<CableInteractionResult>,
         shapeidx: ShapeIdx,
@@ -1073,9 +1091,9 @@ impl<'a> Prepared<'a> {
 }
 
 struct CubedawNodeUiContext<'a> {
-    node_id: Option<Id<NodeEntry>>,
+    node_id: Option<Id<Node>>,
     track_id: Id<Track>,
-    node_data: &'a NodeEntry,
+    node_data: &'a Node,
 
     node_ephemeral: &'a mut NodeEphemeralState,
     inputs: Vec<CubedawNodeUiContextInputData>,
@@ -1086,9 +1104,9 @@ struct CubedawNodeUiContext<'a> {
 }
 impl<'a> CubedawNodeUiContext<'a> {
     pub fn new(
-        id: Option<Id<NodeEntry>>,
+        id: Option<Id<Node>>,
         track_id: Id<Track>,
-        node_data: &'a NodeEntry,
+        node_data: &'a Node,
         ephemeral: &'a mut NodeEphemeralState,
         currently_drawn_cable: Option<CurrentlyDrawnCable>,
     ) -> Self {
@@ -1385,7 +1403,7 @@ impl CubedawNodeUiContextResult {
 }
 
 struct NodeResults {
-    pub results: IdMap<NodeEntry, CubedawNodeUiContextResult>,
+    pub results: IdMap<Node, CubedawNodeUiContextResult>,
 
     pub dragged_node_slot: Option<InteractedNodeSlot>,
     pub hovered_node_slot: Option<InteractedNodeSlot>,
@@ -1416,12 +1434,12 @@ struct CableInteractionResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeSlotDescriptor {
     Input {
-        node_id: Id<NodeEntry>,
+        node_id: Id<Node>,
         input_index: u32,
         conn_index: Option<u32>,
     },
     Output {
-        node_id: Id<NodeEntry>,
+        node_id: Id<Node>,
         output_index: u32,
     },
 }
@@ -1434,7 +1452,7 @@ impl NodeSlotDescriptor {
         }
     }
 
-    pub fn node_id(self) -> Id<NodeEntry> {
+    pub fn node_id(self) -> Id<Node> {
         match self {
             Self::Input { node_id, .. } => node_id,
             Self::Output { node_id, .. } => node_id,

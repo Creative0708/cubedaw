@@ -191,8 +191,7 @@ impl<'a> SongViewerPrepared<'a> {
                     )
                 };
             ui.painter().vline(
-                ui.painter()
-                    .round_to_pixel(self.song_x_to_screen_x(pos as _)),
+                self.song_x_to_screen_x(pos as _),
                 self.screen_rect.y_range(),
                 stroke,
             );
@@ -220,10 +219,10 @@ impl<'a> SongViewerPrepared<'a> {
         }
 
         // Bar indicators
-        for (bar, pos) in self
-            .song_view_range
-            .iter_snap_to2(BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64)
-        {
+        const UNITS_PER_BAR: i64 = BEATS_PER_BAR * Range::UNITS_PER_BEAT as i64;
+        for bar in self.song_view_range.multiples_within_range(UNITS_PER_BAR) {
+            let pos = bar * UNITS_PER_BAR;
+
             ui.painter().text(
                 Pos2::new(
                     self.song_x_to_screen_x(pos as _),

@@ -40,12 +40,15 @@ impl_arrays!(
 impl V128 {
     pub const ZERO: Self = bytemuck::zeroed();
 
+    /// Transmutes an array to a `V128`, in the platform's native byte order. This is always safe.
     pub const fn from_array<T: bytemuck::Pod, const N: usize>(arr: [T; N]) -> Self {
         bytemuck::must_cast(arr)
     }
+    /// Gets a reference to the contents of a `V128` as an array, in the platform's native byte order.
     pub const fn as_array<T: bytemuck::Pod, const N: usize>(&self) -> &[T; N] {
         bytemuck::must_cast_ref(self)
     }
+    /// Transmutes a `V128` into an array, in the platform's native byte order. This is always safe.
     pub const fn into_array<T: bytemuck::Pod, const N: usize>(self) -> [T; N] {
         bytemuck::must_cast(self)
     }

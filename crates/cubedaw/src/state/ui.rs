@@ -1,4 +1,4 @@
-use cubedaw_lib::{Id, IdMap, NodeEntry, Note, Section, Track};
+use cubedaw_lib::{Id, IdMap, Node, Note, Section, Track};
 use egui::Pos2;
 
 #[derive(Debug)]
@@ -72,7 +72,7 @@ impl Default for TrackUiState {
 
 #[derive(Debug, Default)]
 pub struct PatchUiState {
-    pub nodes: IdMap<NodeEntry, NodeUiState>,
+    pub nodes: IdMap<Node, NodeUiState>,
 }
 
 #[derive(Debug)]

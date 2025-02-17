@@ -4,7 +4,7 @@
 
 use ahash::HashSetExt;
 use anyhow::Context;
-use cubedaw_lib::{Buffer, Id, IdMap, IdSet, InternalBufferType, NodeEntry, Patch};
+use cubedaw_lib::{Buffer, Id, IdMap, IdSet, InternalBufferType, Node, Patch};
 use resourcekey::ResourceKey;
 
 use crate::{WorkerOptions, WorkerState, plugin::AttributeMap, util};
@@ -20,11 +20,11 @@ pub use synth_track::SynthTrackNodeGraph;
 /// A node graph. This is designed for fast updates and interactivity instead of performance.
 pub struct PreparedNodeGraph {
     // TODO: tbh this would work better as a vec of input nodes for more generic node graphs
-    input_node: Option<Id<NodeEntry>>,
+    input_node: Option<Id<Node>>,
     // TODO: same
-    output_node: Id<NodeEntry>,
+    output_node: Id<Node>,
 
-    id_to_index: IdMap<NodeEntry, u32>,
+    id_to_index: IdMap<Node, u32>,
     nodes: Vec<NodeGraphEntry>,
 }
 
@@ -49,22 +49,22 @@ impl PreparedNodeGraph {
         &mut self,
         patch: &Patch,
         options: &WorkerOptions,
-        input_node: Option<Id<NodeEntry>>,
-        output_node: Id<NodeEntry>,
+        input_node: Option<Id<Node>>,
+        output_node: Id<Node>,
     ) {
         self.input_node = input_node;
         self.output_node = output_node;
 
-        let mut node_id_to_vec_index_map: IdMap<NodeEntry, u32> = IdMap::new();
+        let mut node_id_to_vec_index_map: IdMap<Node, u32> = IdMap::new();
 
-        let mut prev_entries: IdMap<NodeEntry, NodeGraphEntry> = IdMap::new();
+        let mut prev_entries: IdMap<Node, NodeGraphEntry> = IdMap::new();
         for graph_entry in self.nodes.drain(..) {
             prev_entries.insert(graph_entry.node_id, graph_entry);
         }
 
         // simple topo sort algo. TODO possibly replace with a faster one
 
-        let mut indegrees: IdMap<NodeEntry, u32> = IdMap::new();
+        let mut indegrees: IdMap<Node, u32> = IdMap::new();
 
         let mut zero_indegree_node_stack = Vec::new();
 
@@ -218,7 +218,7 @@ impl PreparedNodeGraph {
 
         self.id_to_index = node_id_to_vec_index_map;
     }
-    pub fn empty(input_node: Option<Id<NodeEntry>>, output_node: Id<NodeEntry>) -> Self {
+    pub fn empty(input_node: Option<Id<Node>>, output_node: Id<Node>) -> Self {
         Self {
             input_node,
             output_node,
@@ -228,19 +228,19 @@ impl PreparedNodeGraph {
         }
     }
 
-    pub fn input_node(&self) -> Option<Id<NodeEntry>> {
+    pub fn input_node(&self) -> Option<Id<Node>> {
         self.input_node
     }
-    pub fn output_node(&self) -> Id<NodeEntry> {
+    pub fn output_node(&self) -> Id<Node> {
         self.output_node
     }
 
-    pub fn get_node(&self, note_id: Id<NodeEntry>) -> Option<&NodeGraphEntry> {
+    pub fn get_node(&self, note_id: Id<Node>) -> Option<&NodeGraphEntry> {
         self.id_to_index
             .get(note_id)
             .map(|&index| &self.nodes[index as usize])
     }
-    pub fn get_node_mut(&mut self, note_id: Id<NodeEntry>) -> Option<&mut NodeGraphEntry> {
+    pub fn get_node_mut(&mut self, note_id: Id<Node>) -> Option<&mut NodeGraphEntry> {
         self.id_to_index
             .get(note_id)
             .map(|&index| &mut self.nodes[index as usize])
@@ -292,7 +292,7 @@ impl PreparedNodeGraph {
                 .get(&node.key)
                 .expect("desynced node graph");
             match registry_entry.plugin_data {
-                Some(ref plugin_data) => {
+                Some(ref _plugin_data) => {
                     let mut plugin = state
                         .standalone_instances
                         .get(&node.key)
@@ -350,7 +350,7 @@ pub struct NodeGraphEntry {
     outputs: Vec<NodeGraphOutput>,
 
     key: ResourceKey,
-    node_id: Id<NodeEntry>,
+    node_id: Id<Node>,
     args: Box<Buffer>,
     original_state: Box<Buffer>,
 }

@@ -1,5 +1,5 @@
 use cubedaw_command::node::NodeAddOrRemove;
-use cubedaw_lib::{Id, IdMap, NodeData, NodeEntry, Track};
+use cubedaw_lib::{Id, IdMap, Node, NodeData, Track};
 use egui::Vec2;
 
 use crate::state::ui::NodeUiState;
@@ -15,7 +15,7 @@ pub struct UiNodeAddOrRemove {
 
 impl UiNodeAddOrRemove {
     pub fn addition(
-        id: Id<NodeEntry>,
+        id: Id<Node>,
         data: NodeData,
         inputs: Vec<f32>,
         num_outputs: u32,
@@ -30,7 +30,7 @@ impl UiNodeAddOrRemove {
             ui_data: Some(ui_state),
         }
     }
-    pub fn removal(id: Id<NodeEntry>, track_id: Id<Track>) -> Self {
+    pub fn removal(id: Id<Node>, track_id: Id<Track>) -> Self {
         Self {
             inner: NodeAddOrRemove::removal(id, track_id),
             ui_data: None,
@@ -40,7 +40,7 @@ impl UiNodeAddOrRemove {
         }
     }
 
-    fn nodes<'a>(&self, ui_state: &'a mut crate::UiState) -> &'a mut IdMap<NodeEntry, NodeUiState> {
+    fn nodes<'a>(&self, ui_state: &'a mut crate::UiState) -> &'a mut IdMap<Node, NodeUiState> {
         &mut ui_state
             .tracks
             .get_mut(self.inner.track_id())
@@ -111,12 +111,12 @@ impl UiStateCommand for UiNodeAddOrRemove {
 
 pub struct UiNodeSelect {
     track_id: Id<Track>,
-    id: Id<NodeEntry>,
+    id: Id<Node>,
     selected: bool,
 }
 
 impl UiNodeSelect {
-    pub fn new(track_id: Id<Track>, id: Id<NodeEntry>, selected: bool) -> Self {
+    pub fn new(track_id: Id<Track>, id: Id<Node>, selected: bool) -> Self {
         Self {
             track_id,
             id,
@@ -156,13 +156,13 @@ impl UiStateCommand for UiNodeSelect {
 }
 
 pub struct UiNodeMove {
-    id: Id<NodeEntry>,
+    id: Id<Node>,
     track_id: Id<Track>,
     offset: Vec2,
 }
 
 impl UiNodeMove {
-    pub fn new(id: Id<NodeEntry>, track_id: Id<Track>, offset: Vec2) -> Self {
+    pub fn new(id: Id<Node>, track_id: Id<Track>, offset: Vec2) -> Self {
         Self {
             id,
             track_id,

@@ -15,7 +15,7 @@ pub struct Context<'a> {
     pub state: &'a State,
 
     /// Global data saved and persisted across launches, but not required to render the music; track names, track ordering, etc.
-    /// This also can't be mutated directly and is only modifiable through commands.
+    /// This also can't be mutated directly and is only modifiable through commands (is tracked).
     pub ui_state: &'a UiState,
 
     /// Global data not persisted across launches and is not required to render the music; Drag state
@@ -24,16 +24,20 @@ pub struct Context<'a> {
 
     /// Per-tab state not persisted across launches; scroll position, zoom, etc.
     /// Also mutable directly and not tracked.
+    ///
+    /// ...actually we should probably track scroll position and zoom over launches. TODO
     pub tabs: &'a mut Tabs,
 
     /// App-associated node registry. See [`cubedaw_lib::NodeRegistry`] for more information.
     pub node_registry: &'a NodeRegistry,
 
-    /// State tracker to track events that mutate state or ui_state.
+    /// State tracker to track events that mutate `state` or `ui_state`.
     pub tracker: UiStateTracker,
 
     // TODO: user preferences
     // pub theme/keybinds/whatever: UserPreferences
+
+    // The `Id` of the focused tab.
     focused_tab: Option<Id<Tab>>,
 
     time_since_last_frame: f32,

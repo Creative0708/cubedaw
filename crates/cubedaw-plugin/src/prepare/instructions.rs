@@ -1,4 +1,4 @@
-use wasm_encoder::reencode::{self, Reencode};
+use wasm_encoder::reencode;
 
 use crate::{
     CubedawPluginImport,

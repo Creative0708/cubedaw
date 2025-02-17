@@ -3,7 +3,7 @@ use egui::{CornerRadius, Pos2, StrokeKind};
 
 use crate::app::Tab;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SelectionRect {
     drag_start_pos: Option<Pos2>,
     tab_id: Option<Id<Tab>>,
@@ -17,13 +17,7 @@ pub struct SelectionRect {
 
 impl SelectionRect {
     pub fn new() -> Self {
-        Self {
-            drag_start_pos: None,
-            tab_id: None,
-            rect: None,
-            released: false,
-            should_reset: false,
-        }
+        Self::default()
     }
 
     pub fn process_interaction(&mut self, interaction: &egui::Response, tab_id: Id<Tab>) {

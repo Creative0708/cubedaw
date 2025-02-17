@@ -4,44 +4,70 @@ use crate::StateCommand;
 
 #[derive(Clone)]
 pub struct SectionMove {
-    track_id: Id<Track>,
+    track_from: Id<Track>,
+    track_to: Id<Track>,
     starting_range: Range,
     new_start_pos: i64,
 }
 
 impl SectionMove {
-    pub fn new(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
+    pub fn same(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
         Self {
-            track_id,
+            track_from: track_id,
+            track_to: track_id,
+            starting_range,
+            new_start_pos,
+        }
+    }
+    pub fn different(
+        track_from: Id<Track>,
+        track_to: Id<Track>,
+        starting_range: Range,
+        new_start_pos: i64,
+    ) -> Self {
+        Self {
+            track_from,
+            track_to,
             starting_range,
             new_start_pos,
         }
     }
 }
 
+fn move_between(
+    state: &mut cubedaw_lib::State,
+    track_from_id: Id<Track>,
+    track_to_id: Id<Track>,
+    starting_range: Range,
+    new_start_pos: i64,
+) {
+    let track_from = state.tracks.force_get_section_mut(track_from_id);
+    if track_from_id == track_to_id {
+        track_from.move_section(starting_range, new_start_pos);
+    } else {
+        let (section_id, section) = track_from.remove_section_from_range(starting_range);
+
+        let track_to = state.tracks.force_get_section_mut(track_to_id);
+        track_to.add_section(section_id, new_start_pos, section);
+    }
+}
+
 impl StateCommand for SectionMove {
     fn execute(&mut self, state: &mut cubedaw_lib::State) {
-        let track = state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("nonexistent track id in SectionMove")
-            .inner
-            .section_mut()
-            .expect("track doesn't have sections");
-
-        track.move_section(self.starting_range, self.new_start_pos);
+        move_between(
+            state,
+            self.track_from,
+            self.track_to,
+            self.starting_range,
+            self.new_start_pos,
+        );
     }
     fn rollback(&mut self, state: &mut cubedaw_lib::State) {
-        let track = state
-            .tracks
-            .get_mut(self.track_id)
-            .expect("nonexistent track id in SectionMove")
-            .inner
-            .section_mut()
-            .expect("track isn't a synth track");
-
-        track.move_section(
-            self.starting_range + (self.new_start_pos - self.starting_range.start),
+        move_between(
+            state,
+            self.track_to,
+            self.track_from,
+            self.starting_range.with_start_pos(self.new_start_pos),
             self.starting_range.start,
         );
     }

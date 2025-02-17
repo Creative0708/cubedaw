@@ -4,7 +4,7 @@ mod section;
 pub use section::Section;
 mod range;
 pub use range::Range;
-mod id;
+pub mod id;
 pub use id::{Id, IdMap, IdSet};
 mod state;
 pub use state::State;
@@ -15,7 +15,7 @@ pub use resourcekey::ResourceKey;
 pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
 mod patch;
 pub use patch::{
-    Cable, CableConnection, CableTag, NodeData, NodeEntry, NodeInput, NodeOutput, NodeTag, Patch,
+    Cable, CableConnection, CableTag, NodeData, Node, NodeInput, NodeOutput, NodeTag, Patch,
 };
 mod buffer;
 pub use buffer::{Buffer, BufferType, InternalBufferType};

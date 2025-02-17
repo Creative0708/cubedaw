@@ -2,12 +2,13 @@ use core::f32;
 use std::collections::VecDeque;
 
 use anyhow::Result;
+use cubedaw_command::section::SectionMove;
 use cubedaw_lib::{Id, IdMap, Range, Track, TrackInner};
-use egui::{Color32, CursorIcon, Rect, Sense, Stroke, StrokeKind};
+use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder};
 
 use crate::{
     app::Tab,
-    command::track::UiTrackSelect,
+    command::{section::UiSectionSelect, track::UiTrackSelect},
     state::ui::TrackUiState,
     widget::{EditableLabel, SongViewer, SongViewerPrepared},
 };
@@ -70,8 +71,49 @@ struct Prepared<'ctx> {
     ///
     /// Basically, is the drag in range of the track headers.
     dragging_would_succeed: bool,
-    track_list: Vec<TrackListEntry<'ctx>>,
-    total_track_height: f32,
+    track_list: TrackList<'ctx>,
+}
+
+#[derive(Debug)]
+struct TrackList<'ctx> {
+    list: Vec<TrackListEntry<'ctx>>,
+    top: f32,
+    total_height: f32,
+    /// `bottom` = `top` + `total_height`,
+    bottom: f32,
+}
+
+impl<'ctx> TrackList<'ctx> {
+    fn new(list: Vec<TrackListEntry<'ctx>>, bottom: f32) -> Self {
+        let top = match list.first() {
+            Some(first) => first.actual_pos,
+            None => bottom,
+        };
+        Self {
+            list,
+            top,
+            total_height: bottom - top,
+            bottom,
+        }
+    }
+
+    fn entry_at_y(&self, y: f32) -> Option<(u32, &TrackListEntry<'ctx>)> {
+        if y >= self.bottom {
+            return None;
+        }
+
+        // the index of the first entry whose top is lower on the screen than the y (it doesn't contain the y)
+        let index_of_first_lower = self.list.partition_point(|entry| entry.actual_pos > y);
+        let index_of_entry = index_of_first_lower.checked_sub(1)?;
+        Some((
+            index_of_entry.try_into().unwrap(),
+            &self.list[index_of_entry],
+        ))
+    }
+
+    fn len(&self) -> usize {
+        self.list.len()
+    }
 }
 
 #[derive(Debug)]
@@ -90,6 +132,25 @@ struct TrackListEntry<'a> {
     position: f32,
     height: f32,
     indentation: f32,
+}
+#[derive(Debug, Default, Clone, Copy)]
+struct Track2DPos {
+    time: i64,
+    idx: i32,
+}
+#[derive(Debug, Default, Clone, Copy)]
+struct Track2DOffset {
+    time: i64,
+    idx: i32,
+}
+impl std::ops::Sub for Track2DPos {
+    type Output = Track2DOffset;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Track2DOffset {
+            time: self.time - rhs.time,
+            idx: self.idx - rhs.idx,
+        }
+    }
 }
 
 impl TrackListEntry<'_> {
@@ -144,9 +205,11 @@ impl TrackListEntry<'_> {
     }
 }
 
+const DEFAULT_TRACK_HEIGHT: f32 = 48.0;
+
 impl<'ctx> Prepared<'ctx> {
     fn new(ctx: &mut crate::Context<'ctx>, ui: &mut egui::Ui, tab: &mut TrackTab) -> Self {
-        let mut track_list: Vec<TrackListEntry> = vec![];
+        let mut track_entries: Vec<TrackListEntry> = vec![];
         let mut current_y = tab.song_viewer.anchor(ui).y;
         if ctx.state.tracks.get(ctx.state.root_track).is_some() {
             // traverse the track list in order
@@ -169,8 +232,8 @@ impl<'ctx> Prepared<'ctx> {
                     is_this_track_or_any_of_its_parents_selected =
                         parent_selected || track_ui.selected;
 
-                    let height = 48.0; // TODO make configurable
-                    track_list.push(TrackListEntry {
+                    let height = DEFAULT_TRACK_HEIGHT; // TODO make configurable
+                    track_entries.push(TrackListEntry {
                         actual_pos: current_y,
 
                         is_highlighted: false,
@@ -197,88 +260,80 @@ impl<'ctx> Prepared<'ctx> {
                 }
             }
         }
+        let mut track_list = TrackList::new(track_entries, current_y);
 
         let mut dragging_would_succeed = false;
 
-        let drag = &ctx.ephemeral_state.drag;
+        let drag = &ctx.ephemeral_state.track_drag;
         let width_of_track_header_panel = ui.max_rect().width();
-        // if let Some(egui::Vec2 {
-        //     x: raw_movement_x,
-        //     y: raw_movement_y,
-        // }) = drag.raw_movement_for(Id::new("tracks"))
-        //     && (-width_of_track_header_panel..=width_of_track_header_panel)
-        //         .contains(&raw_movement_x)
-        // {
-        //     dragging_would_succeed = true;
+        if let Some(egui::Vec2 {
+            x: raw_movement_x,
+            y: raw_movement_y,
+        }) = drag.raw_movement()
+            && (-width_of_track_header_panel..=width_of_track_header_panel)
+                .contains(&raw_movement_x)
+        {
+            dragging_would_succeed = true;
 
-        //     assert!(
-        //         track_list.len() <= u32::MAX as usize,
-        //         "there are more than u32::MAX tracks. wat"
-        //     );
+            assert!(
+                track_list.len() <= u32::MAX as usize,
+                "there are more than u32::MAX tracks. wat"
+            );
 
-        //     let mut dragging_track_list = Vec::new();
-        //     let mut dragging_tracks = VecDeque::new();
-        //     let mut not_dragging_tracks = Vec::new();
+            let mut dragging_track_list = Vec::new();
+            let mut dragging_tracks = VecDeque::new();
+            let mut not_dragging_tracks = Vec::new();
 
-        //     for track_entry in track_list.into_iter() {
-        //         if track_entry.would_be_dragged {
-        //             dragging_tracks.push_back(track_entry);
-        //         } else {
-        //             not_dragging_tracks.push(track_entry);
-        //         }
-        //     }
+            for track_entry in track_list.list.into_iter() {
+                if track_entry.would_be_dragged {
+                    dragging_tracks.push_back(track_entry);
+                } else {
+                    not_dragging_tracks.push(track_entry);
+                }
+            }
 
-        //     let mut current_y = ui.max_rect().top();
-        //     for track_entry in not_dragging_tracks.into_iter().map(Some).chain([None]) {
-        //         while dragging_tracks.front().is_some_and(|front| {
-        //             track_entry.as_ref().is_none_or(|track_entry| {
-        //                 front.position + raw_movement_y < current_y + track_entry.height * 0.5
-        //             })
-        //         }) {
-        //             let front = dragging_tracks.pop_front().unwrap();
-        //             let position = {
-        //                 let y = current_y;
-        //                 current_y += front.height;
-        //                 y
-        //             };
-        //             dragging_track_list.push(TrackListEntry { position, ..front });
-        //         }
+            let mut current_y = ui.max_rect().top();
+            for track_entry in not_dragging_tracks.into_iter().map(Some).chain([None]) {
+                while dragging_tracks.front().is_some_and(|front| {
+                    track_entry.as_ref().is_none_or(|track_entry| {
+                        front.position + raw_movement_y < current_y + track_entry.height * 0.5
+                    })
+                }) {
+                    let front = dragging_tracks.pop_front().unwrap();
+                    let position = {
+                        let y = current_y;
+                        current_y += front.height;
+                        y
+                    };
+                    dragging_track_list.push(TrackListEntry { position, ..front });
+                }
 
-        //         if let Some(track_entry) = track_entry {
-        //             let position = {
-        //                 let y = current_y;
-        //                 current_y += track_entry.height;
-        //                 y
-        //             };
-        //             dragging_track_list.push(TrackListEntry {
-        //                 position,
-        //                 ..track_entry
-        //             });
-        //         }
-        //     }
+                if let Some(track_entry) = track_entry {
+                    let position = {
+                        let y = current_y;
+                        current_y += track_entry.height;
+                        y
+                    };
+                    dragging_track_list.push(TrackListEntry {
+                        position,
+                        ..track_entry
+                    });
+                }
+            }
 
-        //     track_list = dragging_track_list;
-        // }
+            track_list = TrackList::new(dragging_track_list, current_y);
+        }
 
         Self {
             dragging_would_succeed,
-            total_track_height: track_list.iter().map(|track| track.height).sum(),
             track_list,
         }
     }
 
-    fn entry_at_y(&self, y: f32) -> Option<&TrackListEntry> {
-        let partition_point = self
-            .track_list
-            .partition_point(|entry| entry.actual_pos + entry.height < y);
-        self.track_list.get(partition_point)
-    }
-
     fn ui_left_sidebar(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
-        let result = ctx.ephemeral_state.drag.handle(
-            Id::new("tracks"),
+        let result = ctx.ephemeral_state.track_drag.handle(
             |prepared: &mut crate::util::Prepared<'_, Id<Track>>| {
-                for track_entry in &mut self.track_list {
+                for track_entry in &mut self.track_list.list {
                     let rect = egui::Rect {
                         min: egui::pos2(
                             ui.max_rect().left() + track_entry.indentation,
@@ -346,7 +401,7 @@ impl<'ctx> Prepared<'ctx> {
                         egui::Order::Foreground,
                         ui.layer_id().id.with("track drag"),
                     );
-                    for track_entry in &self.track_list {
+                    for track_entry in &self.track_list.list {
                         if !track_entry.would_be_dragged {
                             continue;
                         }
@@ -366,7 +421,7 @@ impl<'ctx> Prepared<'ctx> {
                         //     dbg!(track_entry.track_ui.selected, track_entry.actual_pos);
                         // }
 
-                        ui.with_layer_id(dragged_layer_id, |ui| {
+                        ui.scope_builder(UiBuilder::new().layer_id(dragged_layer_id), |ui| {
                             ui.set_clip_rect(ui.ctx().screen_rect());
                             track_entry.track_header(
                                 &mut ctx.tracker,
@@ -403,7 +458,7 @@ impl<'ctx> Prepared<'ctx> {
                 result.should_deselect_everything || viewport_interaction.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
-                for track_entry in &self.track_list {
+                for track_entry in &self.track_list.list {
                     if track_entry.track_ui.selected
                         && !matches!(selection_changes.get(&track_entry.track_id), Some(true))
                     {
@@ -439,29 +494,33 @@ impl<'ctx> Prepared<'ctx> {
                 // }
 
                 // TODO
+                let _ = finished_drag_offset;
             }
         }
     }
 
+    /// The non-track header area region thing. The place where you can see all sections.
     fn central_panel(
         &mut self,
         ui: &mut egui::Ui,
         ctx: &mut crate::Context,
         view: &SongViewerPrepared,
     ) {
+        let Self {
+            dragging_would_succeed,
+            ref mut track_list,
+        } = *self;
+
         let mut track_entry_map: IdMap<Track, &TrackListEntry> = IdMap::new();
-        for track_entry in &self.track_list {
+        for track_entry in &track_list.list {
             track_entry_map.insert(track_entry.track_id, track_entry);
         }
 
-        let anchor = view.anchor();
         let screen_rect = view.screen_rect;
 
-        view.ui_background(ctx, ui, self.total_track_height);
+        view.ui_background(ctx, ui, track_list.total_height);
 
-        let response = ui.response();
-
-        let _todo = response;
+        let bg_response = ui.response();
 
         let track_pos_to_screen_pos = |range: Range, entry: &TrackListEntry| -> Rect {
             Rect::from_x_y_ranges(
@@ -469,24 +528,11 @@ impl<'ctx> Prepared<'ctx> {
                 entry.actual_pos..=entry.actual_pos + entry.height,
             )
         };
-        // let screen_pos_to_track_pos = |rect: Rect| -> Option<(Range, &TrackListEntry)> {
-        //     let entry_index = self
-        //         .track_list
-        //         .partition_point(|track_entry| track_entry.actual_pos < rect.top());
-        //     let entry = self.track_list.get(entry_index)?;
 
-        //     let range = Range::new(
-        //         screen_x_to_note_x(rect.left()),
-        //         screen_x_to_note_x(rect.right()),
-        //     );
-
-        //     Some((view.song_range_to_screen_range(range), entry))
-        // };
-
-        for track_entry in &self.track_list {
+        for track_entry in &track_list.list {
             let highlighted = track_entry.is_highlighted;
             let visuals = if track_entry.track_ui.selected
-                && ctx.ephemeral_state.drag.is_being_dragged(Id::new("tracks"))
+                && ctx.ephemeral_state.track_drag.is_being_dragged()
             {
                 ui.visuals().widgets.noninteractive
             } else if highlighted {
@@ -514,36 +560,129 @@ impl<'ctx> Prepared<'ctx> {
             }
 
             // sections
-            // ctx.ephemeral_state.drag.handle_snapped(Id::new("section"), snap_fn, f)
-
-            let track = track_entry.track;
-
-            match &track.inner {
-                TrackInner::Section(section_track) => {
-                    for (section_range, section_id, section) in section_track.sections() {
-                        let section_ui = track_entry.track_ui.sections.force_get(section_id);
-
-                        let section_rect = track_pos_to_screen_pos(section_range, track_entry);
-                        let section_response = ui
-                            .allocate_rect(section_rect, Sense::click_and_drag())
-                            .on_hover_cursor(CursorIcon::Grab);
-
-                        const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
-                        ui.painter().rect(
-                            section_rect,
-                            4.0,
-                            SECTION_COLOR.gamma_multiply(if section_ui.selected {
-                                0.7
+            let result = ctx.ephemeral_state.section_drag.handle_snapped(
+                |Pos2 { x, y }| Track2DPos {
+                    time: view.input_screen_x_to_song_x(x),
+                    idx: {
+                        if let Some((idx, _)) = track_list.entry_at_y(y) {
+                            idx.try_into().unwrap()
+                        } else {
+                            // assume there are tracks of a certain height above and below the actual list
+                            let track_height = DEFAULT_TRACK_HEIGHT;
+                            if y < track_list.top {
+                                // -1 because we want to round towards negative infinity, not towards zero
+                                ((y - track_list.top) / track_height) as i32 - 1
                             } else {
-                                0.5
-                            }),
-                            Stroke::new(2.0, SECTION_COLOR),
-                            StrokeKind::Inside,
-                        );
+                                ((y - track_list.bottom) / track_height) as i32
+                            }
+                        }
+                    },
+                },
+                |view| {
+                    let track_id = track_entry.track_id;
+                    let track = track_entry.track;
+
+                    match &track.inner {
+                        TrackInner::Section(section_track) => {
+                            for (section_range, section_id, section) in section_track.sections() {
+                                let section_ui =
+                                    track_entry.track_ui.sections.force_get(section_id);
+
+                                let section_rect =
+                                    track_pos_to_screen_pos(section_range, track_entry);
+                                let section_response = ui
+                                    .allocate_rect(section_rect, Sense::click_and_drag())
+                                    .on_hover_cursor(CursorIcon::Grab);
+
+                                const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
+                                ui.painter().rect(
+                                    section_rect,
+                                    4.0,
+                                    SECTION_COLOR.gamma_multiply(if section_ui.selected {
+                                        0.7
+                                    } else {
+                                        0.5
+                                    }),
+                                    Stroke::new(2.0, SECTION_COLOR),
+                                    StrokeKind::Inside,
+                                );
+
+                                view.process_interaction(
+                                    section_id.cast(),
+                                    &section_response,
+                                    (track_id, section_id),
+                                    section_ui.selected,
+                                );
+                            }
+                        }
+                        TrackInner::Group(group_track) => {
+                            // TODO: show the sections layered on top of each other for group tracks
+                            let _ = group_track;
+                        }
+                    }
+                },
+            );
+            {
+                let should_deselect_everything =
+                    result.should_deselect_everything || bg_response.clicked();
+                let selection_changes = result.selection_changes;
+                if should_deselect_everything {
+                    // TODO rename these
+                    for (track_id2, track_ui) in &ctx.ui_state.tracks {
+                        for (section_id2, section_ui) in &track_ui.sections {
+                            if section_ui.selected
+                                && selection_changes.get(&(track_id2, section_id2)).copied()
+                                    != Some(true)
+                            {
+                                ctx.tracker.add(UiSectionSelect::new(
+                                    track_id2,
+                                    section_id2,
+                                    false,
+                                ));
+                            }
+                        }
+                    }
+                    for (&(track_id, section_id), &selected) in &selection_changes {
+                        if selected
+                            && !ctx
+                                .ui_state
+                                .tracks
+                                .get(track_id)
+                                .and_then(|t| t.sections.get(section_id))
+                                .is_some_and(|n| n.selected)
+                        {
+                            ctx.tracker
+                                .add(UiSectionSelect::new(track_id, section_id, true));
+                        }
+                    }
+                } else {
+                    for (&(track_id, section_id), &selected) in &selection_changes {
+                        ctx.tracker
+                            .add(UiSectionSelect::new(track_id, section_id, selected));
                     }
                 }
-                TrackInner::Group(group_track) => {
-                    // TODO
+                if let Some(finished_drag_offset) = result.movement {
+                    for track_entry in &track_list.list {
+                        let TrackListEntry {
+                            track_id,
+                            track,
+                            track_ui,
+                            ..
+                        } = *track_entry;
+                        if let TrackInner::Section(ref track) = track.inner {
+                            let track_ui = ctx.ui_state.tracks.force_get(track_id);
+                            for (section_range, section_id, _section) in track.sections() {
+                                let section_ui = track_ui.sections.force_get(section_id);
+                                if section_ui.selected {
+                                    ctx.tracker.add(SectionMove::same(
+                                        track_id,
+                                        section_range,
+                                        section_range.start + finished_drag_offset.time,
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

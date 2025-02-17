@@ -6,7 +6,7 @@ use crate::{Buffer, Id, IdMap, IdSet, ResourceKey};
 
 #[derive(Debug, Default, Clone)]
 pub struct Patch {
-    nodes: IdMap<NodeEntry>,
+    nodes: IdMap<Node>,
     cables: IdMap<Cable>,
 }
 
@@ -36,7 +36,7 @@ impl Patch {
 
     pub fn insert_node(
         &mut self,
-        node_id: Id<NodeEntry>,
+        node_id: Id<Node>,
         node: NodeData,
         inputs: Vec<f32>,
         num_outputs: u32,
@@ -47,7 +47,7 @@ impl Patch {
             u32::MAX
         );
 
-        self.nodes.insert(node_id, NodeEntry {
+        self.nodes.insert(node_id, Node {
             tag: self.get_node_tag_if_added(&node),
 
             data: node,
@@ -66,10 +66,10 @@ impl Patch {
             ],
         });
     }
-    pub fn remove_node(&mut self, node_id: Id<NodeEntry>) -> Option<NodeData> {
+    pub fn remove_node(&mut self, node_id: Id<Node>) -> Option<NodeData> {
         Some(self.remove_entry(node_id)?.data)
     }
-    pub fn remove_entry(&mut self, node_id: Id<NodeEntry>) -> Option<NodeEntry> {
+    pub fn remove_entry(&mut self, node_id: Id<Node>) -> Option<Node> {
         let entry = self.nodes.remove(node_id)?;
         assert!(
             entry.connected_cables().next().is_none(),
@@ -77,19 +77,19 @@ impl Patch {
         );
         Some(entry)
     }
-    pub fn nodes(&self) -> impl Iterator<Item = (Id<NodeEntry>, &NodeEntry)> {
+    pub fn nodes(&self) -> impl Iterator<Item = (Id<Node>, &Node)> {
         self.nodes.iter().map(|(id, data)| (id, data))
     }
-    pub fn node(&self, id: Id<NodeEntry>) -> Option<&NodeData> {
+    pub fn node(&self, id: Id<Node>) -> Option<&NodeData> {
         self.nodes.get(id).map(|entry| &entry.data)
     }
-    pub fn node_mut(&mut self, id: Id<NodeEntry>) -> Option<&mut NodeData> {
+    pub fn node_mut(&mut self, id: Id<Node>) -> Option<&mut NodeData> {
         self.nodes.get_mut(id).map(|entry| &mut entry.data)
     }
-    pub fn node_entry(&self, id: Id<NodeEntry>) -> Option<&NodeEntry> {
+    pub fn node_entry(&self, id: Id<Node>) -> Option<&Node> {
         self.nodes.get(id)
     }
-    pub fn node_entry_mut(&mut self, id: Id<NodeEntry>) -> Option<&mut NodeEntry> {
+    pub fn node_entry_mut(&mut self, id: Id<Node>) -> Option<&mut Node> {
         self.nodes.get_mut(id)
     }
 
@@ -103,7 +103,7 @@ impl Patch {
         self.cables.get_mut(id)
     }
 
-    pub fn get_active_node(&self, key: &ResourceKey) -> Option<Id<NodeEntry>> {
+    pub fn get_active_node(&self, key: &ResourceKey) -> Option<Id<Node>> {
         let mut found = None;
 
         for (node_id, node) in self.nodes() {
@@ -250,13 +250,13 @@ impl Patch {
             Active,
         }
 
-        let mut visited: IdMap<NodeEntry, VisitedState> = IdMap::new();
+        let mut visited: IdMap<Node, VisitedState> = IdMap::new();
 
         fn do_dfs(
             patch: &mut Patch,
-            visited: &mut IdMap<NodeEntry, VisitedState>,
+            visited: &mut IdMap<Node, VisitedState>,
 
-            start_id: Id<NodeEntry>,
+            start_id: Id<Node>,
             tag: NodeTag,
         ) {
             visited.replace(start_id, VisitedState::Active);
@@ -310,7 +310,7 @@ impl Patch {
             }
         }
 
-        let node_ids: Vec<Id<NodeEntry>> = self.nodes.keys().collect();
+        let node_ids: Vec<Id<Node>> = self.nodes.keys().collect();
         for node_id in node_ids {
             if visited.replace(node_id, VisitedState::Inactive).is_some() {
                 continue;
@@ -402,10 +402,10 @@ impl NodeOutput {
 pub struct Cable {
     // fyi the "input node" is the node to which its _output_ is connected to this cable.
     // it's called this way because it's the node which is the input to this cable. confusing
-    pub input_node: Id<NodeEntry>,
+    pub input_node: Id<Node>,
     pub input_output_index: u32,
 
-    pub output_node: Id<NodeEntry>,
+    pub output_node: Id<Node>,
     pub output_input_index: u32,
     pub output_cable_index: u32,
 
@@ -413,9 +413,9 @@ pub struct Cable {
 }
 impl Cable {
     pub fn new(
-        input_node: Id<NodeEntry>,
+        input_node: Id<Node>,
         input_output_index: u32,
-        output_node: Id<NodeEntry>,
+        output_node: Id<Node>,
         output_input_index: u32,
         output_cable_index: u32,
     ) -> Self {
@@ -430,16 +430,16 @@ impl Cable {
             tag: CableTag::Disconnected,
         }
     }
-    pub fn one(input_node: Id<NodeEntry>, output_node: Id<NodeEntry>) -> Self {
+    pub fn one(input_node: Id<Node>, output_node: Id<Node>) -> Self {
         Self::new(input_node, 0, output_node, 0, 0)
     }
 
-    pub fn input_node<'a>(&self, patch: &'a Patch) -> &'a NodeEntry {
+    pub fn input_node<'a>(&self, patch: &'a Patch) -> &'a Node {
         patch
             .node_entry(self.input_node)
             .expect("cable doesn't belong to patch")
     }
-    pub fn output_node<'a>(&self, patch: &'a Patch) -> &'a NodeEntry {
+    pub fn output_node<'a>(&self, patch: &'a Patch) -> &'a Node {
         patch
             .node_entry(self.output_node)
             .expect("cable doesn't belong to patch")
@@ -516,7 +516,7 @@ impl NodeData {
 }
 
 #[derive(Debug, Clone)]
-pub struct NodeEntry {
+pub struct Node {
     pub data: NodeData,
 
     inputs: Vec<NodeInput>,
@@ -524,7 +524,7 @@ pub struct NodeEntry {
     tag: NodeTag,
 }
 
-impl NodeEntry {
+impl Node {
     pub fn new(data: NodeData, num_inputs: u32, num_outputs: u32) -> Self {
         Self {
             data,

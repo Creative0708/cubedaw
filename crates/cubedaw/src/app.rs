@@ -12,8 +12,10 @@ use crate::{
     node,
 };
 
+/// `eframe`-compatible app for cubedaw.
+///
+/// For descriptions of fields, see [`crate::Context`].
 pub struct CubedawApp {
-    // see crate::Context for descriptions
     state: cubedaw_lib::State,
     ui_state: crate::UiState,
 
