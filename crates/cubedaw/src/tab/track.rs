@@ -666,7 +666,7 @@ impl<'ctx> Prepared<'ctx> {
                         let TrackListEntry {
                             track_id,
                             track,
-                            track_ui,
+                            
                             ..
                         } = *track_entry;
                         if let TrackInner::Section(ref track) = track.inner {
