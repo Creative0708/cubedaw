@@ -15,6 +15,13 @@ pub struct EphemeralState {
 
     pub node_search: NodeSearch,
 }
+impl EphemeralState {
+    pub fn on_frame_end(&mut self) {
+        self.note_drag.on_frame_end();
+        self.section_drag.on_frame_end();
+        self.track_drag.on_frame_end();
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct TrackEphemeralState {

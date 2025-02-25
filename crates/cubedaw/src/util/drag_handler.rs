@@ -50,9 +50,7 @@ impl<T: SelectablePath> DraggedData<T> {
         self.raw_current_pos - self.raw_start_pos
     }
     fn snapped_movement<M: ops::Sub<M>>(&self, snap_fn: impl Fn(Pos2) -> M) -> M::Output {
-        let start_pos = snap_fn(self.raw_start_pos);
-        let current_pos = snap_fn(self.raw_current_pos);
-        current_pos - start_pos
+        snap_fn(self.raw_current_pos) - snap_fn(self.raw_start_pos)
     }
 }
 
@@ -77,16 +75,6 @@ impl<T: SelectablePath> DragHandler<T> {
         self.dragged_data.is_some()
     }
 
-    // pub fn raw_movement(&self) -> Option<Vec2> {
-    //     self.dragged_data.map(|data| data.raw_movement)
-    // }
-    // pub fn raw_movement_x(&self) -> Option<f32> {
-    //     self.dragged_data.map(|data| data.raw_movement.x)
-    // }
-    // pub fn raw_movement_y(&self) -> Option<f32> {
-    //     self.dragged_data.map(|data| data.raw_movement.y)
-    // }
-
     pub fn raw_movement(&self) -> Option<Vec2> {
         self.dragged_data.as_ref().map(|data| data.raw_movement())
     }
@@ -98,12 +86,6 @@ impl<T: SelectablePath> DragHandler<T> {
             .as_ref()
             .map(|data| data.snapped_movement(snap_fn))
     }
-    // pub fn raw_movement_x_for(&self, id: Id) -> Option<f32> {
-    //     self.is_being_dragged(id).then_some(self.raw_movement.x)
-    // }
-    // pub fn raw_movement_y_for(&self, id: Id) -> Option<f32> {
-    //     self.is_being_dragged(id).then_some(self.raw_movement.y)
-    // }
 
     pub fn handle<R>(
         &mut self,
@@ -131,7 +113,7 @@ impl<T: SelectablePath> DragHandler<T> {
         prepared.end().with_inner(result).1
     }
 
-    pub fn end_of_frame(&mut self) {
+    pub fn on_frame_end(&mut self) {
         self.dragged_data
             .take_if(|data| data.state == DraggedDataState::Finished);
     }
@@ -207,9 +189,8 @@ impl<T: SelectablePath, P: ops::Sub<P>, F: Fn(Pos2) -> P> Prepared<'_, T, P, F> 
             self.new_drag_movement = Some(resp.drag_delta());
         }
         if resp.drag_stopped()
-            && let Some(data) = self.handler.dragged_data.take()
+            && let Some(ref data) = self.handler.dragged_data
         {
-            // no need to reset now; the DragHandler will be reset in end()
             self.finished_movement = Some(data.snapped_movement(&self.snap_fn));
         }
     }
@@ -221,18 +202,12 @@ impl<T: SelectablePath, P: ops::Sub<P>, F: Fn(Pos2) -> P> Prepared<'_, T, P, F> 
             data.raw_current_pos += new_drag_movement;
         }
 
-        let movement = if let Some(finished_movement) = self.finished_movement {
+        if self.finished_movement.is_some() || self.canceled {
             self.handler.reset();
-            Some(finished_movement)
-        } else {
-            if self.canceled {
-                self.handler.reset();
-            }
-            None
-        };
+        }
 
         DragHandlerResult {
-            movement,
+            movement: self.finished_movement,
             should_deselect_everything: self.should_deselect_everything,
             selection_changes: self.selection_changes,
             inner: (),

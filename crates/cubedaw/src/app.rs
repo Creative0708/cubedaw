@@ -380,6 +380,7 @@ impl eframe::App for CubedawApp {
         }
 
         // final stuff
+        self.ephemeral_state.on_frame_end();
         if self.worker_host.is_playing() {
             egui_ctx.request_repaint();
         }
