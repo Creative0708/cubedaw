@@ -299,7 +299,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     node_added = Some(resourcekey::literal!("cubedaw:oscillator"));
                 }
                 if ui.button("Note Output").clicked() {
-                    node_added = Some(resourcekey::literal!("builtin:note_output"));
+                    node_added = Some(resourcekey::literal!("builtin:track_input"));
                 }
                 if ui.button("Track Output").clicked() {
                     node_added = Some(resourcekey::literal!("builtin:track_output"));

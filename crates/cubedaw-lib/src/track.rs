@@ -1,82 +1,30 @@
 use std::collections::BTreeMap;
 
+use ahash::HashSetExt;
+
 use crate::{Id, IdMap, IdSet, Patch, Range, Section};
 
 #[derive(Debug, Clone)]
 pub struct Track {
     pub patch: Patch,
-    pub inner: TrackInner,
-}
 
-impl Track {
-    pub fn new_section(patch: Patch) -> Self {
-        Self {
-            patch,
-            inner: TrackInner::Section(SectionTrack::new()),
-        }
-    }
-
-    pub fn new_group(patch: Patch) -> Self {
-        Self {
-            patch,
-            inner: TrackInner::Group(GroupTrack::new()),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum TrackInner {
-    Section(SectionTrack),
-    Group(GroupTrack),
-}
-
-impl TrackInner {
-    pub fn section(&self) -> Option<&SectionTrack> {
-        match self {
-            Self::Section(synth_track) => Some(synth_track),
-            _ => None,
-        }
-    }
-    pub fn section_mut(&mut self) -> Option<&mut SectionTrack> {
-        match self {
-            Self::Section(synth_track) => Some(synth_track),
-            _ => None,
-        }
-    }
-    pub fn group(&self) -> Option<&GroupTrack> {
-        match self {
-            Self::Group(group_track) => Some(group_track),
-            _ => None,
-        }
-    }
-    pub fn group_mut(&mut self) -> Option<&mut GroupTrack> {
-        match self {
-            Self::Group(group_track) => Some(group_track),
-            _ => None,
-        }
-    }
-
-    pub fn is_section(&self) -> bool {
-        self.section().is_some()
-    }
-    pub fn is_group(&self) -> bool {
-        self.group().is_some()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SectionTrack {
     polyphony: u32,
     section_map: IdMap<Section>,
     sections: BTreeMap<Range, Id<Section>>,
+
+    pub children: IdSet<Track>,
 }
 
-impl SectionTrack {
-    pub fn new() -> Self {
+impl Track {
+    pub fn new(patch: Patch) -> Self {
         Self {
+            patch,
             polyphony: 32,
+
             section_map: Default::default(),
             sections: Default::default(),
+
+            children: IdSet::new(),
         }
     }
 
@@ -206,21 +154,5 @@ impl SectionTrack {
     }
     pub fn set_polyphony(&mut self, polyphony: u32) {
         self.polyphony = polyphony;
-    }
-}
-impl Default for SectionTrack {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct GroupTrack {
-    pub children: IdSet<Track>,
-}
-
-impl GroupTrack {
-    pub fn new() -> Self {
-        Default::default()
     }
 }

@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use anyhow::Result;
 use cubedaw_command::section::SectionMove;
-use cubedaw_lib::{Id, IdMap, Range, Track, TrackInner};
+use cubedaw_lib::{Id, IdMap, Range, Track};
 use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder};
 
 use crate::{
@@ -249,14 +249,12 @@ impl<'ctx> Prepared<'ctx> {
                     current_y += height;
                 }
 
-                if matches!(track.inner, cubedaw_lib::TrackInner::Group(_)) {
-                    for &child_id in &ctx.ui_state.tracks.force_get(track_id).track_list {
-                        track_stack.push((
-                            child_id,
-                            depth + 1,
-                            is_this_track_or_any_of_its_parents_selected,
-                        ));
-                    }
+                for &child_id in &ctx.ui_state.tracks.force_get(track_id).track_list {
+                    track_stack.push((
+                        child_id,
+                        depth + 1,
+                        is_this_track_or_any_of_its_parents_selected,
+                    ));
                 }
             }
         }
@@ -331,7 +329,7 @@ impl<'ctx> Prepared<'ctx> {
     }
 
     fn ui_left_sidebar(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
-        let result = ctx.ephemeral_state.track_drag.handle(
+        ctx.ephemeral_state.track_drag.handle(
             |pos| pos,
             |prepared: &mut crate::util::Prepared<_, _>| {
                 for track_entry in &mut self.track_list.list {
@@ -360,15 +358,13 @@ impl<'ctx> Prepared<'ctx> {
                     );
 
                     if response.double_clicked() {
-                        // group tracks don't have sections (yet!) and selecting a group track is invalid
-                        if track_entry.track.inner.is_section() {
-                            ctx.tabs
-                                .get_or_create_tab::<super::pianoroll::PianoRollTab>(
-                                    ctx.state,
-                                    ctx.ui_state,
-                                )
-                                .select_track(Some(track_entry.track_id));
-                        }
+                        ctx.tabs
+                            .get_or_create_tab::<super::pianoroll::PianoRollTab>(
+                                ctx.state,
+                                ctx.ui_state,
+                            )
+                            .select_track(Some(track_entry.track_id));
+
                         if let Some(patch_tab) = ctx.tabs.get_tab::<super::patch::PatchTab>() {
                             patch_tab.select_track(Some(track_entry.track_id));
                         }
@@ -452,45 +448,6 @@ impl<'ctx> Prepared<'ctx> {
                 );
             }
         });
-        todo!();
-        /*{
-            let should_deselect_everything =
-                result.should_deselect_everything || viewport_interaction.clicked();
-            let selection_changes = result.selection_changes;
-            if should_deselect_everything {
-                for track_entry in &self.track_list.list {
-                    if track_entry.track_ui.select
-                        && !matches!(selection_changes.get(&track_entry.track_id), Some(true))
-                    {
-                        ctx.tracker
-                            .add(UiTrackSelect::new(track_entry.track_id, false));
-                    }
-                }
-                for (&track_id, &selected) in selection_changes.iter() {
-                    if selected && !ctx.ui_state.tracks.get(track_id).is_some_and(|n| n.select) {
-                        ctx.tracker.add(UiTrackSelect::new(track_id, true));
-                    }
-                }
-            } else {
-                for (&track_id, &selected) in &selection_changes {
-                    ctx.tracker.add(UiTrackSelect::new(track_id, selected));
-                }
-            }
-            if let Some(finished_drag_offset) = result.movement {
-                // for (&node_id, node_ui) in &track_ui.patch.nodes {
-                //     if node_ui.selected {
-                //         ctx.tracker.add(UiNodeMove::new(
-                //             node_id,
-                //             track_id,
-                //             finished_drag_offset,
-                //         ));
-                //     }
-                // }
-
-                // TODO
-                let _ = finished_drag_offset;
-            }
-        }*/
     }
 
     /// The non-track header area region thing. The place where you can see all sections.
@@ -556,7 +513,7 @@ impl<'ctx> Prepared<'ctx> {
             }
 
             // sections
-            let result = ctx.ephemeral_state.section_drag.handle(
+            ctx.ephemeral_state.section_drag.handle(
                 |Pos2 { x, y }| Track2DPos {
                     time: view.input_screen_x_to_song_x(x),
                     idx: {
@@ -578,120 +535,49 @@ impl<'ctx> Prepared<'ctx> {
                     let track_id = track_entry.track_id;
                     let track = track_entry.track;
 
-                    match &track.inner {
-                        TrackInner::Section(section_track) => {
-                            for (section_range, section_id, section) in section_track.sections() {
-                                let section_ui =
-                                    track_entry.track_ui.sections.force_get(section_id);
+                    for (section_range, section_id, _section) in track.sections() {
+                        let section_ui = track_entry.track_ui.sections.force_get(section_id);
 
-                                let mut section_range = section_range;
-                                let mut track_entry = track_entry;
+                        let mut section_range = section_range;
+                        let mut track_entry = track_entry;
 
-                                if drag.would_be_dragged(section_ui.selected)
-                                    && let Some(movement) = drag.movement()
-                                {
-                                    section_range += movement.time;
-                                    if movement.idx != 0 {
-                                        track_entry = &track_list.list[track_entry_index
-                                            .saturating_add_signed(movement.idx as isize)
-                                            .clamp(0, track_list.len() - 1)];
-                                    }
-                                }
-
-                                let section_rect =
-                                    track_pos_to_screen_pos(section_range, track_entry);
-                                let section_response = ui
-                                    .allocate_rect(section_rect, Sense::click_and_drag())
-                                    .on_hover_cursor(CursorIcon::Grab);
-
-                                const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
-                                ui.painter().rect(
-                                    section_rect,
-                                    4.0,
-                                    match section_ui.selected {
-                                        Select::Select => SECTION_COLOR.gamma_multiply(0.7),
-                                        Select::Deselect => SECTION_COLOR.gamma_multiply(0.5),
-                                    },
-                                    Stroke::new(2.0, SECTION_COLOR),
-                                    StrokeKind::Inside,
-                                );
-
-                                drag.process_interaction(
-                                    section_id.cast(),
-                                    &section_response,
-                                    (track_id, section_id),
-                                    section_ui.selected,
-                                );
+                        if drag.would_be_dragged(section_ui.select)
+                            && let Some(movement) = drag.movement()
+                        {
+                            section_range += movement.time;
+                            if movement.idx != 0 {
+                                track_entry = &track_list.list[track_entry_index
+                                    .saturating_add_signed(movement.idx as isize)
+                                    .clamp(0, track_list.len() - 1)];
                             }
                         }
-                        TrackInner::Group(group_track) => {
-                            // TODO: show the sections layered on top of each other for group tracks
-                            let _ = group_track;
-                        }
+
+                        let section_rect = track_pos_to_screen_pos(section_range, track_entry);
+                        let section_response = ui
+                            .allocate_rect(section_rect, Sense::click_and_drag())
+                            .on_hover_cursor(CursorIcon::Grab);
+
+                        const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
+                        ui.painter().rect(
+                            section_rect,
+                            4.0,
+                            match section_ui.select {
+                                Select::Select => SECTION_COLOR.gamma_multiply(0.7),
+                                Select::Deselect => SECTION_COLOR.gamma_multiply(0.5),
+                            },
+                            Stroke::new(2.0, SECTION_COLOR),
+                            StrokeKind::Inside,
+                        );
+
+                        drag.process_interaction(
+                            section_id.cast(),
+                            &section_response,
+                            (track_id, section_id),
+                            section_ui.select,
+                        );
                     }
                 },
             );
-            todo!();
-            /*{
-                let should_deselect_everything =
-                    result.should_deselect_everything || bg_response.clicked();
-                let selection_changes = result.selection_changes;
-                if should_deselect_everything {
-                    // TODO rename these
-                    for (track_id2, track_ui) in &ctx.ui_state.tracks {
-                        for (section_id2, section_ui) in &track_ui.sections {
-                            if section_ui.selected
-                                && selection_changes.get(&(track_id2, section_id2)).copied()
-                                    != Some(true)
-                            {
-                                ctx.tracker.add(UiSectionSelect::new(
-                                    track_id2,
-                                    section_id2,
-                                    false,
-                                ));
-                            }
-                        }
-                    }
-                    for (&(track_id, section_id), &selected) in &selection_changes {
-                        if selected
-                            && !ctx
-                                .ui_state
-                                .tracks
-                                .get(track_id)
-                                .and_then(|t| t.sections.get(section_id))
-                                .is_some_and(|n| n.selected)
-                        {
-                            ctx.tracker
-                                .add(UiSectionSelect::new(track_id, section_id, true));
-                        }
-                    }
-                } else {
-                    for (&(track_id, section_id), &selected) in &selection_changes {
-                        ctx.tracker
-                            .add(UiSectionSelect::new(track_id, section_id, selected));
-                    }
-                }
-                if let Some(finished_drag_offset) = result.movement {
-                    for track_entry in &track_list.list {
-                        let TrackListEntry {
-                            track_id, track, ..
-                        } = *track_entry;
-                        if let TrackInner::Section(ref track) = track.inner {
-                            let track_ui = ctx.ui_state.tracks.force_get(track_id);
-                            for (section_range, section_id, _section) in track.sections() {
-                                let section_ui = track_ui.sections.force_get(section_id);
-                                if section_ui.selected {
-                                    ctx.tracker.add(SectionMove::same(
-                                        track_id,
-                                        section_range,
-                                        section_range.start + finished_drag_offset.time,
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }*/
         }
 
         view.ui_top_bar(ctx, ui);

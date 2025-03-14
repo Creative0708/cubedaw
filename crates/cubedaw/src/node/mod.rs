@@ -20,7 +20,7 @@ pub fn register_builtin_nodes(registry: &mut NodeRegistry) {
         Box::new(impls::builtin::TrackOutputNodeThingy),
     );
     registry.register_node_no_inner(
-        resourcekey::literal!("builtin:note_output"),
+        resourcekey::literal!("builtin:track_input"),
         "Note Output",
         Box::new(impls::builtin::NoteInputNodeThingy),
     );

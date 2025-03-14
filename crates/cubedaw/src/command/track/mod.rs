@@ -33,7 +33,7 @@ impl UiTrackAddOrRemove {
         }
     }
 
-    pub fn add_generic_section_track(
+    pub fn add_generic_track(
         id: Id<Track>,
         parent_track: Option<Id<Track>>,
         insertion_pos: u32,
@@ -43,13 +43,13 @@ impl UiTrackAddOrRemove {
         let id_track_output = Id::arbitrary();
         Self::addition(
             id,
-            cubedaw_lib::Track::new_section({
+            cubedaw_lib::Track::new({
                 let mut patch = cubedaw_lib::Patch::default();
 
                 patch.insert_node(
                     id_note_output,
                     NodeData::new_disconnected(
-                        resourcekey::literal!("builtin:note_output"),
+                        resourcekey::literal!("builtin:track_input"),
                         Default::default(),
                     ),
                     vec![0.0],
@@ -78,70 +78,6 @@ impl UiTrackAddOrRemove {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
                         map.insert(id_note_output, crate::state::ui::NodeUiState {
-                            select: Select::Deselect,
-                            pos: egui::pos2(-80.0, 0.0),
-                            width: 128.0,
-                        });
-                        map.insert(id_track_output, crate::state::ui::NodeUiState {
-                            select: Select::Deselect,
-                            pos: egui::pos2(240.0, 0.0),
-                            width: 128.0,
-                        });
-                        map
-                    },
-                },
-                ..Default::default()
-            },
-            parent_track,
-            insertion_pos,
-        )
-    }
-
-    pub fn add_generic_group_track(
-        id: Id<Track>,
-        parent_track: Option<Id<Track>>,
-        insertion_pos: u32,
-        _node_registry: &NodeRegistry,
-    ) -> Self {
-        let id_track_input = Id::arbitrary();
-        let id_track_output = Id::arbitrary();
-        Self::addition(
-            id,
-            cubedaw_lib::Track::new_group({
-                let mut patch = cubedaw_lib::Patch::default();
-
-                patch.insert_node(
-                    id_track_input,
-                    NodeData::new_disconnected(
-                        resourcekey::literal!("builtin:track_input"),
-                        Default::default(),
-                    ),
-                    vec![0.0],
-                    1,
-                );
-                patch.insert_node(
-                    id_track_output,
-                    NodeData::new_disconnected(
-                        resourcekey::literal!("builtin:track_output"),
-                        Default::default(),
-                    ),
-                    vec![0.0],
-                    0,
-                );
-                patch.insert_cable(
-                    Id::arbitrary(),
-                    cubedaw_lib::Cable::one(id_track_input, id_track_output),
-                    cubedaw_lib::CableConnection { multiplier: 1.0 },
-                );
-
-                patch
-            }),
-            crate::state::ui::TrackUiState {
-                name: format!("Track {:04x}", id.raw().get() >> 48),
-                patch: crate::state::ui::PatchUiState {
-                    nodes: {
-                        let mut map = cubedaw_lib::IdMap::new();
-                        map.insert(id_track_input, crate::state::ui::NodeUiState {
                             select: Select::Deselect,
                             pos: egui::pos2(-80.0, 0.0),
                             width: 128.0,

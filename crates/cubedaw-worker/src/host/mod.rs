@@ -11,10 +11,7 @@ use crate::{
     worker,
 };
 mod state;
-pub use state::{
-    WorkerGroupTrackState, WorkerHostState, WorkerLiveNoteState, WorkerNoteState,
-    WorkerSectionTrackState,
-};
+pub use state::{WorkerHostState, WorkerLiveNoteState, WorkerNoteState, WorkerTrackState};
 
 /// An interface for controlling the audio worker threads. This won't run on the ui thread. Please do not run this on the ui thread.
 #[derive(Debug)]
@@ -79,13 +76,10 @@ impl WorkerHost {
 
     /// Delete all currently processing jobs. This will result in silence
     pub fn stop_all_processing(&mut self) {
-        for track_state in self.worker_state.section_tracks.values_mut() {
+        for track_state in self.worker_state.tracks.values_mut() {
             track_state.live_notes.clear();
             track_state.notes.clear();
             track_state.track_nodes.reset();
-        }
-        for track_state in self.worker_state.group_tracks.values_mut() {
-            track_state.nodes.reset();
         }
     }
 
@@ -177,9 +171,6 @@ impl WorkerHost {
                     JobDescriptor::TrackProcess { track_id } => {
                         todo!("{track_id:?}");
                     }
-                    JobDescriptor::TrackGroup { track_id } => {
-                        todo!("{track_id:?}");
-                    }
                 },
                 WorkerToHostEvent::Error(err) => {
                     // TODO
@@ -212,7 +203,7 @@ impl WorkerHost {
         };
 
         for (track_id, note_descriptor) in deleted_notes {
-            let track = worker_state.section_tracks.force_get_mut(track_id);
+            let track = worker_state.tracks.force_get_mut(track_id);
             match note_descriptor {
                 crate::NoteDescriptor::Live { note_id, .. } => {
                     track
@@ -334,10 +325,7 @@ fn add_jobs(
     let mut track_temp_map: IdMap<cubedaw_lib::Track, TrackTempData> = IdMap::new();
 
     // required due to borrowing rules
-    let mut section_track_id_to_mutable_reference_to_section_track_data: IdMap<_, &'static mut _> =
-        IdMap::new();
-    let mut group_track_id_to_mutable_reference_to_group_track_data: IdMap<_, &'static mut _> =
-        IdMap::new();
+    let mut track_id_to_mutable_reference_to_track_data: IdMap<_, &'static mut _> = IdMap::new();
 
     let song_range_that_we_will_process = start_pos_ref.map(|start_pos_ref| {
         let start_pos = *start_pos_ref;
@@ -358,12 +346,8 @@ fn add_jobs(
         song_range_that_we_will_process
     });
 
-    for (track_id, section_track_data) in &mut worker_state.section_tracks {
-        section_track_id_to_mutable_reference_to_section_track_data
-            .insert(track_id, section_track_data);
-    }
-    for (track_id, group_track_data) in &mut worker_state.group_tracks {
-        group_track_id_to_mutable_reference_to_group_track_data.insert(track_id, group_track_data);
+    for (track_id, track_data) in &mut worker_state.tracks {
+        track_id_to_mutable_reference_to_track_data.insert(track_id, track_data);
     }
 
     let mut track_stack = Vec::new();
@@ -374,102 +358,96 @@ fn add_jobs(
         let sync_buffer = allocate_sync_buffer(allocator);
 
         let track = state.tracks.force_get(track_id);
-        match track.inner {
-            cubedaw_lib::TrackInner::Group(ref track_data) => {
-                let worker_track_data = group_track_id_to_mutable_reference_to_group_track_data
-                    .remove(track_id)
-                    .unwrap();
+        // match track.inner {
+        //     cubedaw_lib::TrackInner::Group(ref track_data) => {
+        //         let worker_track_data = group_track_id_to_mutable_reference_to_group_track_data
+        //             .remove(track_id)
+        //             .unwrap();
 
-                let job = WorkerJob::TrackGroup {
+        //         let job = WorkerJob::TrackGroup {
+        //             track_id,
+        //             nodes: &mut worker_track_data.nodes,
+        //             input: sync_buffer.get_read_handle(),
+        //             output: group_input.get_write_handle(),
+        //         };
+
+        //         track_temp_map.insert(track_id, TrackTempData { sync_buffer, job });
+
+        //     }
+        //     cubedaw_lib::TrackInner::Section(ref track_data) => {
+        let worker_track_data = track_id_to_mutable_reference_to_track_data
+            .remove(track_id)
+            .unwrap();
+
+        let job = WorkerJob::TrackProcess {
+            track_id,
+            nodes: &mut worker_track_data.track_nodes,
+            input: sync_buffer.get_read_handle(),
+            output: group_input.get_write_handle(),
+        };
+
+        // live notes
+        for (live_note_id, note_state) in &mut worker_track_data.live_notes {
+            work_tx
+                .send(WorkerJob::NoteProcess {
                     track_id,
-                    nodes: &mut worker_track_data.nodes,
-                    input: sync_buffer.get_read_handle(),
-                    output: group_input.get_write_handle(),
-                };
+                    note_descriptor: crate::NoteDescriptor::Live {
+                        note_id: live_note_id,
+                        note: &note_state.note,
+                        start_pos: note_state.start_pos,
+                        samples_elapsed: note_state.samples_elapsed,
+                    },
+                    nodes: &mut note_state.nodes,
+                    output: sync_buffer.get_write_handle(),
+                })
+                .unwrap();
+        }
 
-                track_temp_map.insert(track_id, TrackTempData { sync_buffer, job });
-
-                for &track_id in &track_data.children {
-                    track_stack.push((track_id, sync_buffer));
+        // non-live notes
+        {
+            // add the notes that started in this range to the worker state...
+            if let Some(song_range_that_we_will_process) = song_range_that_we_will_process {
+                for (section_range, section_id) in
+                    track.sections_intersecting(song_range_that_we_will_process)
+                {
+                    let section = track.section(section_id).unwrap();
+                    for (_start_pos, note_id, _note) in section.note_start_positions_in(
+                        section_range.intersect(song_range_that_we_will_process)
+                            - section_range.start,
+                    ) {
+                        worker_track_data.notes.insert(note_id, WorkerNoteState {
+                            section_id,
+                            nodes: worker_track_data.note_nodes.clone(),
+                        });
+                    }
                 }
             }
-            cubedaw_lib::TrackInner::Section(ref track_data) => {
-                let worker_track_data = section_track_id_to_mutable_reference_to_section_track_data
-                    .remove(track_id)
+
+            // ...then process all notes
+            for (note_id, note_state) in &mut worker_track_data.notes {
+                let (start_pos, note) = track
+                    .section(note_state.section_id)
+                    .unwrap()
+                    .note(note_id)
                     .unwrap();
-
-                let job = WorkerJob::TrackProcess {
-                    track_id,
-                    nodes: &mut worker_track_data.track_nodes,
-                    input: sync_buffer.get_read_handle(),
-                    output: group_input.get_write_handle(),
-                };
-
-                // live notes
-                for (live_note_id, note_state) in &mut worker_track_data.live_notes {
-                    work_tx
-                        .send(WorkerJob::NoteProcess {
-                            track_id,
-                            note_descriptor: crate::NoteDescriptor::Live {
-                                note_id: live_note_id,
-                                note: &note_state.note,
-                                start_pos: note_state.start_pos,
-                                samples_elapsed: note_state.samples_elapsed,
-                            },
-                            nodes: &mut note_state.nodes,
-                            output: sync_buffer.get_write_handle(),
-                        })
-                        .unwrap();
-                }
-
-                // non-live notes
-                {
-                    // add the notes that started in this range to the worker state...
-                    if let Some(song_range_that_we_will_process) = song_range_that_we_will_process {
-                        for (section_range, section_id) in
-                            track_data.sections_intersecting(song_range_that_we_will_process)
-                        {
-                            let section = track_data.section(section_id).unwrap();
-                            for (_start_pos, note_id, _note) in section.note_start_positions_in(
-                                section_range.intersect(song_range_that_we_will_process)
-                                    - section_range.start,
-                            ) {
-                                worker_track_data.notes.insert(note_id, WorkerNoteState {
-                                    section_id,
-                                    nodes: worker_track_data.note_nodes.clone(),
-                                });
-                            }
-                        }
-                    }
-
-                    // ...then process all notes
-                    for (note_id, note_state) in &mut worker_track_data.notes {
-                        let (start_pos, note) = track_data
-                            .section(note_state.section_id)
-                            .unwrap()
-                            .note(note_id)
-                            .unwrap();
-                        work_tx
-                            .send(WorkerJob::NoteProcess {
-                                track_id,
-                                note_descriptor: crate::NoteDescriptor::State {
-                                    note_id,
-                                    start_pos,
-                                    note,
-                                },
-                                nodes: &mut note_state.nodes,
-                                output: sync_buffer.get_write_handle(),
-                            })
-                            .unwrap();
-                    }
-                }
-
-                track_temp_map.insert(track_id, TrackTempData { sync_buffer, job })
+                work_tx
+                    .send(WorkerJob::NoteProcess {
+                        track_id,
+                        note_descriptor: crate::NoteDescriptor::State {
+                            note_id,
+                            start_pos,
+                            note,
+                        },
+                        nodes: &mut note_state.nodes,
+                        output: sync_buffer.get_write_handle(),
+                    })
+                    .unwrap();
             }
         }
+
+        track_temp_map.insert(track_id, TrackTempData { sync_buffer, job });
     }
-    debug_assert!(section_track_id_to_mutable_reference_to_section_track_data.is_empty());
-    debug_assert!(group_track_id_to_mutable_reference_to_group_track_data.is_empty());
+    assert!(track_id_to_mutable_reference_to_track_data.is_empty());
 
     // prime the SyncBuffers
     for (_, TrackTempData { sync_buffer, job }) in track_temp_map {

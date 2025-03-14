@@ -59,7 +59,7 @@ impl NodeRegistry {
         };
         this.register_dummy_node(ResourceKey::new("builtin:track_input").unwrap());
         this.register_dummy_node(ResourceKey::new("builtin:track_output").unwrap());
-        this.register_dummy_node(ResourceKey::new("builtin:note_output").unwrap());
+        this.register_dummy_node(ResourceKey::new("builtin:track_input").unwrap());
         this
     }
 

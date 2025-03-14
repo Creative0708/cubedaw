@@ -23,6 +23,8 @@ unsafe_op_in_unsafe_fn = "forbid"
 needless_question_mark = "allow" # makes code harder to read in long question mark chains
 unusual_byte_groupings = "allow" # misunderstands floating-point binary representation
 needless_lifetimes = "allow"     # false positives :(
+nonminimal_bool = "allow"        # makes code harder to read sometimes
+too_many_arguments = "allow"     # "okay and how do you expect me to fix this?"
 
 [workspace.dependencies]
 egui = "0.31.0"

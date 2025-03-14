@@ -72,7 +72,7 @@ impl CubedawApp {
             });
 
             execute(
-                crate::command::track::UiTrackAddOrRemove::add_generic_group_track(
+                crate::command::track::UiTrackAddOrRemove::add_generic_track(
                     Id::arbitrary(),
                     None,
                     0,
@@ -85,7 +85,7 @@ impl CubedawApp {
 
             let section_track_id = Id::arbitrary();
             execute(
-                crate::command::track::UiTrackAddOrRemove::add_generic_section_track(
+                crate::command::track::UiTrackAddOrRemove::add_generic_track(
                     section_track_id,
                     Some(state.root_track),
                     0,

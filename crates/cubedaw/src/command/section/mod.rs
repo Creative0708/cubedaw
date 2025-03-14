@@ -104,7 +104,7 @@ impl UiStateCommand for UiSectionSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.section(ui_state) {
-            ui_data.selected = self.state;
+            ui_data.select = self.state;
         }
     }
     fn ui_rollback(
@@ -113,7 +113,7 @@ impl UiStateCommand for UiSectionSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.section(ui_state) {
-            ui_data.selected = !self.state;
+            ui_data.select = !self.state;
         }
     }
 }

@@ -53,8 +53,11 @@ pub struct TrackUiState {
     pub select: Select,
     pub patch: PatchUiState,
     pub sections: IdMap<Section, SectionUiState>,
+
+    /// Whether the track has its children hidden or not.
+    pub closed: bool,
+
     /// Ordered track lists. This is the order of which the children of this track are displayed in the track tab.
-    /// Unused when the track is a section track.
     pub track_list: Vec<Id<Track>>,
 }
 
@@ -65,6 +68,9 @@ impl Default for TrackUiState {
             select: Default::default(),
             patch: Default::default(),
             sections: Default::default(),
+
+            closed: false,
+
             track_list: Default::default(),
         }
     }
@@ -78,7 +84,7 @@ pub struct PatchUiState {
 #[derive(Debug)]
 pub struct SectionUiState {
     pub name: String,
-    pub selected: Select,
+    pub select: Select,
     pub notes: IdMap<Note, NoteUiState>,
 }
 
@@ -86,7 +92,7 @@ impl Default for SectionUiState {
     fn default() -> Self {
         Self {
             name: "Unnamed Section".into(),
-            selected: Select::Deselect,
+            select: Select::Deselect,
             notes: IdMap::new(),
         }
     }
@@ -94,7 +100,7 @@ impl Default for SectionUiState {
 
 #[derive(Debug, Default)]
 pub struct NoteUiState {
-    pub selected: Select,
+    pub select: Select,
 }
 
 #[derive(Debug)]

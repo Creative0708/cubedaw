@@ -1,12 +1,9 @@
 use anyhow::Result;
-use cubedaw_lib::{
-    Buffer, GroupTrack, Id, IdMap, Node, Note, Patch, Section, SectionTrack, State, Track,
-    TrackInner,
-};
+use cubedaw_lib::{Buffer, Id, IdMap, Node, Note, Patch, Section, State, Track};
 
 use crate::{
     WorkerOptions,
-    node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
+    node_graph::{NoteNodeGraph, TrackNodeGraph},
 };
 
 #[derive(Debug)]
@@ -14,14 +11,12 @@ use crate::{
 ///
 /// This is in addition to a `crate::WorkerState` that each worker has and a `cubedaw_lib::State` that's shared across all workers.
 pub struct WorkerHostState {
-    pub section_tracks: IdMap<Track, WorkerSectionTrackState>,
-    pub group_tracks: IdMap<Track, WorkerGroupTrackState>,
+    pub tracks: IdMap<Track, WorkerTrackState>,
 }
 
 impl WorkerHostState {
     pub fn new(state: &State, options: &WorkerOptions) -> Self {
-        let mut section_tracks = IdMap::new();
-        let mut group_tracks = IdMap::new();
+        let mut tracks = IdMap::new();
         for (track_id, track) in &state.tracks {
             let mut node_map = IdMap::new();
             for (node_id, node) in track.patch.nodes() {
@@ -33,30 +28,14 @@ impl WorkerHostState {
                 });
                 node_map.insert(node_id, (entry.node_factory)(&node.data.inner.as_bytes()));
             }
-            match track.inner {
-                cubedaw_lib::TrackInner::Section(ref inner) => {
-                    section_tracks.insert(
-                        track_id,
-                        WorkerSectionTrackState::from_patch(track, inner, options).unwrap_or_else(
-                            |_| WorkerSectionTrackState::empty(track, inner, options),
-                        ),
-                    );
-                }
-                cubedaw_lib::TrackInner::Group(ref inner) => {
-                    group_tracks.insert(
-                        track_id,
-                        WorkerGroupTrackState::from_patch(track, inner, options).unwrap_or_else(
-                            |_| WorkerGroupTrackState::empty(track, inner, options),
-                        ),
-                    );
-                }
-            }
+            tracks.insert(
+                track_id,
+                WorkerTrackState::from_track(track, options)
+                    .unwrap_or_else(|_| WorkerTrackState::empty(track, options)),
+            );
         }
 
-        Self {
-            section_tracks,
-            group_tracks,
-        }
+        Self { tracks }
     }
 
     pub fn sync_with(
@@ -65,22 +44,12 @@ impl WorkerHostState {
         worker_options: &WorkerOptions,
     ) -> anyhow::Result<()> {
         let mut tracks_to_delete = Vec::new();
-        for (track_id, _) in &self.group_tracks {
-            if !state.tracks.has(track_id) {
-                tracks_to_delete.push(track_id);
-            }
-        }
-        for track_id in tracks_to_delete.drain(..) {
-            self.group_tracks.remove(track_id);
-        }
-
         let mut notes_to_delete = Vec::new();
-        for (track_id, worker_track_data) in &mut self.section_tracks {
+        for (track_id, worker_track_data) in &mut self.tracks {
             match state.tracks.get(track_id) {
                 Some(track) => {
-                    let track_data = track.inner.section().unwrap();
                     for (note_id, WorkerNoteState { section_id, .. }) in &worker_track_data.notes {
-                        if track_data
+                        if track
                             .section(*section_id)
                             .and_then(|section| section.note(note_id))
                             .is_none()
@@ -98,37 +67,33 @@ impl WorkerHostState {
             }
         }
         for track_id in tracks_to_delete {
-            self.section_tracks.remove(track_id);
+            self.tracks.remove(track_id);
         }
 
         for (track_id, track) in &state.tracks {
-            match &track.inner {
-                cubedaw_lib::TrackInner::Group(inner) => {
-                    if let Some(worker_track) = self.group_tracks.get_mut(track_id) {
-                        // TODO only do this when the patch is mutated
-                        worker_track.sync_with(track, inner, worker_options)?;
-                    } else {
-                        dbg!(&track.patch);
-                        self.group_tracks.insert(
-                            track_id,
-                            WorkerGroupTrackState::from_patch(track, inner, worker_options)
-                                .unwrap(),
-                        )
-                    }
-                }
-                cubedaw_lib::TrackInner::Section(inner) => {
-                    if let Some(worker_track) = self.section_tracks.get_mut(track_id) {
-                        // TODO only do this when the patch is mutated
-                        worker_track.sync_with(track, inner, worker_options)?;
-                    } else {
-                        dbg!(&track.patch);
-                        self.section_tracks.insert(
-                            track_id,
-                            WorkerSectionTrackState::from_patch(track, inner, worker_options)
-                                .unwrap(),
-                        )
-                    }
-                }
+            // match &track.inner {
+            //     cubedaw_lib::TrackInner::Group(inner) => {
+            //         if let Some(worker_track) = self.group_tracks.get_mut(track_id) {
+            //             // TODO only do this when the patch is mutated
+            //             worker_track.sync_with(track, worker_options)?;
+            //         } else {
+            //             dbg!(&track.patch);
+            //             self.group_tracks.insert(
+            //                 track_id,
+            //                 WorkerGroupTrackState::from_patch(track, worker_options)
+            //                     .unwrap(),
+            //             )
+            //         }
+            //     }
+            if let Some(worker_track) = self.tracks.get_mut(track_id) {
+                // TODO only do this when the patch is mutated
+                worker_track.sync_with(track, worker_options)?;
+            } else {
+                dbg!(&track.patch);
+                self.tracks.insert(
+                    track_id,
+                    WorkerTrackState::from_track(track, worker_options).unwrap(),
+                )
             }
         }
 
@@ -137,37 +102,28 @@ impl WorkerHostState {
 }
 
 #[derive(Debug)]
-pub struct WorkerSectionTrackState {
-    pub track_nodes: SynthTrackNodeGraph,
-    pub note_nodes: SynthNoteNodeGraph,
+pub struct WorkerTrackState {
+    pub track_nodes: TrackNodeGraph,
+    pub note_nodes: NoteNodeGraph,
 
     // TODO: switch these to vec for optimization purposes (when necessary)
     pub notes: IdMap<Note, WorkerNoteState>,
     pub live_notes: IdMap<Note, WorkerLiveNoteState>,
 }
-impl WorkerSectionTrackState {
-    pub fn from_patch(
-        track: &Track,
-        section_track: &SectionTrack,
-        options: &WorkerOptions,
-    ) -> anyhow::Result<Self> {
-        let mut this = WorkerSectionTrackState {
-            track_nodes: SynthTrackNodeGraph::empty(),
-            note_nodes: SynthNoteNodeGraph::empty(),
+impl WorkerTrackState {
+    pub fn from_track(track: &Track, options: &WorkerOptions) -> anyhow::Result<Self> {
+        let mut this = WorkerTrackState {
+            track_nodes: TrackNodeGraph::empty(),
+            note_nodes: NoteNodeGraph::empty(),
 
             notes: Default::default(),
             live_notes: Default::default(),
         };
-        this.sync_with(track, section_track, options)?;
+        this.sync_with(track, options)?;
         Ok(this)
     }
 
-    pub fn sync_with(
-        &mut self,
-        track: &Track,
-        _section_track: &SectionTrack,
-        options: &WorkerOptions,
-    ) -> anyhow::Result<()> {
+    pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) -> anyhow::Result<()> {
         let patch = &track.patch;
         patch.debug_assert_valid();
 
@@ -185,26 +141,23 @@ impl WorkerSectionTrackState {
         Ok(())
     }
 
-    pub fn empty(track: &Track, section_track: &SectionTrack, options: &WorkerOptions) -> Self {
+    pub fn empty(track: &Track, options: &WorkerOptions) -> Self {
         use cubedaw_lib::{NodeData, ResourceKey};
 
         let mut fake_patch = Patch::new();
-        let mut insert_node = |key: ResourceKey,
-                               num_inputs: u32,
-                               num_outputs: u32,
-                               inner: Box<Buffer>|
-         -> Id<Node> {
-            let id = Id::arbitrary();
-            fake_patch.insert_node(
-                id,
-                NodeData::new_disconnected(key, inner),
-                vec![1.0; num_inputs as usize],
-                num_outputs,
-            );
-            id
-        };
+        let mut insert_node =
+            |key: ResourceKey, num_inputs: u32, num_outputs: u32, inner: Box<Buffer>| -> Id<Node> {
+                let id = Id::arbitrary();
+                fake_patch.insert_node(
+                    id,
+                    NodeData::new_disconnected(key, inner),
+                    vec![1.0; num_inputs as usize],
+                    num_outputs,
+                );
+                id
+            };
         let input = insert_node(
-            resourcekey::literal!("builtin:note_output"),
+            resourcekey::literal!("builtin:track_input"),
             1,
             1,
             Default::default(),
@@ -221,22 +174,21 @@ impl WorkerSectionTrackState {
             cubedaw_lib::CableConnection { multiplier: 1.0 },
         );
 
-        let fake_track = Track {
-            patch: fake_patch,
-            // not actually used.
-            inner: TrackInner::Section(SectionTrack::new()),
+        // ideally we'd construct a `Self` directly instead of using this function but whatever. TODO
+        let fake_track = Track::new(fake_patch);
 
-            ..*track
-        };
-
-        Self::from_patch(&fake_track, section_track, options).expect("AHHHHHHHHHHHH")
+        Self::from_track(&fake_track, options).expect(if cfg!(test) {
+            "failed to construct a patch"
+        } else {
+            "unreachable, did we not catch this during tests?"
+        })
     }
 }
 
 #[derive(Debug)]
 pub struct WorkerNoteState {
     pub section_id: Id<Section>,
-    pub nodes: SynthNoteNodeGraph,
+    pub nodes: NoteNodeGraph,
 }
 impl WorkerNoteState {
     pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) -> Result<()> {
@@ -248,93 +200,12 @@ impl WorkerNoteState {
 pub struct WorkerLiveNoteState {
     pub start_pos: i64,
     pub note: Note,
-    pub nodes: SynthNoteNodeGraph,
+    pub nodes: NoteNodeGraph,
     pub samples_elapsed: u64,
 }
 impl WorkerLiveNoteState {
     pub fn sync_with(&mut self, track: &Track, options: &WorkerOptions) -> Result<()> {
         self.nodes.sync_with(&track.patch, options)
-    }
-}
-
-#[derive(Debug)]
-pub struct WorkerGroupTrackState {
-    pub nodes: GroupNodeGraph,
-}
-
-impl WorkerGroupTrackState {
-    pub fn from_patch(
-        track: &Track,
-        group_track: &GroupTrack,
-        options: &WorkerOptions,
-    ) -> anyhow::Result<Self> {
-        let mut this = Self {
-            nodes: GroupNodeGraph::empty(),
-        };
-        this.sync_with(track, group_track, options)?;
-        Ok(this)
-    }
-
-    pub fn sync_with(
-        &mut self,
-        track: &Track,
-        _group_track: &GroupTrack,
-        options: &WorkerOptions,
-    ) -> anyhow::Result<()> {
-        let patch = &track.patch;
-        patch.debug_assert_valid();
-
-        self.nodes.sync_with(patch, options)?;
-
-        Ok(())
-    }
-
-    pub fn empty(track: &Track, group_track: &GroupTrack, options: &WorkerOptions) -> Self {
-        use cubedaw_lib::{NodeData, ResourceKey};
-
-        let mut fake_patch = Patch::new();
-        let mut insert_node = |key: ResourceKey,
-                               num_inputs: u32,
-                               num_outputs: u32,
-                               inner: Box<Buffer>|
-         -> Id<Node> {
-            let id = Id::arbitrary();
-            fake_patch.insert_node(
-                id,
-                NodeData::new_disconnected(key, inner),
-                vec![1.0; num_inputs as usize],
-                num_outputs,
-            );
-            id
-        };
-
-        let input = insert_node(
-            resourcekey::literal!("builtin:track_input"),
-            0,
-            1,
-            Default::default(),
-        );
-        let output = insert_node(
-            resourcekey::literal!("builtin:track_output"),
-            1,
-            0,
-            Default::default(),
-        );
-        fake_patch.insert_cable(
-            Id::arbitrary(),
-            cubedaw_lib::Cable::new(input, 0, output, 0, 0),
-            cubedaw_lib::CableConnection { multiplier: 1.0 },
-        );
-
-        let fake_track = Track {
-            patch: fake_patch,
-            // not actually used.
-            inner: TrackInner::Group(GroupTrack::new()),
-
-            ..*track
-        };
-
-        Self::from_patch(&fake_track, group_track, options).expect("AHHHHHHHHHHHH")
     }
 }
 
@@ -344,19 +215,15 @@ mod tests {
 
     use crate::WorkerOptions;
 
-    use super::{WorkerGroupTrackState, WorkerSectionTrackState};
+    use super::WorkerTrackState;
 
     #[test]
     fn test_empty_functions() {
         let options = WorkerOptions::new(Default::default());
 
         {
-            let track = Track::new_section(Patch::new());
-            WorkerSectionTrackState::empty(&track, track.inner.section().unwrap(), &options);
-        }
-        {
-            let track = Track::new_group(Patch::new());
-            WorkerGroupTrackState::empty(&track, track.inner.group().unwrap(), &options);
+            let track = Track::new(Patch::new());
+            WorkerTrackState::empty(&track, &options);
         }
     }
 }

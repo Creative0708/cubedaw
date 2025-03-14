@@ -36,8 +36,6 @@ impl NoteMove {
             state
                 .tracks
                 .get_mut(self.track_id)?
-                .inner
-                .section_mut()?
                 .section_mut(self.section_id)?,
         )
     }
@@ -116,8 +114,6 @@ impl NoteAddOrRemove {
             state
                 .tracks
                 .get_mut(self.track_id)?
-                .inner
-                .section_mut()?
                 .section_mut(self.section_id)?,
         )
     }

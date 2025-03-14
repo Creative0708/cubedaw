@@ -115,7 +115,7 @@ impl UiStateCommand for UiNoteSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.notes(ui_state).get_mut(self.id) {
-            ui_data.selected = self.select;
+            ui_data.select = self.select;
         }
     }
     fn ui_rollback(
@@ -124,7 +124,7 @@ impl UiStateCommand for UiNoteSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.notes(ui_state).get_mut(self.id) {
-            ui_data.selected = !self.select;
+            ui_data.select = !self.select;
         }
     }
 }

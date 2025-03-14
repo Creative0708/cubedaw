@@ -41,13 +41,13 @@ fn move_between(
     starting_range: Range,
     new_start_pos: i64,
 ) {
-    let track_from = state.tracks.force_get_section_mut(track_from_id);
+    let track_from = state.tracks.force_get_mut(track_from_id);
     if track_from_id == track_to_id {
         track_from.move_section(starting_range, new_start_pos);
     } else {
         let (section_id, section) = track_from.remove_section_from_range(starting_range);
 
-        let track_to = state.tracks.force_get_section_mut(track_to_id);
+        let track_to = state.tracks.force_get_mut(track_to_id);
         track_to.add_section(section_id, new_start_pos, section);
     }
 }
@@ -118,9 +118,6 @@ impl SectionAddOrRemove {
             .tracks
             .get_mut(self.track_id)
             .expect("tried to add section to nonexistent track")
-            .inner
-            .section_mut()
-            .expect("track isn't a section track")
             .add_section(
                 self.id,
                 self.start_pos,
@@ -135,9 +132,6 @@ impl SectionAddOrRemove {
                 .tracks
                 .get_mut(self.track_id)
                 .expect("tried to add section to nonexistent track")
-                .inner
-                .section_mut()
-                .expect("track isn't a section track")
                 .remove_section(self.id, self.start_pos),
         );
     }

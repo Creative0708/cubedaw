@@ -21,7 +21,7 @@ impl Patch {
         static SPECIAL_NODES: std::sync::LazyLock<HashSet<ResourceKey>> =
             std::sync::LazyLock::new(|| {
                 let mut map = HashSet::new();
-                map.insert(ResourceKey::new("builtin:note_output").unwrap());
+                map.insert(ResourceKey::new("builtin:track_input").unwrap());
                 map.insert(ResourceKey::new("builtin:track_input").unwrap());
                 map.insert(ResourceKey::new("builtin:track_output").unwrap());
                 map
@@ -235,14 +235,8 @@ impl Patch {
     fn recalculate_tags(&mut self) {
         // also TODO: multiple of the same special nodes aren't implemented yet. we should be like blender where you can choose which node is actually "active"
 
-        let note_output = self.get_active_node(&resourcekey::literal!("builtin:note_output"));
         let track_input = self.get_active_node(&resourcekey::literal!("builtin:track_input"));
         let track_output = self.get_active_node(&resourcekey::literal!("builtin:track_output"));
-
-        assert!(
-            note_output.is_none() || track_input.is_none(),
-            "can't have both a note output and track input on the same patch"
-        );
 
         #[derive(Clone, Copy)]
         enum VisitedState {
@@ -292,15 +286,13 @@ impl Patch {
             visited.replace(start_id, VisitedState::Inactive);
         }
         if let Some(track_output) = track_output {
-            if let Some(note_output) = note_output {
+            if let Some(note_output) = track_input {
                 do_dfs(self, &mut visited, note_output, NodeTag::Note);
 
                 for value in visited.values_mut() {
                     *value = VisitedState::Active;
                 }
                 visited.replace(note_output, VisitedState::Inactive);
-            } else if let Some(track_input) = track_input {
-                visited.insert(track_input, VisitedState::Inactive);
             }
 
             do_dfs(self, &mut visited, track_output, NodeTag::Track);
@@ -319,7 +311,7 @@ impl Patch {
         }
 
         // special nodes
-        for special_node in [note_output, track_input, track_output] {
+        for special_node in [track_input, track_output] {
             if let Some(special_node) = special_node {
                 self.nodes.force_get_mut(special_node).tag = NodeTag::Special;
             }

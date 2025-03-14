@@ -2,7 +2,7 @@ use std::ops;
 
 use anyhow::Result;
 use cubedaw_command::{note::NoteMove, section::SectionMove};
-use cubedaw_lib::{Id, Note, Range, Section, SectionTrack, Track};
+use cubedaw_lib::{Id, Note, Range, Section, Track};
 use egui::{
     Color32, CornerRadius, CursorIcon, Pos2, Rangef, Rect, Response, Stroke, StrokeKind, pos2, vec2,
 };
@@ -64,14 +64,7 @@ impl crate::Screen for PianoRollTab {
         Self {
             id: Id::arbitrary(),
 
-            track_id: ui_state.get_single_selected_track().and_then(|track_id| {
-                state
-                    .tracks
-                    .force_get(track_id)
-                    .inner
-                    .is_section()
-                    .then_some(track_id)
-            }),
+            track_id: ui_state.get_single_selected_track(),
 
             units_per_pitch: 16.0,
 
@@ -221,7 +214,7 @@ struct RenderedSection<'a> {
 
 struct Prepared<'ctx, 'arg> {
     track_id: Id<Track>,
-    track: &'ctx SectionTrack,
+    track: &'ctx Track,
     track_ui: &'ctx TrackUiState,
     tab_id: Id<Tab>,
 
@@ -269,7 +262,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
         Some(Self {
             track_id,
-            track: ctx.state.tracks.get(track_id)?.inner.section()?,
+            track: ctx.state.tracks.get(track_id)?,
             track_ui: ctx.ui_state.tracks.force_get(track_id),
             tab_id: tab.id,
 
@@ -313,7 +306,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
         let mut rendered_sections: Vec<RenderedSection> = Vec::new();
 
-        let result = ctx.ephemeral_state.section_drag.handle(
+        ctx.ephemeral_state.section_drag.handle(
             // strictly speaking we should use the current track's index instead of 0 but it doesn't matter anyways
             |unsnapped| Track2DPos {
                 time: view.input_screen_x_to_song_x(unsnapped.x),
@@ -328,7 +321,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     let section_ui = track_ui.sections.force_get(section_id);
 
                     let section_range = if let Some(section_drag) = prepared.movement() {
-                        match section_ui.selected {
+                        match section_ui.select {
                             Select::Select => section_range + section_drag.time,
                             Select::Deselect => section_range,
                         }
@@ -349,7 +342,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         top_bar_rect.y_range(),
                     );
 
-                    let is_effectively_selected = section_ui.selected.is()
+                    let is_effectively_selected = section_ui.select.is()
                         || ctx
                             .ephemeral_state
                             .selection_rect
@@ -396,7 +389,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         section_id.cast(),
                         &header_resp,
                         (track_id, section_id),
-                        section_ui.selected,
+                        section_ui.select,
                     );
 
                     let section_stroke = egui::Stroke::new(
@@ -544,12 +537,16 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             ..
         } = *self;
 
-        let result = ctx.ephemeral_state.note_drag.handle(
+        ctx.ephemeral_state.note_drag.handle(
             move |Pos2 { x, y }| Note2DPos {
                 time: view.input_screen_x_to_song_x(x),
                 pitch: ntspc.screen_y_to_note_y(y),
             },
             |prepared| {
+                if self.bg_response.clicked() {
+                    prepared.deselect_all();
+                }
+
                 for &RenderedSection {
                     id: section_id,
                     range,
@@ -567,7 +564,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                             range.start + note_start,
                             note,
                             Some((section_id, note_id)),
-                            section_ui.notes.force_get(note_id).selected,
+                            section_ui.notes.force_get(note_id).select,
                         );
                     }
                 }
@@ -585,70 +582,6 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                 }
             },
         );
-        todo!();
-        /*{
-            let should_deselect_everything =
-                result.should_deselect_everything || self.bg_response.clicked();
-            let selection_changes = result.selection_changes;
-            if should_deselect_everything {
-                // TODO rename these
-                for (track_id2, track_ui) in &ctx.ui_state.tracks {
-                    for (section_id2, section_ui) in &track_ui.sections {
-                        for (note_id2, note_ui) in &section_ui.notes {
-                            if note_ui.selected
-                                && selection_changes
-                                    .get(&(track_id2, section_id2, note_id2))
-                                    .copied()
-                                    != Some(true)
-                            {
-                                ctx.tracker.add(UiNoteSelect::new(
-                                    track_id2,
-                                    section_id2,
-                                    note_id2,
-                                    false,
-                                ));
-                            }
-                        }
-                    }
-                }
-                for (&(track_id, section_id, note_id), &selected) in &selection_changes {
-                    // only add a command when a note should be selected and isn't currently selected.
-                    // the deselection is handled in the for loop before this one
-                    if selected
-                        && !ctx
-                            .ui_state
-                            .tracks
-                            .get(track_id)
-                            .and_then(|t| t.sections.get(section_id))
-                            .and_then(|s| s.notes.get(note_id))
-                            .is_some_and(|n| n.selected)
-                    {
-                        ctx.tracker
-                            .add(UiNoteSelect::new(track_id, section_id, note_id, true));
-                    }
-                }
-            } else {
-                for (&(track_id, section_id, note_id), &selected) in &selection_changes {
-                    ctx.tracker
-                        .add(UiNoteSelect::new(track_id, section_id, note_id, selected));
-                }
-            }
-            if let Some(offset) = result.movement {
-                for (section_id, section_ui) in &track_ui.sections {
-                    for (note_id, note_ui) in &section_ui.notes {
-                        if note_ui.selected {
-                            ctx.tracker.add(NoteMove::new(
-                                track_id,
-                                section_id,
-                                note_id,
-                                offset.time,
-                                offset.pitch,
-                            ));
-                        }
-                    }
-                }
-            }
-        }*/
     }
     fn handle_drawn_note(
         &mut self,

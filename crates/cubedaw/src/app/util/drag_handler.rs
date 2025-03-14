@@ -4,17 +4,25 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt};
+use cubedaw_lib::Id;
 use egui::{Pos2, Vec2};
+
+use crate::app::Tab;
 
 use super::Select;
 
-// the associated types are kinda messy but no way in hell am i adding _more_ generics to DragHandler
-pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
+// code reuse through generics!!1!!
+pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static
+where
+    Diff<Self>: Clone + Copy + Debug + Default,
+{
     type Id: Debug + Clone + Copy;
     type Pos: ops::Sub<Self::Pos>;
+
+    type Extra: Default = ();
 }
 // what is this, typescript?
-type Diff<T: SelectablePath> = <T::Pos as ops::Sub<T::Pos>>::Output;
+type Diff<T> = <<T as SelectablePath>::Pos as ops::Sub<<T as SelectablePath>::Pos>>::Output;
 
 mod impls {
     use super::SelectablePath;
@@ -52,6 +60,9 @@ pub struct DragHandler<T: SelectablePath> {
 
     // various other variables that are checked at the end of the frame
     marked_reset: bool,
+
+    /// Extra data.
+    pub extra: T::Extra,
 }
 
 impl<T: SelectablePath> fmt::Debug for DragHandler<T> {
@@ -62,17 +73,22 @@ impl<T: SelectablePath> fmt::Debug for DragHandler<T> {
 
 #[derive(Debug)]
 pub struct DraggedData<T: SelectablePath> {
-    id: T::Id,
+    thing: T::Id,
 
     raw_start_pos: Pos2,
     raw_current_pos: Pos2,
+
+    snapped_movement: Diff<T>,
 }
 impl<T: SelectablePath> DraggedData<T> {
     fn raw_movement(&self) -> Vec2 {
         self.raw_current_pos - self.raw_start_pos
     }
-    fn snapped_movement(&self, snap_fn: impl Fn(Pos2) -> T::Pos) -> Diff<T> {
+    fn snapped_movement_with(&self, snap_fn: impl Fn(Pos2) -> T::Pos) -> Diff<T> {
         snap_fn(self.raw_current_pos) - snap_fn(self.raw_start_pos)
+    }
+    fn snapped_movement(&self) -> Diff<T> {
+        self.snapped_movement
     }
 }
 
@@ -82,7 +98,7 @@ impl<T: SelectablePath> DragHandler<T> {
     }
 
     pub fn dragged_id(&self) -> Option<T::Id> {
-        self.dragged_data.as_ref().map(|data| data.id)
+        self.dragged_data.as_ref().map(|data| data.thing)
     }
     pub fn is_being_dragged(&self) -> bool {
         self.dragged_data.is_some()
@@ -97,7 +113,7 @@ impl<T: SelectablePath> DragHandler<T> {
     pub fn snapped_movement(&self, snap_fn: impl Fn(Pos2) -> T::Pos) -> Option<Diff<T>> {
         self.dragged_data
             .as_ref()
-            .map(|data| data.snapped_movement(snap_fn))
+            .map(|data| data.snapped_movement())
     }
 
     pub fn handle<F: Fn(Pos2) -> T::Pos, R>(
@@ -115,13 +131,20 @@ impl<T: SelectablePath> DragHandler<T> {
 
         let r = f(&mut prepared);
 
-        let _ = prepared.end();
+        prepared.end();
 
         r
     }
 
     pub fn on_frame_end(&mut self) -> DragHandlerResult<T> {
-        mem::take(&mut self.result)
+        let result = mem::take(&mut self.result);
+
+        if self.marked_reset {
+            self.marked_reset = false;
+            self.dragged_data = None;
+        }
+
+        result
     }
 }
 
@@ -129,6 +152,8 @@ impl<T: SelectablePath> Default for DragHandler<T> {
     fn default() -> Self {
         Self {
             dragged_data: None,
+
+            extra: Default::default(),
 
             result: Default::default(),
             marked_reset: false,
@@ -139,9 +164,11 @@ impl<T: SelectablePath> Default for DragHandler<T> {
 pub struct Prepared<'a, T: SelectablePath, F: Fn(Pos2) -> T::Pos> {
     handler: &'a mut DragHandler<T>,
 
+    // store the movement in here (don't directly update self.handler.dragged_data.raw_current_pos) as that would result in some `T`s observing the new movement while some don't. instead, delay all movement to the end of the frame. we prefer synchronized movement over pure latency
+    new_drag_movement: Option<Vec2>,
+
     finished_movement: Option<Diff<T>>,
 
-    new_drag_movement: Option<Vec2>,
     snap_fn: F,
 }
 
@@ -187,9 +214,11 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
             );
 
             self.handler.dragged_data = Some(DraggedData {
-                id,
+                thing: id,
                 raw_start_pos: pos,
                 raw_current_pos: pos,
+
+                snapped_movement: Default::default(),
             });
             self.new_drag_movement = Some(Default::default());
         }
@@ -215,19 +244,22 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         if resp.drag_stopped()
             && let Some(ref data) = self.handler.dragged_data
         {
-            self.finished_movement = Some(data.snapped_movement(&self.snap_fn));
+            self.finished_movement = Some(data.snapped_movement_with(&self.snap_fn));
         }
     }
 
-    pub fn end(mut self) {
+    // this probably should be a Drop impl
+    pub fn end(self) {
         if let (Some(new_drag_movement), Some(data)) =
             (self.new_drag_movement, &mut self.handler.dragged_data)
         {
             data.raw_current_pos += new_drag_movement;
+            data.snapped_movement = data.snapped_movement_with(&self.snap_fn);
         }
 
-        if self.finished_movement.is_some() {
-            self.mark_reset();
+        if let Some(finished_movement) = self.finished_movement {
+            self.handler.result.movement = Some(finished_movement);
+            self.handler.marked_reset = true;
         }
     }
 }

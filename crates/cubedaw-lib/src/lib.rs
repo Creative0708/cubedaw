@@ -12,10 +12,10 @@ mod track;
 pub use resourcekey;
 #[deprecated(note = "use resourcekey directly")]
 pub use resourcekey::ResourceKey;
-pub use track::{GroupTrack, SectionTrack, Track, TrackInner};
+pub use track::Track;
 mod patch;
 pub use patch::{
-    Cable, CableConnection, CableTag, NodeData, Node, NodeInput, NodeOutput, NodeTag, Patch,
+    Cable, CableConnection, CableTag, Node, NodeData, NodeInput, NodeOutput, NodeTag, Patch,
 };
 mod buffer;
 pub use buffer::{Buffer, BufferType, InternalBufferType};

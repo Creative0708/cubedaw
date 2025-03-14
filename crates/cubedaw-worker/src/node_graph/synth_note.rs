@@ -9,16 +9,16 @@ use crate::{
 use super::{PreparedNodeGraph, WorkerState};
 
 #[derive(Debug, Clone)]
-pub struct SynthNoteNodeGraph(PreparedNodeGraph);
+pub struct NoteNodeGraph(PreparedNodeGraph);
 
-impl SynthNoteNodeGraph {
+impl NoteNodeGraph {
     pub fn empty() -> Self {
         // TODO: set this to a basic node graph so input_node() and friends can't panic
         Self(PreparedNodeGraph::empty(None, Id::invalid()))
     }
     pub fn sync_with(&mut self, patch: &Patch, options: &WorkerOptions) -> anyhow::Result<()> {
         let note_output = patch
-            .get_active_node(&resourcekey::literal!("builtin:note_output"))
+            .get_active_node(&resourcekey::literal!("builtin:track_input"))
             .context("no note output exists")?;
 
         self.0.sync_with(patch, options, None, note_output);

@@ -40,15 +40,8 @@ impl TrackAddOrRemove {
     fn get_parent_track<'a>(
         &self,
         state: &'a mut cubedaw_lib::State,
-    ) -> Option<&'a mut cubedaw_lib::GroupTrack> {
-        Some(
-            state
-                .tracks
-                .force_get_mut(self.parent_track?)
-                .inner
-                .group_mut()
-                .expect("parent track isn't a group track"),
-        )
+    ) -> Option<&'a mut cubedaw_lib::Track> {
+        Some(state.tracks.force_get_mut(self.parent_track?))
     }
 
     fn execute_add(&mut self, state: &mut cubedaw_lib::State) {

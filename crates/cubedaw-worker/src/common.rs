@@ -28,7 +28,4 @@ pub enum JobDescriptor {
     TrackProcess {
         track_id: Id<cubedaw_lib::Track>,
     },
-    TrackGroup {
-        track_id: Id<cubedaw_lib::Track>,
-    },
 }

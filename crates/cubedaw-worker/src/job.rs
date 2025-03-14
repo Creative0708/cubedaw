@@ -4,7 +4,7 @@ use cubedaw_lib::{Buffer, Id, Note, PreciseSongPos, Track};
 use crate::{
     WorkerState,
     common::JobDescriptor,
-    node_graph::{GroupNodeGraph, SynthNoteNodeGraph, SynthTrackNodeGraph},
+    node_graph::{NoteNodeGraph, TrackNodeGraph},
     sync,
     worker::WorkerScratch,
 };
@@ -16,19 +16,13 @@ pub enum WorkerJob {
     NoteProcess {
         track_id: Id<Track>,
         note_descriptor: NoteDescriptor,
-        nodes: &'static mut SynthNoteNodeGraph,
+        nodes: &'static mut NoteNodeGraph,
         output: sync::SyncAccessibleWriteHandle<'static, &'static mut Buffer, WorkerJob>,
     },
     /// Process a track.
     TrackProcess {
         track_id: Id<Track>,
-        nodes: &'static mut SynthTrackNodeGraph,
-        input: sync::SyncAccessibleReadHandle<'static, &'static mut Buffer, WorkerJob>,
-        output: sync::SyncAccessibleWriteHandle<'static, &'static mut Buffer, WorkerJob>,
-    },
-    TrackGroup {
-        track_id: Id<Track>,
-        nodes: &'static mut GroupNodeGraph,
+        nodes: &'static mut TrackNodeGraph,
         input: sync::SyncAccessibleReadHandle<'static, &'static mut Buffer, WorkerJob>,
         output: sync::SyncAccessibleWriteHandle<'static, &'static mut Buffer, WorkerJob>,
     },
@@ -89,25 +83,6 @@ impl WorkerJob {
 
                 WorkerJobResult {
                     finished_job_descriptor: Some(JobDescriptor::TrackProcess { track_id }),
-                    job_to_add,
-                }
-            }
-            Self::TrackGroup {
-                track_id,
-                nodes,
-                input,
-                output,
-            } => {
-                // dbg!(input.wait());
-
-                let buffer = nodes.process(worker_options, worker_state, input.wait())?;
-
-                let job_to_add = output.lock(|output_buf| {
-                    output_buf.accumulate(buffer);
-                });
-
-                WorkerJobResult {
-                    finished_job_descriptor: Some(JobDescriptor::TrackGroup { track_id }),
                     job_to_add,
                 }
             }

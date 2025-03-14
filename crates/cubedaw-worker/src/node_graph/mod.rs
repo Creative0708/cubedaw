@@ -9,12 +9,10 @@ use resourcekey::ResourceKey;
 
 use crate::{WorkerOptions, WorkerState, plugin::AttributeMap, util};
 
-mod group;
-pub use group::GroupNodeGraph;
 mod synth_note;
-pub use synth_note::SynthNoteNodeGraph;
+pub use synth_note::NoteNodeGraph;
 mod synth_track;
-pub use synth_track::SynthTrackNodeGraph;
+pub use synth_track::TrackNodeGraph;
 
 #[derive(Clone, Debug)]
 /// A node graph. This is designed for fast updates and interactivity instead of performance.

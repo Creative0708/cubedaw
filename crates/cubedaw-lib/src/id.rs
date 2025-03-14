@@ -22,9 +22,7 @@ type IdInner = u64;
 
 // The <T> is used to prevent accidental misuse of an Id<whatever> as an Id<something else>.
 // This is definitely _not_ what generics are meant to be used for, but it's convenient soooo......
-// Also this may result in unneeded generic impls for stuff like IdMap. :shrug:
 #[repr(transparent)]
-// pointer because... reasons
 pub struct Id<T = ()>(NonZero<IdInner>, PhantomData<*const T>);
 
 // SAFETY: Id<T> doesn't actually store a T, it's a NonZero<u64> which is Send and Sync
@@ -333,21 +331,5 @@ impl<'a, T, V> IntoIterator for &'a mut IdMap<T, V> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
-    }
-}
-
-// utilities for specific cases
-impl IdMap<crate::Track> {
-    pub fn force_get_section(&self, id: Id<crate::Track>) -> &crate::SectionTrack {
-        self.force_get(id)
-            .inner
-            .section()
-            .expect("expected section track")
-    }
-    pub fn force_get_section_mut(&mut self, id: Id<crate::Track>) -> &mut crate::SectionTrack {
-        self.force_get_mut(id)
-            .inner
-            .section_mut()
-            .expect("expected section track")
     }
 }

@@ -6,9 +6,10 @@ use crate::WorkerOptions;
 use super::{PreparedNodeGraph, WorkerState};
 
 #[derive(Debug, Clone)]
-pub struct SynthTrackNodeGraph(PreparedNodeGraph);
+/// Node graph for the non-per-note section
+pub struct TrackNodeGraph(PreparedNodeGraph);
 
-impl SynthTrackNodeGraph {
+impl TrackNodeGraph {
     pub fn empty() -> Self {
         Self(PreparedNodeGraph::empty(None, Id::invalid()))
     }
@@ -17,7 +18,7 @@ impl SynthTrackNodeGraph {
             .get_active_node(&resourcekey::literal!("builtin:track_output"))
             .context("no track output exists")?;
         let note_output = patch
-            .get_active_node(&resourcekey::literal!("builtin:note_output"))
+            .get_active_node(&resourcekey::literal!("builtin:track_input"))
             .context("no note output exists")?;
 
         self.0
