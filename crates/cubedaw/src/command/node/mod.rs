@@ -2,7 +2,7 @@ use cubedaw_command::node::NodeAddOrRemove;
 use cubedaw_lib::{Id, IdMap, Node, NodeData, Track};
 use egui::Vec2;
 
-use crate::state::ui::NodeUiState;
+use crate::{state::ui::NodeUiState, util::Select};
 
 use super::UiStateCommand;
 
@@ -112,15 +112,15 @@ impl UiStateCommand for UiNodeAddOrRemove {
 pub struct UiNodeSelect {
     track_id: Id<Track>,
     id: Id<Node>,
-    selected: bool,
+    select: Select,
 }
 
 impl UiNodeSelect {
-    pub fn new(track_id: Id<Track>, id: Id<Node>, selected: bool) -> Self {
+    pub fn new(track_id: Id<Track>, id: Id<Node>, select: Select) -> Self {
         Self {
             track_id,
             id,
-            selected,
+            select,
         }
     }
 
@@ -141,7 +141,7 @@ impl UiStateCommand for UiNodeSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.node(ui_state) {
-            ui_data.selected = self.selected;
+            ui_data.select = self.select;
         }
     }
     fn ui_rollback(
@@ -150,7 +150,7 @@ impl UiStateCommand for UiNodeSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.node(ui_state) {
-            ui_data.selected = !self.selected;
+            ui_data.select = !self.select;
         }
     }
 }

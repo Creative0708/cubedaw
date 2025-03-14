@@ -1,7 +1,7 @@
 use cubedaw_command::track::TrackAddOrRemove;
 use cubedaw_lib::{Id, NodeData, Track};
 
-use crate::{registry::NodeRegistry, state::ui::TrackUiState};
+use crate::{registry::NodeRegistry, state::ui::TrackUiState, util::Select};
 
 use super::UiStateCommand;
 pub struct UiTrackAddOrRemove {
@@ -78,12 +78,12 @@ impl UiTrackAddOrRemove {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
                         map.insert(id_note_output, crate::state::ui::NodeUiState {
-                            selected: false,
+                            select: Select::Deselect,
                             pos: egui::pos2(-80.0, 0.0),
                             width: 128.0,
                         });
                         map.insert(id_track_output, crate::state::ui::NodeUiState {
-                            selected: false,
+                            select: Select::Deselect,
                             pos: egui::pos2(240.0, 0.0),
                             width: 128.0,
                         });
@@ -142,12 +142,12 @@ impl UiTrackAddOrRemove {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
                         map.insert(id_track_input, crate::state::ui::NodeUiState {
-                            selected: false,
+                            select: Select::Deselect,
                             pos: egui::pos2(-80.0, 0.0),
                             width: 128.0,
                         });
                         map.insert(id_track_output, crate::state::ui::NodeUiState {
-                            selected: false,
+                            select: Select::Deselect,
                             pos: egui::pos2(240.0, 0.0),
                             width: 128.0,
                         });
@@ -230,12 +230,12 @@ impl UiStateCommand for UiTrackAddOrRemove {
 
 pub struct UiTrackSelect {
     id: Id<Track>,
-    selected: bool,
+    select: Select,
 }
 
 impl UiTrackSelect {
-    pub fn new(id: Id<Track>, selected: bool) -> Self {
-        Self { id, selected }
+    pub fn new(id: Id<Track>, select: Select) -> Self {
+        Self { id, select }
     }
 }
 
@@ -246,7 +246,7 @@ impl UiStateCommand for UiTrackSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
-            ui_data.selected = self.selected;
+            ui_data.select = self.select;
         }
     }
     fn ui_rollback(
@@ -255,7 +255,7 @@ impl UiStateCommand for UiTrackSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
-            ui_data.selected = !self.selected;
+            ui_data.select = !self.select;
         }
     }
 }

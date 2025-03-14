@@ -1,6 +1,8 @@
 use cubedaw_lib::{Id, IdMap, Node, Note, Section, Track};
 use egui::Pos2;
 
+use crate::util::Select;
+
 #[derive(Debug)]
 pub struct UiState {
     pub tracks: IdMap<Track, TrackUiState>,
@@ -9,7 +11,7 @@ pub struct UiState {
 
     pub playhead_pos: i64,
 
-    _private: private::Private,
+    pub _private: private::Private,
 }
 
 mod private {
@@ -31,7 +33,7 @@ impl UiState {
     pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
         let mut single_selected_track = None;
         for (track_id, track_ui_state) in &self.tracks {
-            if track_ui_state.selected {
+            if track_ui_state.select.is() {
                 if single_selected_track.is_some() {
                     // more than one selected track, give up
                     single_selected_track = None;
@@ -48,7 +50,7 @@ impl UiState {
 #[derive(Debug)]
 pub struct TrackUiState {
     pub name: String,
-    pub selected: bool,
+    pub select: Select,
     pub patch: PatchUiState,
     pub sections: IdMap<Section, SectionUiState>,
     /// Ordered track lists. This is the order of which the children of this track are displayed in the track tab.
@@ -60,7 +62,7 @@ impl Default for TrackUiState {
     fn default() -> Self {
         Self {
             name: "Unnamed Track".into(),
-            selected: false,
+            select: Default::default(),
             patch: Default::default(),
             sections: Default::default(),
             track_list: Default::default(),
@@ -76,7 +78,7 @@ pub struct PatchUiState {
 #[derive(Debug)]
 pub struct SectionUiState {
     pub name: String,
-    pub selected: bool,
+    pub selected: Select,
     pub notes: IdMap<Note, NoteUiState>,
 }
 
@@ -84,7 +86,7 @@ impl Default for SectionUiState {
     fn default() -> Self {
         Self {
             name: "Unnamed Section".into(),
-            selected: false,
+            selected: Select::Deselect,
             notes: IdMap::new(),
         }
     }
@@ -92,12 +94,12 @@ impl Default for SectionUiState {
 
 #[derive(Debug, Default)]
 pub struct NoteUiState {
-    pub selected: bool,
+    pub selected: Select,
 }
 
 #[derive(Debug)]
 pub struct NodeUiState {
-    pub selected: bool,
+    pub select: Select,
     pub pos: Pos2,
     pub width: f32,
 }

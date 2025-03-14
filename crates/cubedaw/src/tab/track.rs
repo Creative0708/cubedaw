@@ -10,6 +10,7 @@ use crate::{
     app::Tab,
     command::{section::UiSectionSelect, track::UiTrackSelect},
     state::ui::TrackUiState,
+    util::Select,
     widget::{EditableLabel, SongViewer, SongViewerPrepared},
 };
 
@@ -225,12 +226,11 @@ impl<'ctx> Prepared<'ctx> {
 
                 let mut is_this_track_or_any_of_its_parents_selected = false;
 
-                // depth < 0 only happens when the track is a root track
-                // and ctx.ui_state.show_root_track is false
+                // depth < 0 only happens when the track is a root track and ctx.ui_state.show_root_track is false
                 if depth >= 0 {
                     let track_ui = ctx.ui_state.tracks.force_get(track_id);
                     is_this_track_or_any_of_its_parents_selected =
-                        parent_selected || track_ui.selected;
+                        parent_selected || track_ui.select.is();
 
                     let height = DEFAULT_TRACK_HEIGHT; // TODO make configurable
                     track_entries.push(TrackListEntry {
@@ -356,7 +356,7 @@ impl<'ctx> Prepared<'ctx> {
                         track_entry.track_id.cast(),
                         &response,
                         track_entry.track_id,
-                        track_entry.track_ui.selected,
+                        track_entry.track_ui.select,
                     );
 
                     if response.double_clicked() {
@@ -374,16 +374,14 @@ impl<'ctx> Prepared<'ctx> {
                         }
                     }
 
-                    // if not for the `!prepared.is_something_being_dragged()`,
-                    // egui would think the rect at this position is hovered during dragging (which it's not)
-                    // so this is a workaround.
+                    // if not for the `!prepared.is_something_being_dragged()`, egui would think the rect at this position is hovered during dragging (which it's not)
                     track_entry.is_highlighted = !prepared.is_being_dragged()
-                        && track_entry.track_ui.selected
+                        && track_entry.track_ui.select.is()
                         || response.hovered();
 
                     ui.add_enabled_ui(
-                        !(prepared.is_being_dragged()
-                            && track_entry.track_ui.selected
+                        // if the track is being dragged, add disabled track headers to show where the tracks would be dropped
+                        !(prepared.would_be_dragged(track_entry.track_ui.select)
                             && self.dragging_would_succeed),
                         |ui| {
                             track_entry.track_header(
@@ -454,13 +452,14 @@ impl<'ctx> Prepared<'ctx> {
                 );
             }
         });
-        {
+        todo!();
+        /*{
             let should_deselect_everything =
                 result.should_deselect_everything || viewport_interaction.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 for track_entry in &self.track_list.list {
-                    if track_entry.track_ui.selected
+                    if track_entry.track_ui.select
                         && !matches!(selection_changes.get(&track_entry.track_id), Some(true))
                     {
                         ctx.tracker
@@ -468,13 +467,7 @@ impl<'ctx> Prepared<'ctx> {
                     }
                 }
                 for (&track_id, &selected) in selection_changes.iter() {
-                    if selected
-                        && !ctx
-                            .ui_state
-                            .tracks
-                            .get(track_id)
-                            .is_some_and(|n| n.selected)
-                    {
+                    if selected && !ctx.ui_state.tracks.get(track_id).is_some_and(|n| n.select) {
                         ctx.tracker.add(UiTrackSelect::new(track_id, true));
                     }
                 }
@@ -497,7 +490,7 @@ impl<'ctx> Prepared<'ctx> {
                 // TODO
                 let _ = finished_drag_offset;
             }
-        }
+        }*/
     }
 
     /// The non-track header area region thing. The place where you can see all sections.
@@ -532,8 +525,10 @@ impl<'ctx> Prepared<'ctx> {
 
         for (track_entry_index, track_entry) in track_list.list.iter().enumerate() {
             let highlighted = track_entry.is_highlighted;
-            let visuals = if track_entry.track_ui.selected
-                && ctx.ephemeral_state.track_drag.is_being_dragged()
+            let visuals = if ctx
+                .ephemeral_state
+                .track_drag
+                .would_be_dragged(track_entry.track_ui.select)
             {
                 ui.visuals().widgets.noninteractive
             } else if highlighted {
@@ -592,7 +587,7 @@ impl<'ctx> Prepared<'ctx> {
                                 let mut section_range = section_range;
                                 let mut track_entry = track_entry;
 
-                                if section_ui.selected
+                                if drag.would_be_dragged(section_ui.selected)
                                     && let Some(movement) = drag.movement()
                                 {
                                     section_range += movement.time;
@@ -613,11 +608,10 @@ impl<'ctx> Prepared<'ctx> {
                                 ui.painter().rect(
                                     section_rect,
                                     4.0,
-                                    SECTION_COLOR.gamma_multiply(if section_ui.selected {
-                                        0.7
-                                    } else {
-                                        0.5
-                                    }),
+                                    match section_ui.selected {
+                                        Select::Select => SECTION_COLOR.gamma_multiply(0.7),
+                                        Select::Deselect => SECTION_COLOR.gamma_multiply(0.5),
+                                    },
                                     Stroke::new(2.0, SECTION_COLOR),
                                     StrokeKind::Inside,
                                 );
@@ -637,7 +631,8 @@ impl<'ctx> Prepared<'ctx> {
                     }
                 },
             );
-            {
+            todo!();
+            /*{
                 let should_deselect_everything =
                     result.should_deselect_everything || bg_response.clicked();
                 let selection_changes = result.selection_changes;
@@ -696,7 +691,7 @@ impl<'ctx> Prepared<'ctx> {
                         }
                     }
                 }
-            }
+            }*/
         }
 
         view.ui_top_bar(ctx, ui);

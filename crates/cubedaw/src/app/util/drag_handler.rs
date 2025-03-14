@@ -1,7 +1,12 @@
-use std::{fmt::Debug, ops};
+use std::{
+    fmt::{self, Debug},
+    mem, ops,
+};
 
 use ahash::{HashMap, HashMapExt};
 use egui::{Pos2, Vec2};
+
+use super::Select;
 
 // the associated types are kinda messy but no way in hell am i adding _more_ generics to DragHandler
 pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
@@ -35,9 +40,24 @@ mod impls {
     }
 }
 
-#[derive(Debug)]
+/// Drag handler. Unified selection/deselection/drag logic for all of cubedaw's stuff. Hooray!
+///
+/// TODO: due to tabs being rendered sequentially, worst-case scenario everything except the last selection on the last tab is delayed by one frame.
+/// To solve this (and various other issues), this delays _everything_ by one frame, only applying movement at the end of each frame.
 pub struct DragHandler<T: SelectablePath> {
     dragged_data: Option<DraggedData<T>>,
+
+    // when the drag finishes, it's stored in here.
+    result: DragHandlerResult<T>,
+
+    // various other variables that are checked at the end of the frame
+    marked_reset: bool,
+}
+
+impl<T: SelectablePath> fmt::Debug for DragHandler<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DragHandler { .. }")
+    }
 }
 
 #[derive(Debug)]
@@ -58,23 +78,17 @@ impl<T: SelectablePath> DraggedData<T> {
 
 impl<T: SelectablePath> DragHandler<T> {
     pub fn new() -> Self {
-        Self { dragged_data: None }
+        Default::default()
     }
-    fn reset(&mut self) {
-        if let Some(ref mut data) = self.dragged_data {
-            data.state = DraggedDataState::Finished;
-        }
-    }
-
-    // pub fn set_scale(&mut self, scale: impl Into<Vec2>) {
-    //     self.scale = scale.into();
-    // }
 
     pub fn dragged_id(&self) -> Option<T::Id> {
         self.dragged_data.as_ref().map(|data| data.id)
     }
     pub fn is_being_dragged(&self) -> bool {
         self.dragged_data.is_some()
+    }
+    pub fn would_be_dragged(&self, select: Select) -> bool {
+        self.is_being_dragged() && select.is()
     }
 
     pub fn raw_movement(&self) -> Option<Vec2> {
@@ -93,36 +107,41 @@ impl<T: SelectablePath> DragHandler<T> {
     ) -> R {
         let mut prepared = Prepared {
             handler: self,
-            selection_changes: HashMap::new(),
-            should_deselect_everything: false,
-            movement_when_drag_stopped: None,
+
+            finished_movement: None,
             new_drag_movement: None,
-            canceled: false,
             snap_fn,
         };
 
-        let result = f(&mut prepared);
+        let r = f(&mut prepared);
 
-        prepared.end().with_inner(result).1
+        let _ = prepared.end();
+
+        r
     }
 
-    pub fn on_frame_end(&mut self) -> DragHandlerResult<T> {}
+    pub fn on_frame_end(&mut self) -> DragHandlerResult<T> {
+        mem::take(&mut self.result)
+    }
 }
 
 impl<T: SelectablePath> Default for DragHandler<T> {
     fn default() -> Self {
-        Self::new()
+        Self {
+            dragged_data: None,
+
+            result: Default::default(),
+            marked_reset: false,
+        }
     }
 }
 
-pub struct Prepared<'drag, T: SelectablePath, F: Fn(Pos2) -> T::Pos> {
-    handler: &'drag mut DragHandler<T>,
-    // HashMap<changed path, whether it is selected>
-    selection_changes: HashMap<T, bool>,
-    should_deselect_everything: bool,
-    movement_when_drag_stopped: Option<Diff<T>>,
+pub struct Prepared<'a, T: SelectablePath, F: Fn(Pos2) -> T::Pos> {
+    handler: &'a mut DragHandler<T>,
+
+    finished_movement: Option<Diff<T>>,
+
     new_drag_movement: Option<Vec2>,
-    canceled: bool,
     snap_fn: F,
 }
 
@@ -133,6 +152,9 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
     pub fn is_being_dragged(&self) -> bool {
         self.handler.is_being_dragged()
     }
+    pub fn would_be_dragged(&self, select: Select) -> bool {
+        self.is_being_dragged() && select.is()
+    }
     pub fn raw_movement(&self) -> Option<Vec2> {
         self.handler.raw_movement()
     }
@@ -140,8 +162,13 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         self.handler.snapped_movement(&self.snap_fn)
     }
 
+    /// If, by the end of this frame, there is a currently ongoing drag, cancel it.
+    pub fn mark_reset(&mut self) {
+        self.handler.marked_reset = true;
+    }
+
     pub fn deselect_all(&mut self) {
-        self.should_deselect_everything = true;
+        self.handler.result.global_selection_action = Some(Select::Deselect);
     }
 
     pub fn process_interaction(
@@ -149,30 +176,38 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         id: T::Id,
         resp: &egui::Response,
         path: T,
-        is_currently_selected: bool,
+        select: Select,
     ) {
         if resp.drag_started()
             && let Some(pos) = resp.interact_pointer_pos()
         {
-            assert!(!self.handler.is_being_dragged());
+            assert!(
+                !self.handler.is_being_dragged(),
+                "two drags started at the same time, TODO"
+            );
+
             self.handler.dragged_data = Some(DraggedData {
                 id,
                 raw_start_pos: pos,
                 raw_current_pos: pos,
-
-                state: DraggedDataState::Dragging,
             });
             self.new_drag_movement = Some(Default::default());
         }
-        if resp.clicked() || (resp.drag_started() && !is_currently_selected) {
+        if resp.clicked() || (resp.drag_started() && !select.is()) {
             if resp.ctx.input(|i| i.modifiers.shift) {
                 // if user shift-clicks, toggle the selectedness without affecting anything else
-                self.selection_changes.insert(path, !is_currently_selected);
+                self.handler.result.selection_changes.insert(path, !select);
             } else {
+                self.handler
+                    .result
+                    .selection_changes
+                    .insert(path, Select::Select);
                 // if user clicks without pressing shift, deselect everything else
-                self.should_deselect_everything = true;
-                self.selection_changes.insert(path, true);
+                self.deselect_all();
             }
+        }
+        if resp.secondary_clicked() {
+            self.mark_reset();
         }
         if resp.dragged() {
             self.new_drag_movement = Some(resp.drag_delta());
@@ -180,25 +215,19 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         if resp.drag_stopped()
             && let Some(ref data) = self.handler.dragged_data
         {
-            self.movement_when_drag_stopped = Some(data.snapped_movement(&self.snap_fn));
+            self.finished_movement = Some(data.snapped_movement(&self.snap_fn));
         }
     }
 
-    pub fn end(self) -> DragHandlerResult<T> {
+    pub fn end(mut self) {
         if let (Some(new_drag_movement), Some(data)) =
             (self.new_drag_movement, &mut self.handler.dragged_data)
         {
             data.raw_current_pos += new_drag_movement;
         }
 
-        if self.movement_when_drag_stopped.is_some() || self.canceled {
-            self.handler.reset();
-        }
-
-        DragHandlerResult {
-            movement: self.movement_when_drag_stopped,
-            should_deselect_everything: self.should_deselect_everything,
-            selection_changes: self.selection_changes,
+        if self.finished_movement.is_some() {
+            self.mark_reset();
         }
     }
 }
@@ -206,6 +235,34 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
 #[must_use = "You should handle this"]
 pub struct DragHandlerResult<T: SelectablePath> {
     pub movement: Option<Diff<T>>,
-    pub should_deselect_everything: bool,
-    pub selection_changes: HashMap<T, bool>,
+
+    pub global_selection_action: Option<Select>,
+
+    pub selection_changes: HashMap<T, Select>,
+}
+
+impl<T: SelectablePath> Default for DragHandlerResult<T> {
+    fn default() -> Self {
+        Self {
+            movement: None,
+            global_selection_action: None,
+            selection_changes: HashMap::new(),
+        }
+    }
+}
+
+impl<T: SelectablePath> DragHandlerResult<T> {
+    pub fn merge(&mut self, other: Self) {
+        assert!(
+            !(self.movement.is_some() && other.movement.is_some()),
+            "multiple drags ended on the same frame, TODO"
+        );
+        if let Some(movement) = other.movement {
+            self.movement = Some(movement);
+        }
+        self.global_selection_action = self
+            .global_selection_action
+            .or(other.global_selection_action);
+        self.selection_changes.extend(other.selection_changes);
+    }
 }

@@ -1,7 +1,7 @@
 use cubedaw_command::section::SectionAddOrRemove;
 use cubedaw_lib::{Id, IdMap, Section, Track};
 
-use crate::state::ui::SectionUiState;
+use crate::{state::ui::SectionUiState, util::Select};
 
 use super::UiStateCommand;
 
@@ -75,15 +75,15 @@ impl UiStateCommand for UiSectionAddOrRemove {
 pub struct UiSectionSelect {
     track_id: Id<Track>,
     id: Id<Section>,
-    selected: bool,
+    state: Select,
 }
 
 impl UiSectionSelect {
-    pub fn new(track_id: Id<Track>, id: Id<Section>, selected: bool) -> Self {
+    pub fn new(track_id: Id<Track>, id: Id<Section>, state: Select) -> Self {
         Self {
             track_id,
             id,
-            selected,
+            state,
         }
     }
 
@@ -104,7 +104,7 @@ impl UiStateCommand for UiSectionSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.section(ui_state) {
-            ui_data.selected = self.selected;
+            ui_data.selected = self.state;
         }
     }
     fn ui_rollback(
@@ -113,7 +113,7 @@ impl UiStateCommand for UiSectionSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.section(ui_state) {
-            ui_data.selected = !self.selected;
+            ui_data.selected = !self.state;
         }
     }
 }

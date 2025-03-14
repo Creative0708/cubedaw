@@ -1,7 +1,7 @@
 use cubedaw_command::note::NoteAddOrRemove;
 use cubedaw_lib::{Id, IdMap, Note, Section, Track};
 
-use crate::state::ui::NoteUiState;
+use crate::{state::ui::NoteUiState, util::Select};
 
 use super::UiStateCommand;
 
@@ -83,16 +83,16 @@ pub struct UiNoteSelect {
     track_id: Id<Track>,
     section_id: Id<Section>,
     id: Id<Note>,
-    selected: bool,
+    select: Select,
 }
 
 impl UiNoteSelect {
-    pub fn new(track_id: Id<Track>, section_id: Id<Section>, id: Id<Note>, selected: bool) -> Self {
+    pub fn new(track_id: Id<Track>, section_id: Id<Section>, id: Id<Note>, select: Select) -> Self {
         Self {
             track_id,
             section_id,
             id,
-            selected,
+            select,
         }
     }
 
@@ -115,7 +115,7 @@ impl UiStateCommand for UiNoteSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.notes(ui_state).get_mut(self.id) {
-            ui_data.selected = self.selected;
+            ui_data.selected = self.select;
         }
     }
     fn ui_rollback(
@@ -124,7 +124,7 @@ impl UiStateCommand for UiNoteSelect {
         _ephemeral_state: &mut crate::EphemeralState,
     ) {
         if let Some(ui_data) = self.notes(ui_state).get_mut(self.id) {
-            ui_data.selected = !self.selected;
+            ui_data.selected = !self.select;
         }
     }
 }

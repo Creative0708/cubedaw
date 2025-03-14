@@ -16,7 +16,7 @@ use crate::{
     context::UiStateTracker,
     state::ui::{SectionUiState, TrackUiState},
     tab::track::Track2DPos,
-    util::SelectionRect,
+    util::{Select, SelectionRect},
     widget::{SongViewer, SongViewerPrepared},
 };
 
@@ -328,10 +328,9 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     let section_ui = track_ui.sections.force_get(section_id);
 
                     let section_range = if let Some(section_drag) = prepared.movement() {
-                        if section_ui.selected {
-                            section_range + section_drag.time
-                        } else {
-                            section_range
+                        match section_ui.selected {
+                            Select::Select => section_range + section_drag.time,
+                            Select::Deselect => section_range,
                         }
                     } else {
                         section_range
@@ -350,6 +349,13 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         top_bar_rect.y_range(),
                     );
 
+                    let is_effectively_selected = section_ui.selected.is()
+                        || ctx
+                            .ephemeral_state
+                            .selection_rect
+                            .rect()
+                            .intersects(header_rect);
+
                     let header_resp = ui
                         .allocate_rect(header_rect, egui::Sense::click_and_drag())
                         .on_hover_cursor(CursorIcon::Grab);
@@ -362,13 +368,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                             sw: 0,
                             se: 0,
                         },
-                        if section_ui.selected
-                            || ctx
-                                .ephemeral_state
-                                .selection_rect
-                                .rect()
-                                .intersects(header_rect)
-                        {
+                        if is_effectively_selected {
                             SECTION_COLOR.gamma_multiply(0.7)
                         } else {
                             SECTION_COLOR.gamma_multiply(0.5)
@@ -381,7 +381,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         egui::Align2::LEFT_CENTER,
                         &section.name,
                         egui::FontId::proportional(12.0),
-                        if section_ui.selected {
+                        if is_effectively_selected {
                             &ui.visuals().widgets.hovered
                         } else {
                             ui.visuals().widgets.style(&header_resp)
@@ -402,7 +402,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     let section_stroke = egui::Stroke::new(
                         2.0,
                         SECTION_COLOR
-                            .gamma_multiply(0.5 * if section_ui.selected { 1.5 } else { 1.0 }),
+                            .gamma_multiply(0.5 * if is_effectively_selected { 1.5 } else { 1.0 }),
                     );
 
                     let section_screen_range_x = view.song_range_to_screen_range(section_range);
@@ -411,7 +411,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         Rect::from_x_y_ranges(section_screen_range_x, screen_rect.y_range()),
                         CornerRadius::ZERO,
                         SECTION_COLOR
-                            .gamma_multiply(0.2 * if section_ui.selected { 1.5 } else { 1.0 }),
+                            .gamma_multiply(0.2 * if is_effectively_selected { 1.5 } else { 1.0 }),
                     );
                     ui.painter().vline(
                         section_screen_range_x.min,
@@ -444,14 +444,13 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         tracker: &mut UiStateTracker,
 
         prepared: &mut crate::util::Prepared<
-            '_,
             (Id<Track>, Id<Section>, Id<Note>),
             impl Fn(Pos2) -> Note2DPos,
         >,
         relative_start_pos: i64,
         note: &Note,
         note_path: Option<(Id<Section>, Id<Note>)>,
-        is_selected: bool,
+        select: Select,
     ) {
         let Self {
             track_id,
@@ -469,7 +468,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
         let mut note_range = note.range_with(relative_start_pos);
         let mut note_pitch = note.pitch;
-        if is_selected {
+        if select.is() {
             note_range += movement_time;
             note_pitch += movement_pitch;
         }
@@ -481,7 +480,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             Rangef::new(note_y, note_y + self.units_per_pitch()),
         );
 
-        if is_selected || selection_rect.rect().intersects(note_rect) {
+        if select.is() || selection_rect.rect().intersects(note_rect) {
             ui.painter().rect(
                 note_rect,
                 CornerRadius::ZERO,
@@ -498,7 +497,12 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             .is_some_and(|rect| rect.intersects(note_rect))
         {
             if let Some((section_id, note_id)) = note_path {
-                tracker.add(UiNoteSelect::new(track_id, section_id, note_id, true));
+                tracker.add(UiNoteSelect::new(
+                    track_id,
+                    section_id,
+                    note_id,
+                    Select::Select,
+                ));
             }
         }
 
@@ -520,7 +524,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                 note_id.cast(),
                 &note_interaction,
                 (track_id, section_id, note_id),
-                is_selected,
+                select,
             );
         }
     }
@@ -576,12 +580,13 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         start_pos,
                         note,
                         None,
-                        true,
+                        Select::Select,
                     );
                 }
             },
         );
-        {
+        todo!();
+        /*{
             let should_deselect_everything =
                 result.should_deselect_everything || self.bg_response.clicked();
             let selection_changes = result.selection_changes;
@@ -643,7 +648,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     }
                 }
             }
-        }
+        }*/
     }
     fn handle_drawn_note(
         &mut self,

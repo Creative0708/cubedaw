@@ -52,30 +52,30 @@ impl EphemeralState {
         self.note_drag.on_frame_end();
         self.track_drag.on_frame_end();
 
+        // roughly the same template for everything:
+        // - if there's a global selection action:
+        //   - iterate through every existing "thing" and set it to whether it needs to be selected
+        // - otherwise:
+        //   - iterate through every thing in the selection changes
         {
             let result = self.section_drag.on_frame_end();
 
             let selection_changes = result.selection_changes;
-            if result.should_deselect_everything {
+            if let Some(target_state) = result.global_selection_action {
                 for (track_id, track) in &ui_state.tracks {
                     for (section_id2, section_ui) in &track.sections {
-                        if section_ui.selected
-                            && selection_changes.get(&(track_id, section_id2)).copied()
-                                != Some(true)
-                        {
-                            tracker.add(UiSectionSelect::new(track_id, section_id2, false));
+                        let target_state_for_this = selection_changes
+                            .get(&(track_id, section_id2))
+                            .copied()
+                            .unwrap_or(target_state);
+
+                        if section_ui.selected != target_state_for_this {
+                            tracker.add(UiSectionSelect::new(
+                                track_id,
+                                section_id2,
+                                target_state_for_this,
+                            ));
                         }
-                    }
-                }
-                for (&(track_id, section_id), &selected) in &selection_changes {
-                    if selected
-                        && !ui_state
-                            .tracks
-                            .get(track_id)
-                            .and_then(|t| t.sections.get(section_id))
-                            .is_some_and(|n| n.selected)
-                    {
-                        tracker.add(UiSectionSelect::new(track_id, section_id, true));
                     }
                 }
             } else {
@@ -89,13 +89,14 @@ impl EphemeralState {
                         let track_ui = ui_state.tracks.force_get(track_id);
                         for (section_range, section_id, _section) in track.sections() {
                             let section_ui = track_ui.sections.force_get(section_id);
-                            if section_ui.selected {
-                                tracker.add(SectionMove::new(
-                                    track_id,
-                                    ui_state.tracks,
-                                    section_range,
-                                    section_range.start + finished_drag_offset.time,
-                                ));
+                            if section_ui.selected.is() {
+                                // tracker.add(SectionMove::new(
+                                //     track_id,
+                                //     ,
+                                //     section_range,
+                                //     section_range.start + finished_drag_offset.time,
+                                // ));
+                                todo!();
                             }
                         }
                     }

@@ -8,7 +8,6 @@
 #![feature(if_let_guard)]
 #![feature(gen_blocks)]
 #![feature(coroutines)]
-#![feature(min_specialization)]
 #![feature(associated_type_defaults)]
 #![allow(clippy::new_without_default)] // useless, cubedaw isn't a library so default impls aren't necessary
 #![forbid(unsafe_op_in_unsafe_fn)]

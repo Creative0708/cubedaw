@@ -23,6 +23,7 @@ use crate::{
         ephemeral::{NodeEphemeralState, PatchEphemeralState},
         ui::NodeUiState,
     },
+    util::Select,
     widget::DragValue,
 };
 
@@ -354,7 +355,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             )
         });
 
-        let pos = if node_ui.selected
+        let pos = if node_ui.select.is()
             && let Some(offset) = prepared.movement()
         {
             node_ui.pos + offset
@@ -391,7 +392,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         frame_ui.spacing_mut().item_spacing = vec2(8.0, 4.0);
 
         let mut frame = Frame::window(ui.style()).inner_margin(8.0);
-        if node_ui.selected {
+        if node_ui.select.is() {
             // TODO actually implement selection colors/strokes
             frame.stroke = Stroke::new(frame.stroke.width * 1.2, Color32::from_gray(96));
             frame.fill = Color32::from_gray(32);
@@ -429,7 +430,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     node_id.cast(),
                     &drag_response,
                     node_id,
-                    node_ui.selected,
+                    node_ui.select,
                 );
             }
             let node_state = node_data.data.inner.as_ref();
@@ -651,7 +652,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                         &fake_entry,
                         None,
                         &NodeUiState {
-                            selected: true,
+                            select: Select::Select,
                             pos: hover_pos,
                             width: 128.0,
                         },
@@ -666,7 +667,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                             result.outputs.len() as u32,
                             track_id,
                             NodeUiState {
-                                selected: true,
+                                select: Select::Select,
                                 pos: hover_pos,
                                 width: 128.0, // TODO impl node widths
                             },
@@ -684,15 +685,17 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     hovered_node_slot,
                 })
             },
-        );
+        )?;
+
         ctx.ephemeral_state.tracks.insert(track_id, track_ephem);
-        {
+        todo!();
+        /*{
             let should_deselect_everything =
                 result.should_deselect_everything || self.viewport_interaction.clicked();
             let selection_changes = result.selection_changes;
             if should_deselect_everything {
                 for (node_id2, node_ui) in &patch_ui.nodes {
-                    if node_ui.selected && !matches!(selection_changes.get(&node_id2), Some(true)) {
+                    if node_ui.select && !matches!(selection_changes.get(&node_id2), Some(true)) {
                         ctx.tracker
                             .add(UiNodeSelect::new(track_id, node_id2, false));
                     }
@@ -704,7 +707,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                             .tracks
                             .get(track_id)
                             .and_then(|t| t.patch.nodes.get(node_id))
-                            .is_some_and(|n| n.selected)
+                            .is_some_and(|n| n.select)
                     {
                         ctx.tracker.add(UiNodeSelect::new(track_id, node_id, true));
                     }
@@ -717,19 +720,19 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             }
             if let Some(finished_drag_offset) = result.movement {
                 for (node_id, node_ui) in &patch_ui.nodes {
-                    if node_ui.selected {
+                    if node_ui.select {
                         ctx.tracker
                             .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
                     }
                 }
             }
-        }
+        }*/
 
         if ui.input(|input| input.key_pressed(Key::X)) {
             self.delete_selected_nodes(ctx);
         }
 
-        Ok(result.inner?)
+        Ok(result)
     }
 
     fn delete_selected_nodes(&mut self, ctx: &mut crate::Context<'ctx>) {
@@ -741,19 +744,18 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         } = *self;
         let mut deleted_cables: IdSet<Cable> = IdSet::new();
         for (node_id, node_ui) in &patch_ui.nodes {
-            if !node_ui.selected {
-                continue;
-            }
-            let node = patch.node_entry(node_id).todo();
+            if node_ui.select.is() {
+                let node = patch.node_entry(node_id).todo();
 
-            for cable_id in node.connected_cables() {
-                if deleted_cables.insert(cable_id) {
-                    ctx.tracker
-                        .add(CableAddOrRemove::removal(cable_id, track_id));
+                for cable_id in node.connected_cables() {
+                    if deleted_cables.insert(cable_id) {
+                        ctx.tracker
+                            .add(CableAddOrRemove::removal(cable_id, track_id));
+                    }
                 }
+                ctx.tracker
+                    .add(UiNodeAddOrRemove::removal(node_id, track_id));
             }
-            ctx.tracker
-                .add(UiNodeAddOrRemove::removal(node_id, track_id));
         }
     }
 

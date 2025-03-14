@@ -4,6 +4,7 @@ use crate::registry::NodeRegistry;
 use cpal::traits::HostTrait;
 use cubedaw_lib::Id;
 use egui_dock::{DockArea, DockState};
+use util::Select;
 
 use crate::{
     Context, Screen,
@@ -96,7 +97,7 @@ impl CubedawApp {
             );
 
             execute(
-                crate::command::track::UiTrackSelect::new(section_track_id, true),
+                crate::command::track::UiTrackSelect::new(section_track_id, Select::Select),
                 &mut state,
                 &mut ui_state,
                 &mut ephemeral_state,
