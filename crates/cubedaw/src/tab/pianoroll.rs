@@ -51,9 +51,6 @@ impl ops::Sub for Note2DPos {
     }
 }
 
-// Number of empty ticks to display on either side of the song
-const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
-
 // Inclusive range. Standard 88-key keyboard, I think?
 const MIN_NOTE_SHOWN: i32 = -39;
 const MAX_NOTE_SHOWN: i32 = 47;
@@ -104,99 +101,6 @@ impl crate::Screen for PianoRollTab {
 }
 
 impl PianoRollTab {
-    /*
-    fn pianoroll(
-        &mut self,
-        ctx: &mut crate::Context,
-        ui: &mut egui::Ui,
-        view: &SongViewerPrepared,
-    ) {
-        let Some(track_id) = self.track_id else {
-            unreachable!()
-        };
-        let Some(outer_track) = ctx.state.tracks.get(track_id) else {
-            unreachable!()
-        };
-        let Some(track) = outer_track.inner.section() else {
-            unreachable!();
-        };
-        let Some(track_ui) = ctx.ui_state.tracks.get(track_id) else {
-            unreachable!()
-        };
-
-        let anchor = view.anchor();
-
-        let screen_rect = view.screen_rect;
-
-        let screen_y_to_note_y = |screen_y: f32| -> i32 {
-            MAX_NOTE_SHOWN - ((screen_y - anchor.y) / self.units_per_pitch) as i32
-        };
-        let note_pos_to_screen_pos = |(pos, pitch): PianoRollPos| -> Pos2 {
-            pos2(
-                view.song_x_to_screen_x(pos),
-                (MAX_NOTE_SHOWN - pitch) as f32 * self.units_per_pitch + anchor.y,
-            )
-        };
-
-        let song_view_range = view.song_view_range;
-
-        let min_pitch = screen_y_to_note_y(screen_rect.bottom());
-        let max_pitch = screen_y_to_note_y(screen_rect.top());
-
-        // The horizontal "note lines"
-        for row in min_pitch..=max_pitch {
-            // TODO not hardcode this, probably after MVP
-            if matches!(row % 12, 0 | 2 | 4 | 5 | 7 | 9 | 11) {
-                let row_pos = note_pos_to_screen_pos((0, row)).y;
-                ui.painter().rect_filled(
-                    Rect::from_x_y_ranges(
-                        screen_rect.x_range(),
-                        Rangef::new(row_pos, row_pos + self.units_per_pitch),
-                    ),
-                    CornerRadius::ZERO,
-                    ui.visuals().faint_bg_color,
-                );
-            }
-        }
-
-        let top_bar_interaction = view.ui_top_bar(ctx, ui);
-
-        // SELF.HANDEL_SECTIONS
-        // SELF.HANDLE_NOTES
-
-        if self.currently_drawn_note.is_none() || bg_response.drag_stopped() {
-            ctx.ephemeral_state
-                .selection_rect
-                .process_interaction(&bg_response, self.id);
-        }
-
-        if ctx.focused_tab() == Some(self.id)
-            && ui
-                .ctx()
-                .input_mut(|i| i.consume_key(egui::Modifiers::default(), egui::Key::Delete))
-        {
-            // we should really store the selected sections/notes/whatever
-            // so we don't have to iterate over _every_ note in order to find the selected ones
-            for (section_id2, section_ui) in &track_ui.sections {
-                for (note_id2, note_ui) in &section_ui.notes {
-                    if note_ui.selected {
-                        ctx.tracker.add(UiNoteAddOrRemove::removal(
-                            track_id,
-                            section_id2,
-                            note_id2,
-                        ));
-                    }
-                }
-            }
-        }
-
-        if let Some(hover_pos) = snapped_hover_pos {
-            self.last_mouse_position = hover_pos;
-        }
-
-        view.ui_playhead(ctx, ui);
-    } */
-
     pub fn select_track(&mut self, track_id: Option<Id<Track>>) {
         self.track_id = track_id;
         self.currently_drawn_note = None;

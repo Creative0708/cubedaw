@@ -521,8 +521,7 @@ impl<'ctx> Prepared<'ctx> {
                             // assume there are tracks of a certain height above and below the actual list
                             let track_height = DEFAULT_TRACK_HEIGHT;
                             if y < track_list.top {
-                                // -1 because we want to round towards negative infinity, not towards zero
-                                ((y - track_list.top) / track_height) as i32 - 1
+                                ((y - track_list.top) / track_height).floor() as i32
                             } else {
                                 ((y - track_list.bottom) / track_height) as i32
                             }

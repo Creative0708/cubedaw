@@ -206,7 +206,6 @@ struct Prepared<'tab, 'ctx> {
 
     primary_clicked: bool,
     secondary_clicked: bool,
-    screen_hover_pos: Option<Pos2>,
 }
 
 impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
@@ -221,13 +220,8 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
 
         let track_id = tab.track_id.expect("unreachable");
 
-        let (primary_clicked, secondary_clicked, screen_hover_pos) = ui.input(|i| {
-            (
-                i.pointer.primary_clicked(),
-                i.pointer.secondary_clicked(),
-                i.pointer.hover_pos(),
-            )
-        });
+        let (primary_clicked, secondary_clicked) =
+            ui.input(|i| (i.pointer.primary_clicked(), i.pointer.secondary_clicked()));
 
         Self {
             tab,
@@ -240,7 +234,6 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             pointer_pos,
             primary_clicked,
             secondary_clicked,
-            screen_hover_pos,
         }
     }
 
@@ -1226,16 +1219,16 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                 }
 
                 let indicator_stroke = Stroke::new(1.5, ui.visuals().widgets.inactive.bg_fill);
-                // TODO use a bezier curve or the like
-                // ui.painter().with_clip_rect(indicator_rect).rect_stroke(
-                //     indicator_rect.translate(indicator_rect.size() * -0.5),
-                //     CornerRadius {
-                //         se: 4,
-                //         ..Default::default()
-                //     },
-                //     indicator_stroke,
-                //     StrokeKind::Inside
-                // );
+
+                ui.painter().with_clip_rect(indicator_rect).rect_stroke(
+                    indicator_rect.translate(indicator_rect.size() * -0.5),
+                    CornerRadius {
+                        se: 4,
+                        ..Default::default()
+                    },
+                    indicator_stroke,
+                    egui::StrokeKind::Inside,
+                );
 
                 if let Some(id) = self.node_id {
                     let command = cubedaw_command::node::NodeMultiplierChange::new(

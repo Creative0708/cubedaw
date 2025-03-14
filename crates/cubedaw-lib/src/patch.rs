@@ -311,10 +311,8 @@ impl Patch {
         }
 
         // special nodes
-        for special_node in [track_input, track_output] {
-            if let Some(special_node) = special_node {
-                self.nodes.force_get_mut(special_node).tag = NodeTag::Special;
-            }
+        for special_node in [track_input, track_output].into_iter().flatten() {
+            self.nodes.force_get_mut(special_node).tag = NodeTag::Special;
         }
     }
 

@@ -5,6 +5,9 @@ use egui::{CornerRadius, NumExt, Pos2, Rangef, Rect, Response, Vec2};
 const BEATS_PER_BAR: i64 = 4;
 const TOP_BAR_HEIGHT: f32 = 18.0;
 
+// Number of empty ticks to display on either side of the song
+const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
+
 /// Shared functionality for the track view and the piano roll.
 #[derive(Debug)]
 pub struct SongViewer {
@@ -65,8 +68,6 @@ pub struct SongViewerPrepared<'a> {
     // i know damn well a reference is gonna be needed at some point so add the lifetime specifier now
     _marker: core::marker::PhantomData<&'a ()>,
 }
-
-const SONG_PADDING: i64 = 2 * Range::UNITS_PER_BEAT as i64;
 
 impl<'a> SongViewerPrepared<'a> {
     fn new(
