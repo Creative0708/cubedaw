@@ -2,13 +2,11 @@ use core::f32;
 use std::collections::VecDeque;
 
 use anyhow::Result;
-use cubedaw_command::section::SectionMove;
 use cubedaw_lib::{Id, IdMap, Range, Track};
 use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder};
 
 use crate::{
     app::Tab,
-    command::{section::UiSectionSelect, track::UiTrackSelect},
     state::ui::TrackUiState,
     util::Select,
     widget::{EditableLabel, SongViewer, SongViewerPrepared},
@@ -19,6 +17,7 @@ pub struct TrackTab {
     id: Id<Tab>,
 
     // Vertical zoom. Each track height is multiplied by this
+    // TODO implement
     vertical_zoom: f32,
 
     song_viewer: SongViewer,
@@ -458,8 +457,7 @@ impl<'ctx> Prepared<'ctx> {
         view: &SongViewerPrepared,
     ) {
         let Self {
-            dragging_would_succeed,
-            ref mut track_list,
+            ref mut track_list, ..
         } = *self;
 
         let mut track_entry_map: IdMap<Track, &TrackListEntry> = IdMap::new();
@@ -532,6 +530,10 @@ impl<'ctx> Prepared<'ctx> {
                     },
                 },
                 |drag| {
+                    if bg_response.clicked() {
+                        drag.deselect_all();
+                    }
+
                     let track_id = track_entry.track_id;
                     let track = track_entry.track;
 

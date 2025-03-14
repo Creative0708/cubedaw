@@ -4,10 +4,7 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt};
-use cubedaw_lib::Id;
 use egui::{Pos2, Vec2};
-
-use crate::app::Tab;
 
 use super::Select;
 
@@ -110,7 +107,7 @@ impl<T: SelectablePath> DragHandler<T> {
     pub fn raw_movement(&self) -> Option<Vec2> {
         self.dragged_data.as_ref().map(|data| data.raw_movement())
     }
-    pub fn snapped_movement(&self, snap_fn: impl Fn(Pos2) -> T::Pos) -> Option<Diff<T>> {
+    pub fn snapped_movement(&self) -> Option<Diff<T>> {
         self.dragged_data
             .as_ref()
             .map(|data| data.snapped_movement())
@@ -186,7 +183,7 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         self.handler.raw_movement()
     }
     pub fn movement(&self) -> Option<Diff<T>> {
-        self.handler.snapped_movement(&self.snap_fn)
+        self.handler.snapped_movement()
     }
 
     /// If, by the end of this frame, there is a currently ongoing drag, cancel it.

@@ -5,6 +5,7 @@ use egui::Vec2;
 
 use crate::{
     UiState,
+    command::node::{UiNodeMove, UiNodeSelect},
     context::UiStateTracker,
     util::{DragHandler, NodeSearch, SelectionRect},
 };
@@ -215,6 +216,37 @@ impl EphemeralState {
                                 ));
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        for (track_id, track_ephem) in &mut self.tracks {
+            let patch_ui = &ui_state.tracks.force_get(track_id).patch;
+            let result = track_ephem.patch.node_drag.on_frame_end();
+
+            if let Some(target_select) = result.global_selection_action {
+                for (node_id, node_ui) in &patch_ui.nodes {
+                    let target_select_for_this = result
+                        .selection_changes
+                        .get(&node_id)
+                        .copied()
+                        .unwrap_or(target_select);
+
+                    if node_ui.select != target_select_for_this {
+                        tracker.add(UiNodeSelect::new(track_id, node_id, target_select_for_this));
+                    }
+                }
+            } else {
+                for (&node_id, &selected) in &result.selection_changes {
+                    tracker.add(UiNodeSelect::new(track_id, node_id, selected));
+                }
+            }
+
+            if let Some(finished_drag_offset) = result.movement {
+                for (node_id, node_ui) in &patch_ui.nodes {
+                    if node_ui.select.is() {
+                        tracker.add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
                     }
                 }
             }

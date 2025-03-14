@@ -26,12 +26,12 @@ impl WorkerHostState {
                         &node.data.key, &options.registry
                     )
                 });
-                node_map.insert(node_id, (entry.node_factory)(&node.data.inner.as_bytes()));
+                node_map.insert(node_id, (entry.node_factory)(node.data.inner.as_bytes()));
             }
             tracks.insert(
                 track_id,
                 WorkerTrackState::from_track(track, options)
-                    .unwrap_or_else(|_| WorkerTrackState::empty(track, options)),
+                    .unwrap_or_else(|_| WorkerTrackState::empty(options)),
             );
         }
 
@@ -141,7 +141,7 @@ impl WorkerTrackState {
         Ok(())
     }
 
-    pub fn empty(track: &Track, options: &WorkerOptions) -> Self {
+    pub fn empty(options: &WorkerOptions) -> Self {
         use cubedaw_lib::{NodeData, ResourceKey};
 
         let mut fake_patch = Patch::new();
@@ -177,11 +177,7 @@ impl WorkerTrackState {
         // ideally we'd construct a `Self` directly instead of using this function but whatever. TODO
         let fake_track = Track::new(fake_patch);
 
-        Self::from_track(&fake_track, options).expect(if cfg!(test) {
-            "failed to construct a patch"
-        } else {
-            "unreachable, did we not catch this during tests?"
-        })
+        Self::from_track(&fake_track, options).expect("failed to construct an empty patch??")
     }
 }
 

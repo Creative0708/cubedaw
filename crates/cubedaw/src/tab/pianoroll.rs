@@ -1,7 +1,6 @@
 use std::ops;
 
 use anyhow::Result;
-use cubedaw_command::{note::NoteMove, section::SectionMove};
 use cubedaw_lib::{Id, Note, Range, Section, Track};
 use egui::{
     Color32, CornerRadius, CursorIcon, Pos2, Rangef, Rect, Response, Stroke, StrokeKind, pos2, vec2,
@@ -11,7 +10,7 @@ use crate::{
     app::Tab,
     command::{
         note::{UiNoteAddOrRemove, UiNoteSelect},
-        section::{UiSectionAddOrRemove, UiSectionSelect},
+        section::UiSectionAddOrRemove,
     },
     context::UiStateTracker,
     state::ui::{SectionUiState, TrackUiState},
@@ -60,7 +59,7 @@ const MIN_NOTE_SHOWN: i32 = -39;
 const MAX_NOTE_SHOWN: i32 = 47;
 
 impl crate::Screen for PianoRollTab {
-    fn create(state: &cubedaw_lib::State, ui_state: &crate::UiState) -> Self {
+    fn create(_state: &cubedaw_lib::State, ui_state: &crate::UiState) -> Self {
         Self {
             id: Id::arbitrary(),
 
@@ -528,14 +527,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         tab: &mut PianoRollTab,
         rendered_sections: &[RenderedSection],
     ) {
-        let Self {
-            track_id,
-            track_ui,
-
-            view,
-            ntspc,
-            ..
-        } = *self;
+        let Self { view, ntspc, .. } = *self;
 
         ctx.ephemeral_state.note_drag.handle(
             move |Pos2 { x, y }| Note2DPos {

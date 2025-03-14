@@ -8,8 +8,8 @@ use cubedaw_lib::{
     Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, Node, NodeData, Track,
 };
 use egui::{
-    Align, Area, CentralPanel, Color32, CornerRadius, CursorIcon, Direction, Frame, Key, Layout,
-    Pos2, Rangef, Rect, Response, Sense, Shape, Stroke, Ui, UiBuilder, Vec2, WidgetText,
+    Align, Area, CentralPanel, Color32, CornerRadius, CursorIcon, Direction, Frame, Layout, Pos2,
+    Rangef, Rect, Response, Sense, Shape, Stroke, Ui, UiBuilder, Vec2, WidgetText,
     emath::TSTransform, epaint, layers::ShapeIdx, pos2, vec2,
 };
 use resourcekey::ResourceKey;
@@ -17,7 +17,7 @@ use unwrap_todo::UnwrapTodo;
 
 use crate::{
     EphemeralState,
-    command::node::{UiNodeAddOrRemove, UiNodeMove, UiNodeSelect},
+    command::node::UiNodeAddOrRemove,
     context::UiStateTracker,
     state::{
         ephemeral::{NodeEphemeralState, PatchEphemeralState},
@@ -94,7 +94,7 @@ impl crate::Screen for PatchTab {
 
         CentralPanel::default()
             .show_inside(ui, |ui| -> Result<()> {
-                if let Some(track_id) = track_id {
+                if track_id.is_some() {
                     let parent_layer_id = ui.layer_id();
                     let screen_viewport = ui.max_rect();
                     let transform = transform_viewport(self.transform, screen_viewport);
@@ -688,47 +688,9 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         )?;
 
         ctx.ephemeral_state.tracks.insert(track_id, track_ephem);
-        todo!();
-        /*{
-            let should_deselect_everything =
-                result.should_deselect_everything || self.viewport_interaction.clicked();
-            let selection_changes = result.selection_changes;
-            if should_deselect_everything {
-                for (node_id2, node_ui) in &patch_ui.nodes {
-                    if node_ui.select && !matches!(selection_changes.get(&node_id2), Some(true)) {
-                        ctx.tracker
-                            .add(UiNodeSelect::new(track_id, node_id2, false));
-                    }
-                }
-                for (&node_id, &selected) in &selection_changes {
-                    if selected
-                        && !ctx
-                            .ui_state
-                            .tracks
-                            .get(track_id)
-                            .and_then(|t| t.patch.nodes.get(node_id))
-                            .is_some_and(|n| n.select)
-                    {
-                        ctx.tracker.add(UiNodeSelect::new(track_id, node_id, true));
-                    }
-                }
-            } else {
-                for (&node_id, &selected) in &selection_changes {
-                    ctx.tracker
-                        .add(UiNodeSelect::new(track_id, node_id, selected));
-                }
-            }
-            if let Some(finished_drag_offset) = result.movement {
-                for (node_id, node_ui) in &patch_ui.nodes {
-                    if node_ui.select {
-                        ctx.tracker
-                            .add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
-                    }
-                }
-            }
-        }*/
 
-        if ui.input(|input| input.key_pressed(Key::X)) {
+        // TODO make configurable, as usual...
+        if ui.input(|input| input.key_pressed(egui::Key::X)) {
             self.delete_selected_nodes(ctx);
         }
 
@@ -1016,7 +978,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
     fn draw_cables(
         &mut self,
         ui: &mut Ui,
-        ctx: &mut crate::Context<'ctx>,
+        _ctx: &mut crate::Context<'ctx>,
         node_results: &NodeResults,
         cable_result: Option<CableInteractionResult>,
         shapeidx: ShapeIdx,
@@ -1443,13 +1405,13 @@ enum NodeSlotDescriptor {
     },
 }
 impl NodeSlotDescriptor {
-    pub fn of_cable_input(cable: &Cable) -> Self {
-        Self::Input {
-            node_id: cable.output_node,
-            input_index: cable.output_input_index,
-            conn_index: Some(cable.output_cable_index),
-        }
-    }
+    // pub fn of_cable_input(cable: &Cable) -> Self {
+    //     Self::Input {
+    //         node_id: cable.output_node,
+    //         input_index: cable.output_input_index,
+    //         conn_index: Some(cable.output_cable_index),
+    //     }
+    // }
 
     pub fn node_id(self) -> Id<Node> {
         match self {

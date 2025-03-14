@@ -15,7 +15,7 @@ where
 {
     type Output = anyhow::Result<(&'a T, &'a [u8])>;
     fn anyhow(self) -> Self::Output {
-        self.map_err(|err| {
+        self.map_err(|_| {
             anyhow::anyhow!(
                 "zerocopy::TryFromBytes::*() failed for {}",
                 core::any::type_name::<T>()
@@ -30,7 +30,7 @@ where
 {
     type Output = anyhow::Result<(&'a mut T, &'a mut [u8])>;
     fn anyhow(self) -> Self::Output {
-        self.map_err(|err| {
+        self.map_err(|_| {
             anyhow::anyhow!(
                 "zerocopy::TryFromBytes::*() failed for {}",
                 core::any::type_name::<T>()

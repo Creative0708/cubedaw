@@ -9,8 +9,6 @@ use super::UiStateCommand;
 pub struct UiNodeAddOrRemove {
     inner: NodeAddOrRemove,
     ui_data: Option<NodeUiState>,
-    num_inputs: u32,
-    num_outputs: u32,
 }
 
 impl UiNodeAddOrRemove {
@@ -23,9 +21,6 @@ impl UiNodeAddOrRemove {
         ui_state: NodeUiState,
     ) -> Self {
         Self {
-            num_inputs: inputs.len() as u32,
-            num_outputs,
-
             inner: NodeAddOrRemove::addition(id, data, inputs, num_outputs, track_id),
             ui_data: Some(ui_state),
         }
@@ -34,9 +29,6 @@ impl UiNodeAddOrRemove {
         Self {
             inner: NodeAddOrRemove::removal(id, track_id),
             ui_data: None,
-
-            num_inputs: 0,
-            num_outputs: 0,
         }
     }
 
