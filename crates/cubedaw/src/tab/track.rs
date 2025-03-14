@@ -134,14 +134,14 @@ struct TrackListEntry<'a> {
     indentation: f32,
 }
 #[derive(Debug, Default, Clone, Copy)]
-struct Track2DPos {
-    time: i64,
-    idx: i32,
+pub struct Track2DPos {
+    pub time: i64,
+    pub idx: i32,
 }
 #[derive(Debug, Default, Clone, Copy)]
-struct Track2DOffset {
-    time: i64,
-    idx: i32,
+pub struct Track2DOffset {
+    pub time: i64,
+    pub idx: i32,
 }
 impl std::ops::Sub for Track2DPos {
     type Output = Track2DOffset;
@@ -332,7 +332,8 @@ impl<'ctx> Prepared<'ctx> {
 
     fn ui_left_sidebar(&mut self, ctx: &mut crate::Context, ui: &mut egui::Ui) {
         let result = ctx.ephemeral_state.track_drag.handle(
-            |prepared: &mut crate::util::Prepared<'_, Id<Track>>| {
+            |pos| pos,
+            |prepared: &mut crate::util::Prepared<_, _>| {
                 for track_entry in &mut self.track_list.list {
                     let rect = egui::Rect {
                         min: egui::pos2(
@@ -529,7 +530,7 @@ impl<'ctx> Prepared<'ctx> {
             )
         };
 
-        for track_entry in &track_list.list {
+        for (track_entry_index, track_entry) in track_list.list.iter().enumerate() {
             let highlighted = track_entry.is_highlighted;
             let visuals = if track_entry.track_ui.selected
                 && ctx.ephemeral_state.track_drag.is_being_dragged()
@@ -560,7 +561,7 @@ impl<'ctx> Prepared<'ctx> {
             }
 
             // sections
-            let result = ctx.ephemeral_state.section_drag.handle_snapped(
+            let result = ctx.ephemeral_state.section_drag.handle(
                 |Pos2 { x, y }| Track2DPos {
                     time: view.input_screen_x_to_song_x(x),
                     idx: {
@@ -578,7 +579,7 @@ impl<'ctx> Prepared<'ctx> {
                         }
                     },
                 },
-                |view| {
+                |drag| {
                     let track_id = track_entry.track_id;
                     let track = track_entry.track;
 
@@ -587,6 +588,20 @@ impl<'ctx> Prepared<'ctx> {
                             for (section_range, section_id, section) in section_track.sections() {
                                 let section_ui =
                                     track_entry.track_ui.sections.force_get(section_id);
+
+                                let mut section_range = section_range;
+                                let mut track_entry = track_entry;
+
+                                if section_ui.selected
+                                    && let Some(movement) = drag.movement()
+                                {
+                                    section_range += movement.time;
+                                    if movement.idx != 0 {
+                                        track_entry = &track_list.list[track_entry_index
+                                            .saturating_add_signed(movement.idx as isize)
+                                            .clamp(0, track_list.len() - 1)];
+                                    }
+                                }
 
                                 let section_rect =
                                     track_pos_to_screen_pos(section_range, track_entry);
@@ -607,7 +622,7 @@ impl<'ctx> Prepared<'ctx> {
                                     StrokeKind::Inside,
                                 );
 
-                                view.process_interaction(
+                                drag.process_interaction(
                                     section_id.cast(),
                                     &section_response,
                                     (track_id, section_id),
@@ -664,10 +679,7 @@ impl<'ctx> Prepared<'ctx> {
                 if let Some(finished_drag_offset) = result.movement {
                     for track_entry in &track_list.list {
                         let TrackListEntry {
-                            track_id,
-                            track,
-                            
-                            ..
+                            track_id, track, ..
                         } = *track_entry;
                         if let TrackInner::Section(ref track) = track.inner {
                             let track_ui = ctx.ui_state.tracks.force_get(track_id);

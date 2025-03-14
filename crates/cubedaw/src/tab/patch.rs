@@ -184,11 +184,6 @@ impl crate::Screen for PatchTab {
             .inner?;
         Ok(())
     }
-
-    fn drop(self: Box<Self>, _egui_ctx: &egui::Context) {
-        // TODO how do we delete an area from egui memory
-        // egui_ctx.memory_mut(|m| m.areas_mut().)
-    }
 }
 
 impl PatchTab {
@@ -326,13 +321,13 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn ui_node(
         &mut self,
         ui: &mut Ui,
         ctx: &mut crate::Context<'ctx>,
-        // we use the drag handler somewhere else soooooooo
         patch_ephemeral_node_map: &mut IdMap<Node, NodeEphemeralState>,
-        prepared: &mut crate::util::Prepared<Id<Node>>,
+        prepared: &mut crate::util::Prepared<Id<Node>, impl Fn(Pos2) -> Pos2>,
         node_data: &Node,
         node_id: Option<Id<Node>>,
         node_ui: &NodeUiState,
@@ -610,83 +605,86 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
 
         // cursed hack to satisfy the borrow checker... i mean i guess it makes sense but jeez
         let mut track_ephem = ctx.ephemeral_state.tracks.take(track_id);
-        let result = track_ephem.patch.node_drag.handle(|prepared| -> Result<_> {
-            let mut dragged_node_slot: Option<InteractedNodeSlot> = None;
-            let mut hovered_node_slot: Option<InteractedNodeSlot> = None;
+        let result = track_ephem.patch.node_drag.handle::<fn(Pos2) -> Pos2, _>(
+            |pos| pos,
+            |prepared| -> Result<_> {
+                let mut dragged_node_slot: Option<InteractedNodeSlot> = None;
+                let mut hovered_node_slot: Option<InteractedNodeSlot> = None;
 
-            let mut node_results_map: IdMap<Node, CubedawNodeUiContextResult> = IdMap::new();
+                let mut node_results_map: IdMap<Node, CubedawNodeUiContextResult> = IdMap::new();
 
-            // nodes
-            if self.viewport_interaction.secondary_clicked() {
-                self.tab.currently_held_node = None;
-            }
+                // nodes
+                if self.viewport_interaction.secondary_clicked() {
+                    self.tab.currently_held_node = None;
+                }
 
-            for (node_id, node_data) in patch.nodes() {
-                let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
+                for (node_id, node_data) in patch.nodes() {
+                    let node_ui = patch_ui.nodes.get(node_id).expect("nonexistent node ui");
 
-                let (result, dragged_node_slot_for_this_node, hovered_node_slot_for_this_node) =
-                    self.ui_node(
+                    let (result, dragged_node_slot_for_this_node, hovered_node_slot_for_this_node) =
+                        self.ui_node(
+                            ui,
+                            ctx,
+                            &mut track_ephem.patch.nodes,
+                            prepared,
+                            node_data,
+                            Some(node_id),
+                            node_ui,
+                        )?;
+
+                    dragged_node_slot = dragged_node_slot.or(dragged_node_slot_for_this_node);
+                    hovered_node_slot = hovered_node_slot.or(hovered_node_slot_for_this_node);
+
+                    node_results_map.insert(node_id, result);
+                }
+
+                if let Some(hover_pos) = self.viewport_interaction.hover_pos()
+                    && let Some(node_data) = self.tab.currently_held_node.take()
+                {
+                    ui.ctx().set_cursor_icon(CursorIcon::AllScroll);
+                    let fake_entry = Node::new(node_data, 0, 0);
+                    let (result, ..) = self.ui_node(
                         ui,
                         ctx,
                         &mut track_ephem.patch.nodes,
                         prepared,
-                        node_data,
-                        Some(node_id),
-                        node_ui,
-                    )?;
-
-                dragged_node_slot = dragged_node_slot.or(dragged_node_slot_for_this_node);
-                hovered_node_slot = hovered_node_slot.or(hovered_node_slot_for_this_node);
-
-                node_results_map.insert(node_id, result);
-            }
-
-            if let Some(hover_pos) = self.viewport_interaction.hover_pos()
-                && let Some(node_data) = self.tab.currently_held_node.take()
-            {
-                ui.ctx().set_cursor_icon(CursorIcon::AllScroll);
-                let fake_entry = Node::new(node_data, 0, 0);
-                let (result, ..) = self.ui_node(
-                    ui,
-                    ctx,
-                    &mut track_ephem.patch.nodes,
-                    prepared,
-                    &fake_entry,
-                    None,
-                    &NodeUiState {
-                        selected: true,
-                        pos: hover_pos,
-                        width: 128.0,
-                    },
-                )?;
-                let node_data = fake_entry.data;
-                if primary_clicked {
-                    // place the node
-                    ctx.tracker.add(UiNodeAddOrRemove::addition(
-                        Id::arbitrary(),
-                        node_data,
-                        result.inputs.into_iter().map(|input| input.value).collect(),
-                        result.outputs.len() as u32,
-                        track_id,
-                        NodeUiState {
+                        &fake_entry,
+                        None,
+                        &NodeUiState {
                             selected: true,
                             pos: hover_pos,
-                            width: 128.0, // TODO impl node widths
+                            width: 128.0,
                         },
-                    ))
-                } else if secondary_clicked {
-                    // do nothing; since we're never setting currently_held_node to Some(_) after the take(), this deletes the node
-                } else {
-                    self.tab.currently_held_node = Some(node_data);
+                    )?;
+                    let node_data = fake_entry.data;
+                    if primary_clicked {
+                        // place the node
+                        ctx.tracker.add(UiNodeAddOrRemove::addition(
+                            Id::arbitrary(),
+                            node_data,
+                            result.inputs.into_iter().map(|input| input.value).collect(),
+                            result.outputs.len() as u32,
+                            track_id,
+                            NodeUiState {
+                                selected: true,
+                                pos: hover_pos,
+                                width: 128.0, // TODO impl node widths
+                            },
+                        ))
+                    } else if secondary_clicked {
+                        // do nothing; since we're never setting currently_held_node to Some(_) after the take(), this deletes the node
+                    } else {
+                        self.tab.currently_held_node = Some(node_data);
+                    }
                 }
-            }
 
-            Ok(NodeResults {
-                results: node_results_map,
-                dragged_node_slot,
-                hovered_node_slot,
-            })
-        });
+                Ok(NodeResults {
+                    results: node_results_map,
+                    dragged_node_slot,
+                    hovered_node_slot,
+                })
+            },
+        );
         ctx.ephemeral_state.tracks.insert(track_id, track_ephem);
         {
             let should_deselect_everything =

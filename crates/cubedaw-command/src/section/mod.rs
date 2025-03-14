@@ -19,7 +19,7 @@ impl SectionMove {
             new_start_pos,
         }
     }
-    pub fn different(
+    pub fn new(
         track_from: Id<Track>,
         track_to: Id<Track>,
         starting_range: Range,

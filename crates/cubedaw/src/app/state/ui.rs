@@ -4,6 +4,7 @@ use egui::Pos2;
 #[derive(Debug)]
 pub struct UiState {
     pub tracks: IdMap<Track, TrackUiState>,
+
     pub show_root_track: bool,
 
     pub playhead_pos: i64,
@@ -12,11 +13,21 @@ pub struct UiState {
 }
 
 mod private {
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    #[derive(Clone, Copy, Debug)]
     pub struct Private;
 }
 
 impl UiState {
+    pub(in crate::app) fn new() -> Self {
+        Self {
+            tracks: IdMap::new(),
+            show_root_track: false,
+
+            playhead_pos: 0,
+
+            _private: private::Private,
+        }
+    }
     pub fn get_single_selected_track(&self) -> Option<Id<cubedaw_lib::Track>> {
         let mut single_selected_track = None;
         for (track_id, track_ui_state) in &self.tracks {
@@ -31,19 +42,6 @@ impl UiState {
             }
         }
         single_selected_track
-    }
-}
-
-impl Default for UiState {
-    fn default() -> Self {
-        Self {
-            tracks: IdMap::new(),
-            show_root_track: false,
-
-            playhead_pos: 0,
-
-            _private: private::Private,
-        }
     }
 }
 

@@ -9,21 +9,23 @@
 #![feature(gen_blocks)]
 #![feature(coroutines)]
 #![feature(min_specialization)]
+#![feature(associated_type_defaults)]
 #![allow(clippy::new_without_default)] // useless, cubedaw isn't a library so default impls aren't necessary
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 pub mod app;
 mod screen;
+pub use app::{
+    context::{self, Context},
+    state::{self, ephemeral::EphemeralState, ui::UiState},
+    util,
+};
+
 pub use screen::Screen;
-mod context;
-pub use context::Context;
-mod state;
-pub mod tab;
-pub mod util;
-pub use state::{ephemeral::EphemeralState, ui::UiState};
 mod command;
 pub mod dbg;
 mod node;
+pub mod tab;
 pub use node::registry;
 pub use registry::NodeRegistry;
 mod widget;

@@ -15,6 +15,7 @@ use crate::{
     },
     context::UiStateTracker,
     state::ui::{SectionUiState, TrackUiState},
+    tab::track::Track2DPos,
     util::SelectionRect,
     widget::{SongViewer, SongViewerPrepared},
 };
@@ -32,19 +33,19 @@ pub struct PianoRollTab {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-struct PianoRollPos {
-    time: i64,
-    pitch: i32,
+pub struct Note2DPos {
+    pub time: i64,
+    pub pitch: i32,
 }
 #[derive(Debug, Default, Clone, Copy)]
-struct PianoRollOffset {
-    time: i64,
-    pitch: i32,
+pub struct Note2DOffset {
+    pub time: i64,
+    pub pitch: i32,
 }
-impl ops::Sub for PianoRollPos {
-    type Output = PianoRollOffset;
+impl ops::Sub for Note2DPos {
+    type Output = Note2DOffset;
     fn sub(self, rhs: Self) -> Self::Output {
-        PianoRollOffset {
+        Note2DOffset {
             time: self.time - rhs.time,
             pitch: self.pitch - rhs.pitch,
         }
@@ -226,7 +227,7 @@ struct Prepared<'ctx, 'arg> {
 
     view: &'arg SongViewerPrepared<'arg>,
     bg_response: Response,
-    snapped_hover_pos: Option<PianoRollPos>,
+    snapped_hover_pos: Option<Note2DPos>,
 
     ntspc: NoteToScreenPosCalculator,
 }
@@ -273,7 +274,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             tab_id: tab.id,
 
             view,
-            snapped_hover_pos: bg_response.hover_pos().map(|hover_pos| PianoRollPos {
+            snapped_hover_pos: bg_response.hover_pos().map(|hover_pos| Note2DPos {
                 time: view.input_screen_x_to_song_x(hover_pos.x),
                 pitch: ntspc.screen_y_to_note_y(hover_pos.y),
             }),
@@ -312,15 +313,23 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
         let mut rendered_sections: Vec<RenderedSection> = Vec::new();
 
-        let result = ctx.ephemeral_state.section_drag.handle_snapped(
-            |unsnapped| view.input_screen_x_to_song_x(unsnapped.x),
+        let result = ctx.ephemeral_state.section_drag.handle(
+            // strictly speaking we should use the current track's index instead of 0 but it doesn't matter anyways
+            |unsnapped| Track2DPos {
+                time: view.input_screen_x_to_song_x(unsnapped.x),
+                idx: 0,
+            },
             |prepared| {
+                if bg_response.clicked() {
+                    prepared.deselect_all();
+                }
+
                 for (section_range, section_id, section) in track.sections() {
                     let section_ui = track_ui.sections.force_get(section_id);
 
                     let section_range = if let Some(section_drag) = prepared.movement() {
                         if section_ui.selected {
-                            section_range + section_drag
+                            section_range + section_drag.time
                         } else {
                             section_range
                         }
@@ -424,56 +433,10 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                 }
             },
         );
-        {
-            let should_deselect_everything =
-                result.should_deselect_everything || bg_response.clicked();
-            let selection_changes = result.selection_changes;
-            if should_deselect_everything {
-                // only deselect the sections in this track
-                for (section_id2, section_ui) in &track_ui.sections {
-                    if section_ui.selected
-                        && selection_changes.get(&(track_id, section_id2)).copied() != Some(true)
-                    {
-                        ctx.tracker
-                            .add(UiSectionSelect::new(track_id, section_id2, false));
-                    }
-                }
-                for (&(track_id, section_id), &selected) in &selection_changes {
-                    if selected
-                        && !ctx
-                            .ui_state
-                            .tracks
-                            .get(track_id)
-                            .and_then(|t| t.sections.get(section_id))
-                            .is_some_and(|n| n.selected)
-                    {
-                        ctx.tracker
-                            .add(UiSectionSelect::new(track_id, section_id, true));
-                    }
-                }
-            } else {
-                for (&(track_id, section_id), &selected) in &selection_changes {
-                    ctx.tracker
-                        .add(UiSectionSelect::new(track_id, section_id, selected));
-                }
-            }
-            if let Some(finished_drag_offset) = result.movement {
-                for (section_range, section_id, _section) in track.sections() {
-                    let section_ui = track_ui.sections.force_get(section_id);
-                    if section_ui.selected {
-                        ctx.tracker.add(SectionMove::same(
-                            track_id,
-                            section_range,
-                            section_range.start + finished_drag_offset,
-                        ));
-                    }
-                }
-            }
-        }
 
         rendered_sections
     }
-    // TODO: yes clippy, this is too many arguments
+
     fn handle_note(
         &mut self,
         ui: &mut egui::Ui,
@@ -483,8 +446,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         prepared: &mut crate::util::Prepared<
             '_,
             (Id<Track>, Id<Section>, Id<Note>),
-            PianoRollPos,
-            impl Fn(Pos2) -> PianoRollPos,
+            impl Fn(Pos2) -> Note2DPos,
         >,
         relative_start_pos: i64,
         note: &Note,
@@ -500,7 +462,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             ..
         } = *self;
 
-        let PianoRollOffset {
+        let Note2DOffset {
             time: movement_time,
             pitch: movement_pitch,
         } = prepared.movement().unwrap_or_default();
@@ -578,8 +540,8 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             ..
         } = *self;
 
-        let result = ctx.ephemeral_state.note_drag.handle_snapped(
-            move |Pos2 { x, y }| PianoRollPos {
+        let result = ctx.ephemeral_state.note_drag.handle(
+            move |Pos2 { x, y }| Note2DPos {
                 time: view.input_screen_x_to_song_x(x),
                 pitch: ntspc.screen_y_to_note_y(y),
             },
@@ -741,7 +703,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             }
 
             // that little vertical line that shows you where the next note would be drawn
-            if let Some(PianoRollPos { time, mut pitch }) = snapped_hover_pos {
+            if let Some(Note2DPos { time, mut pitch }) = snapped_hover_pos {
                 if let Some((_, ref note)) = tab.currently_drawn_note {
                     pitch = note.pitch;
                 }

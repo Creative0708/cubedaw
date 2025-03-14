@@ -3,25 +3,35 @@ use std::{fmt::Debug, ops};
 use ahash::{HashMap, HashMapExt};
 use egui::{Pos2, Vec2};
 
+// the associated types are kinda messy but no way in hell am i adding _more_ generics to DragHandler
 pub trait SelectablePath: Sized + std::hash::Hash + Eq + PartialEq + 'static {
     type Id: Debug + Clone + Copy;
+    type Pos: ops::Sub<Self::Pos>;
 }
+// what is this, typescript?
+type Diff<T: SelectablePath> = <T::Pos as ops::Sub<T::Pos>>::Output;
+
 mod impls {
     use super::SelectablePath;
     use cubedaw_lib::{Id, Node, Note, Section, Track};
+    use egui::Pos2;
 
     impl SelectablePath for (Id<Track>, Id<Section>, Id<Note>) {
         type Id = Id<Note>;
+        type Pos = crate::tab::pianoroll::Note2DPos;
     }
     impl SelectablePath for (Id<Track>, Id<Section>) {
         type Id = Id<Section>;
+        type Pos = crate::tab::track::Track2DPos;
     }
     impl SelectablePath for Id<Track> {
         type Id = Id<Track>;
+        type Pos = Pos2;
     }
-    /// DragHandler<Id<Node>>s are per-track and thus don't need the track id
+    // DragHandler<Id<Node>>s are per-track and thus don't need the track id
     impl SelectablePath for Id<Node> {
         type Id = Id<Track>;
+        type Pos = Pos2;
     }
 }
 
@@ -36,20 +46,12 @@ pub struct DraggedData<T: SelectablePath> {
 
     raw_start_pos: Pos2,
     raw_current_pos: Pos2,
-
-    state: DraggedDataState,
-}
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum DraggedDataState {
-    Dragging,
-    /// The `DraggedData` finished the frame. If we immediately reset the `DragHandler` after we finish, the tabs that render after this tab will observe the unmodified state (because the commands haven't been processed yet) for a single frame, which looks, in scientific terms, "stupid as hell". So hold the `dragged_data` as `Some(_)` until the frame ends.
-    Finished,
 }
 impl<T: SelectablePath> DraggedData<T> {
     fn raw_movement(&self) -> Vec2 {
         self.raw_current_pos - self.raw_start_pos
     }
-    fn snapped_movement<M: ops::Sub<M>>(&self, snap_fn: impl Fn(Pos2) -> M) -> M::Output {
+    fn snapped_movement(&self, snap_fn: impl Fn(Pos2) -> T::Pos) -> Diff<T> {
         snap_fn(self.raw_current_pos) - snap_fn(self.raw_start_pos)
     }
 }
@@ -78,31 +80,22 @@ impl<T: SelectablePath> DragHandler<T> {
     pub fn raw_movement(&self) -> Option<Vec2> {
         self.dragged_data.as_ref().map(|data| data.raw_movement())
     }
-    pub fn snapped_movement<M: ops::Sub<M>>(
-        &self,
-        snap_fn: impl Fn(Pos2) -> M,
-    ) -> Option<M::Output> {
+    pub fn snapped_movement(&self, snap_fn: impl Fn(Pos2) -> T::Pos) -> Option<Diff<T>> {
         self.dragged_data
             .as_ref()
             .map(|data| data.snapped_movement(snap_fn))
     }
 
-    pub fn handle<R>(
-        &mut self,
-        f: impl FnOnce(&mut Prepared<T, Pos2, fn(Pos2) -> Pos2>) -> R,
-    ) -> DragHandlerResult<T, Vec2, R> {
-        self.handle_snapped::<R, Pos2, fn(Pos2) -> Pos2>(|x| x, f)
-    }
-    pub fn handle_snapped<R, P: ops::Sub<P>, F: Fn(Pos2) -> P>(
+    pub fn handle<F: Fn(Pos2) -> T::Pos, R>(
         &mut self,
         snap_fn: F,
-        f: impl FnOnce(&mut Prepared<T, P, F>) -> R,
-    ) -> DragHandlerResult<T, P::Output, R> {
+        f: impl FnOnce(&mut Prepared<T, F>) -> R,
+    ) -> R {
         let mut prepared = Prepared {
             handler: self,
             selection_changes: HashMap::new(),
             should_deselect_everything: false,
-            finished_movement: None,
+            movement_when_drag_stopped: None,
             new_drag_movement: None,
             canceled: false,
             snap_fn,
@@ -113,10 +106,7 @@ impl<T: SelectablePath> DragHandler<T> {
         prepared.end().with_inner(result).1
     }
 
-    pub fn on_frame_end(&mut self) {
-        self.dragged_data
-            .take_if(|data| data.state == DraggedDataState::Finished);
-    }
+    pub fn on_frame_end(&mut self) -> DragHandlerResult<T> {}
 }
 
 impl<T: SelectablePath> Default for DragHandler<T> {
@@ -125,23 +115,18 @@ impl<T: SelectablePath> Default for DragHandler<T> {
     }
 }
 
-pub struct Prepared<
-    'drag,
-    T: SelectablePath,
-    M: ops::Sub<M> = Pos2,
-    F: Fn(Pos2) -> M = fn(Pos2) -> M,
-> {
+pub struct Prepared<'drag, T: SelectablePath, F: Fn(Pos2) -> T::Pos> {
     handler: &'drag mut DragHandler<T>,
     // HashMap<changed path, whether it is selected>
     selection_changes: HashMap<T, bool>,
     should_deselect_everything: bool,
-    finished_movement: Option<M::Output>,
+    movement_when_drag_stopped: Option<Diff<T>>,
     new_drag_movement: Option<Vec2>,
     canceled: bool,
     snap_fn: F,
 }
 
-impl<T: SelectablePath, P: ops::Sub<P>, F: Fn(Pos2) -> P> Prepared<'_, T, P, F> {
+impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
     pub fn dragged_thing(&self) -> Option<T::Id> {
         self.handler.dragged_id()
     }
@@ -151,8 +136,12 @@ impl<T: SelectablePath, P: ops::Sub<P>, F: Fn(Pos2) -> P> Prepared<'_, T, P, F> 
     pub fn raw_movement(&self) -> Option<Vec2> {
         self.handler.raw_movement()
     }
-    pub fn movement(&self) -> Option<P::Output> {
+    pub fn movement(&self) -> Option<Diff<T>> {
         self.handler.snapped_movement(&self.snap_fn)
+    }
+
+    pub fn deselect_all(&mut self) {
+        self.should_deselect_everything = true;
     }
 
     pub fn process_interaction(
@@ -191,52 +180,32 @@ impl<T: SelectablePath, P: ops::Sub<P>, F: Fn(Pos2) -> P> Prepared<'_, T, P, F> 
         if resp.drag_stopped()
             && let Some(ref data) = self.handler.dragged_data
         {
-            self.finished_movement = Some(data.snapped_movement(&self.snap_fn));
+            self.movement_when_drag_stopped = Some(data.snapped_movement(&self.snap_fn));
         }
     }
 
-    fn end(self) -> DragHandlerResult<T, P::Output, ()> {
+    pub fn end(self) -> DragHandlerResult<T> {
         if let (Some(new_drag_movement), Some(data)) =
             (self.new_drag_movement, &mut self.handler.dragged_data)
         {
             data.raw_current_pos += new_drag_movement;
         }
 
-        if self.finished_movement.is_some() || self.canceled {
+        if self.movement_when_drag_stopped.is_some() || self.canceled {
             self.handler.reset();
         }
 
         DragHandlerResult {
-            movement: self.finished_movement,
+            movement: self.movement_when_drag_stopped,
             should_deselect_everything: self.should_deselect_everything,
             selection_changes: self.selection_changes,
-            inner: (),
         }
     }
 }
 
 #[must_use = "You should handle this"]
-pub struct DragHandlerResult<T: SelectablePath, M, R> {
-    pub movement: Option<M>,
+pub struct DragHandlerResult<T: SelectablePath> {
+    pub movement: Option<Diff<T>>,
     pub should_deselect_everything: bool,
     pub selection_changes: HashMap<T, bool>,
-    pub inner: R,
-}
-
-impl<T: SelectablePath, M, R> DragHandlerResult<T, M, R> {
-    fn with_inner<S>(self, new_inner: S) -> (R, DragHandlerResult<T, M, S>) {
-        let Self {
-            movement,
-            should_deselect_everything,
-            selection_changes,
-            inner,
-        } = self;
-
-        (inner, DragHandlerResult {
-            movement,
-            should_deselect_everything,
-            selection_changes,
-            inner: new_inner,
-        })
-    }
 }

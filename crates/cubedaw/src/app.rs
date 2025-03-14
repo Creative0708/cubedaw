@@ -8,9 +8,12 @@ use egui_dock::{DockArea, DockState};
 use crate::{
     Context, Screen,
     command::{UiStateCommand, UiStateCommandWrapper},
-    context::DockEvent,
     node,
 };
+
+pub mod context;
+pub mod state;
+pub mod util;
 
 /// `eframe`-compatible app for cubedaw.
 ///
@@ -45,9 +48,9 @@ impl CubedawApp {
     pub fn new(creation_context: &eframe::CreationContext) -> Self {
         let mut app = {
             let mut state = cubedaw_lib::State::default();
-            let mut ui_state = crate::UiState::default();
+            let mut ui_state = crate::UiState::new();
             ui_state.show_root_track = true;
-            let mut ephemeral_state = crate::EphemeralState::default();
+            let mut ephemeral_state = crate::EphemeralState::new();
 
             fn execute(
                 mut command: impl UiStateCommand,
@@ -143,6 +146,8 @@ impl CubedawApp {
     }
 
     fn ctx_finished(&mut self, result: crate::context::ContextResult, egui_ctx: &egui::Context) {
+        use context::DockEvent;
+
         for event in result.dock_events {
             match event {
                 DockEvent::AddTabToDockState(tab_id) => {
@@ -299,6 +304,7 @@ impl eframe::App for CubedawApp {
             })
             .inner;
 
+        // after the tab rendering, do all the other stuff not related to any tabs
         let result = ctx.finish();
         if !result.tracker.commands.is_empty() {
             egui_ctx.request_repaint();
@@ -380,7 +386,6 @@ impl eframe::App for CubedawApp {
         }
 
         // final stuff
-        self.ephemeral_state.on_frame_end();
         if self.worker_host.is_playing() {
             egui_ctx.request_repaint();
         }

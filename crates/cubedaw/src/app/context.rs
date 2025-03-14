@@ -47,7 +47,7 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(super) fn new(
         state: &'a State,
         ui_state: &'a UiState,
         ephemeral_state: &'a mut EphemeralState,
@@ -96,8 +96,9 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn finish(self) -> ContextResult {
-        self.ephemeral_state.selection_rect.finish();
+    pub fn finish(mut self) -> ContextResult {
+        self.ephemeral_state
+            .on_frame_end(self.state, self.ui_state, &mut self.tracker);
         ContextResult {
             dock_events: core::mem::take(&mut self.tabs.dock_events),
             tracker: self.tracker.finish(),
