@@ -1,7 +1,3 @@
-# multivalue does nothing in the latest versions of rustc
-# so we have to use an old version that supports it.
-# this is also why you see really old dependencies in postcard-stringify in the like.
-# but it works and until rust's C abi gets updated to include multivalue
-# this is what we gotta do
+# multivalue does nothing in the latest versions of rustc so we have to use an old version that supports it. this is also why you see really old dependencies in postcard-stringify and the like. but it works and until rust's C abi gets updated to include multivalue this is what we gotta do
 [toolchain]
 channel = "nightly-2024-04-01"

@@ -207,20 +207,16 @@ impl WorkerLiveNoteState {
 
 #[cfg(test)]
 mod tests {
-    use cubedaw_lib::{Patch, Track};
 
     use crate::WorkerOptions;
 
     use super::WorkerTrackState;
 
     #[test]
-    fn test_empty_functions() {
+    fn test_empty() {
         let options = WorkerOptions::new(Default::default());
 
-        {
-            let track = Track::new(Patch::new());
-            WorkerTrackState::empty(&track, &options);
-        }
+        WorkerTrackState::empty(&options);
     }
 }
 

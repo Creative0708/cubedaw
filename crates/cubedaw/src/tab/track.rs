@@ -516,10 +516,12 @@ impl<'ctx> Prepared<'ctx> {
                     time: view.input_screen_x_to_song_x(x),
                     idx: {
                         if let Some((idx, _)) = track_list.entry_at_y(y) {
+                            dbg!(idx);
                             idx.try_into().unwrap()
                         } else {
                             // assume there are tracks of a certain height above and below the actual list
                             let track_height = DEFAULT_TRACK_HEIGHT;
+                            dbg!(y, track_list.top);
                             if y < track_list.top {
                                 ((y - track_list.top) / track_height).floor() as i32
                             } else {

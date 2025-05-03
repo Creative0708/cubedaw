@@ -151,9 +151,10 @@ impl EphemeralState {
                         let Some(curr_idx) = track_list.iter().position(|&i| i == track_id) else {
                             continue;
                         };
+                        dbg!(finished_drag_offset);
                         let new_idx = curr_idx
-                            .wrapping_add_signed(finished_drag_offset.idx as isize)
-                            .min(track_list.len());
+                            .saturating_add_signed(finished_drag_offset.idx as isize)
+                            .min(track_list.len() - 1);
 
                         track_list[new_idx]
                     };
