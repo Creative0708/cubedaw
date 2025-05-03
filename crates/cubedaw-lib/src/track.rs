@@ -2,15 +2,15 @@ use std::collections::BTreeMap;
 
 use ahash::HashSetExt;
 
-use crate::{Id, IdMap, IdSet, Patch, Range, Section};
+use crate::{Clip, Id, IdMap, IdSet, Patch, Range};
 
 #[derive(Debug, Clone)]
 pub struct Track {
     pub patch: Patch,
 
     polyphony: u32,
-    section_map: IdMap<Section>,
-    sections: BTreeMap<Range, Id<Section>>,
+    clip_map: IdMap<Clip>,
+    clips: BTreeMap<Range, Id<Clip>>,
 
     pub children: IdSet<Track>,
 }
@@ -21,8 +21,8 @@ impl Track {
             patch,
             polyphony: 32,
 
-            section_map: Default::default(),
-            sections: Default::default(),
+            clip_map: Default::default(),
+            clips: Default::default(),
 
             children: IdSet::new(),
         }
@@ -32,11 +32,11 @@ impl Track {
         // TODO change to map_windows when it's stabilized
 
         let mut prev_range = None;
-        for &range in self.sections.keys() {
+        for &range in self.clips.keys() {
             if let Some(prev_range) = prev_range {
                 if range.intersects(prev_range) {
                     panic!(
-                        "Section of range {range:?} would overlap with other section of range {prev_range:?}"
+                        "Clip of range {range:?} would overlap with other clip of range {prev_range:?}"
                     );
                 }
             }
@@ -47,12 +47,12 @@ impl Track {
     pub fn check_overlap_with(&self, range: Range) {
         // mmm function chaining
         if let Some(overlapping_range) = self
-            .sections
+            .clips
             .range(range..)
             .next()
             .and_then(|(&other_range, _)| (other_range.start < range.end).then_some(other_range))
             .or_else(|| {
-                self.sections
+                self.clips
                     .range(..range)
                     .next_back()
                     .and_then(|(&other_range, _)| {
@@ -60,91 +60,81 @@ impl Track {
                     })
             })
         {
-            panic!(
-                "Range {range:?} would overlap with other section of range {overlapping_range:?}"
-            );
+            panic!("Range {range:?} would overlap with other clip of range {overlapping_range:?}");
         }
     }
 
-    pub fn add_section(
-        &mut self,
-        section_id: Id<Section>,
-        start_pos: i64,
-        section: Section,
-    ) -> &mut Section {
-        let section_range = Range::from_start_length(start_pos, section.length);
-        self.check_overlap_with(section_range);
+    pub fn add_clip(&mut self, clip_id: Id<Clip>, start_pos: i64, clip: Clip) -> &mut Clip {
+        let clip_range = Range::from_start_length(start_pos, clip.length);
+        self.check_overlap_with(clip_range);
 
-        let section = self.section_map.insert_and_get_mut(section_id, section);
-        self.sections.insert(section_range, section_id);
-        section
+        let clip = self.clip_map.insert_and_get_mut(clip_id, clip);
+        self.clips.insert(clip_range, clip_id);
+        clip
     }
 
-    pub fn remove_section(&mut self, section_id: Id<Section>, start_pos: i64) -> Section {
-        let section = self.section_map.take(section_id);
+    pub fn remove_clip(&mut self, clip_id: Id<Clip>, start_pos: i64) -> Clip {
+        let clip = self.clip_map.take(clip_id);
         let removed = self
-            .sections
-            .remove(&Range::from_start_length(start_pos, section.length));
+            .clips
+            .remove(&Range::from_start_length(start_pos, clip.length));
         assert_eq!(
             removed,
-            Some(section_id),
-            "section id in track internal map doesn't match removed id"
+            Some(clip_id),
+            "clip id in track internal map doesn't match removed id"
         );
-        section
+        clip
     }
-    pub fn remove_section_from_range(&mut self, section_range: Range) -> (Id<Section>, Section) {
-        let section_id = self
-            .sections
-            .remove(&section_range)
-            .expect("section range does not exist");
-        let section = self.section_map.take(section_id);
-        (section_id, section)
+    pub fn remove_clip_from_range(&mut self, clip_range: Range) -> (Id<Clip>, Clip) {
+        let clip_id = self
+            .clips
+            .remove(&clip_range)
+            .expect("clip range does not exist");
+        let clip = self.clip_map.take(clip_id);
+        (clip_id, clip)
     }
 
-    pub fn move_section(&mut self, section_range: Range, new_start_pos: i64) {
-        let Some(section_id) = self.sections.remove(&section_range) else {
-            panic!("Track::move_section was given nonexistent Section: {section_range:?}");
+    pub fn move_clip(&mut self, clip_range: Range, new_start_pos: i64) {
+        let Some(clip_id) = self.clips.remove(&clip_range) else {
+            panic!("Track::move_clip was given nonexistent Clip: {clip_range:?}");
         };
 
-        let new_range = section_range + (new_start_pos - section_range.start);
+        let new_range = clip_range + (new_start_pos - clip_range.start);
         self.check_overlap_with(new_range);
 
-        self.sections.insert(new_range, section_id);
+        self.clips.insert(new_range, clip_id);
     }
 
-    pub fn section_at(&self, pos: i64) -> Option<(Range, Id<Section>)> {
-        self.sections
+    pub fn clip_at(&self, pos: i64) -> Option<(Range, Id<Clip>)> {
+        self.clips
             .range(..Range::unbounded_end(pos))
             .next_back()
             .and_then(|(&range, &id)| range.contains(pos).then_some((range, id)))
     }
 
-    pub fn sections_intersecting(
-        &self,
-        range: Range,
-    ) -> impl '_ + Iterator<Item = (Range, Id<Section>)> {
+    pub fn clips_intersecting(&self, range: Range) -> impl '_ + Iterator<Item = (Range, Id<Clip>)> {
         // there doesn't seem to be a way to step before the start of an iterator like in C++. so we just bite the extra range call
-        let possible_first_section = self.section_at(range.start);
-        let other_sections = self
-            .sections
+        let possible_first_clip = self.clip_at(range.start);
+        let other_clips = self
+            .clips
             .range(Range::unbounded_end(range.start)..Range::unbounded_end(range.end))
             .map(|(&range, &id)| (range, id));
-        possible_first_section.into_iter().chain(other_sections)
+        possible_first_clip.into_iter().chain(other_clips)
     }
 
-    pub fn section(&self, id: Id<Section>) -> Option<&Section> {
-        self.section_map.get(id)
+    pub fn clip(&self, id: Id<Clip>) -> Option<&Clip> {
+        self.clip_map.get(id)
     }
-    pub fn section_mut(&mut self, id: Id<Section>) -> Option<&mut Section> {
-        self.section_map.get_mut(id)
+    pub fn clip_mut(&mut self, id: Id<Clip>) -> Option<&mut Clip> {
+        self.clip_map.get_mut(id)
     }
 
-    pub fn sections(&self) -> impl Iterator<Item = (Range, Id<Section>, &Section)> {
-        self.sections.iter().map(|(&range, &id)| {
+    pub fn clips(&self) -> impl Iterator<Item = (Range, Id<Clip>, &Clip)> {
+        self.clips.iter().map(|(&range, &id)| {
             (
                 range,
                 id,
-                self.section_map.get(id).unwrap_or_else(|| unreachable!()),
+                self.clip_map.get(id).unwrap_or_else(|| unreachable!()),
             )
         })
     }

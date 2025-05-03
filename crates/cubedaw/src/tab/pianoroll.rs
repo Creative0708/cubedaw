@@ -1,7 +1,7 @@
 use std::ops;
 
 use anyhow::Result;
-use cubedaw_lib::{Id, Note, Range, Section, Track};
+use cubedaw_lib::{Clip, Id, Note, Range, Track};
 use egui::{
     Color32, CornerRadius, CursorIcon, Pos2, Rangef, Rect, Response, Stroke, StrokeKind, pos2, vec2,
 };
@@ -9,11 +9,11 @@ use egui::{
 use crate::{
     app::Tab,
     command::{
+        clip::UiClipAddOrRemove,
         note::{UiNoteAddOrRemove, UiNoteSelect},
-        section::UiSectionAddOrRemove,
     },
     context::UiStateTracker,
-    state::ui::{SectionUiState, TrackUiState},
+    state::ui::{ClipUiState, TrackUiState},
     tab::track::Track2DPos,
     util::{Select, SelectionRect},
     widget::{SongViewer, SongViewerPrepared},
@@ -81,8 +81,8 @@ impl crate::Screen for PianoRollTab {
             SongViewer::new().ui(ctx, ui, |ctx, ui, view| {
                 match Prepared::start(ui, ctx, view, self) {
                     Some(mut prepared) => {
-                        let rendered_sections = prepared.handle_sections(ui, ctx);
-                        prepared.handle_notes(ui, ctx, self, &rendered_sections);
+                        let rendered_clips = prepared.handle_clips(ui, ctx);
+                        prepared.handle_notes(ui, ctx, self, &rendered_clips);
                         prepared.handle_drawn_note(ui, ctx, self);
                     }
                     None => {
@@ -107,12 +107,12 @@ impl PianoRollTab {
     }
 }
 
-// Sections
-struct RenderedSection<'a> {
-    id: Id<Section>,
+// Clips
+struct RenderedClip<'a> {
+    id: Id<Clip>,
     range: Range,
-    state: &'a Section,
-    ui_state: &'a SectionUiState,
+    state: &'a Clip,
+    ui_state: &'a ClipUiState,
 }
 
 struct Prepared<'ctx, 'arg> {
@@ -183,11 +183,11 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         self.ntspc.units_per_pitch
     }
 
-    fn handle_sections(
+    fn handle_clips(
         &mut self,
         ui: &mut egui::Ui,
         ctx: &mut crate::Context,
-    ) -> Vec<RenderedSection<'ctx>> {
+    ) -> Vec<RenderedClip<'ctx>> {
         let Self {
             track_id,
             track,
@@ -204,12 +204,12 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             ..
         } = *view;
 
-        // TODO implement section colors
+        // TODO implement clip colors
         const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
 
-        let mut rendered_sections: Vec<RenderedSection> = Vec::new();
+        let mut rendered_clips: Vec<RenderedClip> = Vec::new();
 
-        ctx.ephemeral_state.section_drag.handle(
+        ctx.ephemeral_state.clip_drag.handle(
             // strictly speaking we should use the current track's index instead of 0 but it doesn't matter anyways
             |unsnapped| Track2DPos {
                 time: view.input_screen_x_to_song_x(unsnapped.x),
@@ -220,32 +220,32 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     prepared.deselect_all();
                 }
 
-                for (section_range, section_id, section) in track.sections() {
-                    let section_ui = track_ui.sections.force_get(section_id);
+                for (clip_range, clip_id, clip) in track.clips() {
+                    let clip_ui = track_ui.clips.force_get(clip_id);
 
-                    let section_range = if let Some(section_drag) = prepared.movement() {
-                        match section_ui.select {
-                            Select::Select => section_range + section_drag.time,
-                            Select::Deselect => section_range,
+                    let clip_range = if let Some(clip_drag) = prepared.movement() {
+                        match clip_ui.select {
+                            Select::Select => clip_range + clip_drag.time,
+                            Select::Deselect => clip_range,
                         }
                     } else {
-                        section_range
+                        clip_range
                     };
 
-                    if prepared.dragged_thing() != Some(section_id.cast())
-                        && !song_view_range.intersects(section_range)
+                    if prepared.dragged_thing() != Some(clip_id.cast())
+                        && !song_view_range.intersects(clip_range)
                     {
                         continue;
                     }
 
-                    let section_screen_range_x = view.song_range_to_screen_range(section_range);
+                    let clip_screen_range_x = view.song_range_to_screen_range(clip_range);
 
                     let header_rect = Rect::from_x_y_ranges(
-                        section_screen_range_x.expand(1.0),
+                        clip_screen_range_x.expand(1.0),
                         top_bar_rect.y_range(),
                     );
 
-                    let is_effectively_selected = section_ui.select.is()
+                    let is_effectively_selected = clip_ui.select.is()
                         || ctx
                             .ephemeral_state
                             .selection_rect
@@ -275,7 +275,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     ui.painter().text(
                         pos2(header_rect.left() + padding, header_rect.top() + padding),
                         egui::Align2::LEFT_CENTER,
-                        &section.name,
+                        &clip.name,
                         egui::FontId::proportional(12.0),
                         if is_effectively_selected {
                             &ui.visuals().widgets.hovered
@@ -289,48 +289,42 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
                     }
                     prepared.process_interaction(
-                        section_id.cast(),
+                        clip_id.cast(),
                         &header_resp,
-                        (track_id, section_id),
-                        section_ui.select,
+                        (track_id, clip_id),
+                        clip_ui.select,
                     );
 
-                    let section_stroke = egui::Stroke::new(
+                    let clip_stroke = egui::Stroke::new(
                         2.0,
                         SECTION_COLOR
                             .gamma_multiply(0.5 * if is_effectively_selected { 1.5 } else { 1.0 }),
                     );
 
-                    let section_screen_range_x = view.song_range_to_screen_range(section_range);
+                    let clip_screen_range_x = view.song_range_to_screen_range(clip_range);
 
                     ui.painter().rect_filled(
-                        Rect::from_x_y_ranges(section_screen_range_x, screen_rect.y_range()),
+                        Rect::from_x_y_ranges(clip_screen_range_x, screen_rect.y_range()),
                         CornerRadius::ZERO,
                         SECTION_COLOR
                             .gamma_multiply(0.2 * if is_effectively_selected { 1.5 } else { 1.0 }),
                     );
-                    ui.painter().vline(
-                        section_screen_range_x.min,
-                        screen_rect.y_range(),
-                        section_stroke,
-                    );
-                    ui.painter().vline(
-                        section_screen_range_x.max,
-                        screen_rect.y_range(),
-                        section_stroke,
-                    );
+                    ui.painter()
+                        .vline(clip_screen_range_x.min, screen_rect.y_range(), clip_stroke);
+                    ui.painter()
+                        .vline(clip_screen_range_x.max, screen_rect.y_range(), clip_stroke);
 
-                    rendered_sections.push(RenderedSection {
-                        id: section_id,
-                        range: section_range,
-                        state: section,
-                        ui_state: section_ui,
+                    rendered_clips.push(RenderedClip {
+                        id: clip_id,
+                        range: clip_range,
+                        state: clip,
+                        ui_state: clip_ui,
                     });
                 }
             },
         );
 
-        rendered_sections
+        rendered_clips
     }
 
     fn handle_note(
@@ -340,12 +334,12 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         tracker: &mut UiStateTracker,
 
         prepared: &mut crate::util::Prepared<
-            (Id<Track>, Id<Section>, Id<Note>),
+            (Id<Track>, Id<Clip>, Id<Note>),
             impl Fn(Pos2) -> Note2DPos,
         >,
         relative_start_pos: i64,
         note: &Note,
-        note_path: Option<(Id<Section>, Id<Note>)>,
+        note_path: Option<(Id<Clip>, Id<Note>)>,
         select: Select,
     ) {
         let Self {
@@ -392,10 +386,10 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             .released_rect(tab_id)
             .is_some_and(|rect| rect.intersects(note_rect))
         {
-            if let Some((section_id, note_id)) = note_path {
+            if let Some((clip_id, note_id)) = note_path {
                 tracker.add(UiNoteSelect::new(
                     track_id,
-                    section_id,
+                    clip_id,
                     note_id,
                     Select::Select,
                 ));
@@ -403,7 +397,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         }
 
         // if the note actually exists (it's not the currently drawn note)
-        if let Some((section_id, note_id)) = note_path {
+        if let Some((clip_id, note_id)) = note_path {
             // let ui_data = ctx.ui_state.notes.get(note_id);
 
             const STRETCH_AREA_WIDTH: f32 = 4.0;
@@ -419,7 +413,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             prepared.process_interaction(
                 note_id.cast(),
                 &note_interaction,
-                (track_id, section_id, note_id),
+                (track_id, clip_id, note_id),
                 select,
             );
         }
@@ -429,7 +423,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         ui: &mut egui::Ui,
         ctx: &mut crate::Context,
         tab: &mut PianoRollTab,
-        rendered_sections: &[RenderedSection],
+        rendered_clips: &[RenderedClip],
     ) {
         let Self { view, ntspc, .. } = *self;
 
@@ -443,15 +437,15 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                     prepared.deselect_all();
                 }
 
-                for &RenderedSection {
-                    id: section_id,
+                for &RenderedClip {
+                    id: clip_id,
                     range,
-                    state: section,
-                    ui_state: section_ui,
-                } in rendered_sections
+                    state: clip,
+                    ui_state: clip_ui,
+                } in rendered_clips
                 {
                     // Notes
-                    for (note_start, note_id, note) in section.notes() {
+                    for (note_start, note_id, note) in clip.notes() {
                         self.handle_note(
                             ui,
                             &mut ctx.ephemeral_state.selection_rect,
@@ -459,8 +453,8 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                             prepared,
                             range.start + note_start,
                             note,
-                            Some((section_id, note_id)),
-                            section_ui.notes.force_get(note_id).select,
+                            Some((clip_id, note_id)),
+                            clip_ui.notes.force_get(note_id).select,
                         );
                     }
                 }
@@ -505,28 +499,27 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             }
             if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
                 if let Some((start_pos, note)) = tab.currently_drawn_note.take() {
-                    let (section_range, section_id) = match track.section_at(start_pos) {
+                    let (clip_range, clip_id) = match track.clip_at(start_pos) {
                         Some(data) => data,
                         None => {
-                            let section_id = Id::arbitrary();
-                            let section_range = Range::surrounding_pos(start_pos);
-                            let section =
-                                Section::empty("New Section".into(), section_range.length() as _);
-                            track.check_overlap_with(section_range);
-                            ctx.tracker.add(UiSectionAddOrRemove::addition(
-                                section_id,
-                                section_range.start,
-                                section,
+                            let clip_id = Id::arbitrary();
+                            let clip_range = Range::surrounding_pos(start_pos);
+                            let clip = Clip::empty("New Clip".into(), clip_range.length() as _);
+                            track.check_overlap_with(clip_range);
+                            ctx.tracker.add(UiClipAddOrRemove::addition(
+                                clip_id,
+                                clip_range.start,
+                                clip,
                                 track_id,
                             ));
-                            (section_range, section_id)
+                            (clip_range, clip_id)
                         }
                     };
                     ctx.tracker.add(UiNoteAddOrRemove::addition(
                         Id::arbitrary(),
                         track_id,
-                        section_id,
-                        start_pos - section_range.start,
+                        clip_id,
+                        start_pos - clip_range.start,
                         note,
                     ));
                 }

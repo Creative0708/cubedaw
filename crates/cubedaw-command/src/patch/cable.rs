@@ -50,7 +50,7 @@ impl CableAddOrRemove {
         state
             .tracks
             .get_mut(self.track_id)
-            .expect("tried to add node to nonexistent section")
+            .expect("tried to add node to nonexistent clip")
             .patch
             .insert_cable(self.id, cable, conn);
     }
@@ -58,7 +58,7 @@ impl CableAddOrRemove {
         let cable_data = state
             .tracks
             .get_mut(self.track_id)
-            .expect("tried to remove node from nonexistent section")
+            .expect("tried to remove node from nonexistent clip")
             .patch
             .take_cable(self.id);
 

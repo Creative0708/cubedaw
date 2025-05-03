@@ -5,8 +5,8 @@ use meminterval::IntervalTree;
 use crate::{Id, IdMap, Note, Range};
 
 #[derive(Clone, Debug)]
-/// A section on a track, independent of a start position
-pub struct Section {
+/// A clip on a track, independent of a start position
+pub struct Clip {
     pub name: String,
     pub length: u64,
 
@@ -16,7 +16,7 @@ pub struct Section {
     notes_start_position: BTreeSet<(i64, Id<Note>)>,
 }
 
-impl Section {
+impl Clip {
     pub fn empty(name: String, length: u64) -> Self {
         Self {
             name,

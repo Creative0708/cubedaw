@@ -449,7 +449,7 @@ impl<'ctx> Prepared<'ctx> {
         });
     }
 
-    /// The non-track header area region thing. The place where you can see all sections.
+    /// The non-track header area region thing. The place where you can see all clips.
     fn central_panel(
         &mut self,
         ui: &mut egui::Ui,
@@ -510,8 +510,8 @@ impl<'ctx> Prepared<'ctx> {
                 );
             }
 
-            // sections
-            ctx.ephemeral_state.section_drag.handle(
+            // clips
+            ctx.ephemeral_state.clip_drag.handle(
                 |Pos2 { x, y }| Track2DPos {
                     time: view.input_screen_x_to_song_x(x),
                     idx: {
@@ -538,16 +538,16 @@ impl<'ctx> Prepared<'ctx> {
                     let track_id = track_entry.track_id;
                     let track = track_entry.track;
 
-                    for (section_range, section_id, _section) in track.sections() {
-                        let section_ui = track_entry.track_ui.sections.force_get(section_id);
+                    for (clip_range, clip_id, _clip) in track.clips() {
+                        let clip_ui = track_entry.track_ui.clips.force_get(clip_id);
 
-                        let mut section_range = section_range;
+                        let mut clip_range = clip_range;
                         let mut track_entry = track_entry;
 
-                        if drag.would_be_dragged(section_ui.select)
+                        if drag.would_be_dragged(clip_ui.select)
                             && let Some(movement) = drag.movement()
                         {
-                            section_range += movement.time;
+                            clip_range += movement.time;
                             if movement.idx != 0 {
                                 track_entry = &track_list.list[track_entry_index
                                     .saturating_add_signed(movement.idx as isize)
@@ -555,16 +555,16 @@ impl<'ctx> Prepared<'ctx> {
                             }
                         }
 
-                        let section_rect = track_pos_to_screen_pos(section_range, track_entry);
-                        let section_response = ui
-                            .allocate_rect(section_rect, Sense::click_and_drag())
+                        let clip_rect = track_pos_to_screen_pos(clip_range, track_entry);
+                        let clip_response = ui
+                            .allocate_rect(clip_rect, Sense::click_and_drag())
                             .on_hover_cursor(CursorIcon::Grab);
 
                         const SECTION_COLOR: Color32 = Color32::from_rgb(145, 0, 235);
                         ui.painter().rect(
-                            section_rect,
+                            clip_rect,
                             4.0,
-                            match section_ui.select {
+                            match clip_ui.select {
                                 Select::Select => SECTION_COLOR.gamma_multiply(0.7),
                                 Select::Deselect => SECTION_COLOR.gamma_multiply(0.5),
                             },
@@ -573,10 +573,10 @@ impl<'ctx> Prepared<'ctx> {
                         );
 
                         drag.process_interaction(
-                            section_id.cast(),
-                            &section_response,
-                            (track_id, section_id),
-                            section_ui.select,
+                            clip_id.cast(),
+                            &clip_response,
+                            (track_id, clip_id),
+                            clip_ui.select,
                         );
                     }
                 },

@@ -4,11 +4,11 @@ use std::any::TypeId;
 
 use cubedaw_lib::State;
 
+pub mod clip;
 pub mod misc;
 pub mod node;
 pub mod note;
 pub mod patch;
-pub mod section;
 pub mod track;
 mod wrapper;
 pub use wrapper::DontMerge;

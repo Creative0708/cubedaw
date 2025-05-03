@@ -638,9 +638,9 @@ pub enum NodeTag {
     #[default]
     /// The node is disconnected from the rest of the patch and doesn't contribute anything.
     Disconnected,
-    /// The node is part of the per-note node graph. This only applies to section tracks.
+    /// The node is part of the per-note node graph. This only applies to clip tracks.
     Note,
-    /// The node is part of the per-track node graph. This applies to both section and group tracks.
+    /// The node is part of the per-track node graph. This applies to both clip and group tracks.
     Track,
     /// The node is a special node! i.e. it's a note output, track input, or track output node.
     Special,

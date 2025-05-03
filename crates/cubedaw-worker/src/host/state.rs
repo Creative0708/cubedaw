@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cubedaw_lib::{Buffer, Id, IdMap, Node, Note, Patch, Section, State, Track};
+use cubedaw_lib::{Buffer, Clip, Id, IdMap, Node, Note, Patch, State, Track};
 
 use crate::{
     WorkerOptions,
@@ -48,10 +48,10 @@ impl WorkerHostState {
         for (track_id, worker_track_data) in &mut self.tracks {
             match state.tracks.get(track_id) {
                 Some(track) => {
-                    for (note_id, WorkerNoteState { section_id, .. }) in &worker_track_data.notes {
+                    for (note_id, WorkerNoteState { clip_id, .. }) in &worker_track_data.notes {
                         if track
-                            .section(*section_id)
-                            .and_then(|section| section.note(note_id))
+                            .clip(*clip_id)
+                            .and_then(|clip| clip.note(note_id))
                             .is_none()
                         {
                             notes_to_delete.push(note_id);
@@ -183,7 +183,7 @@ impl WorkerTrackState {
 
 #[derive(Debug)]
 pub struct WorkerNoteState {
-    pub section_id: Id<Section>,
+    pub clip_id: Id<Clip>,
     pub nodes: NoteNodeGraph,
 }
 impl WorkerNoteState {

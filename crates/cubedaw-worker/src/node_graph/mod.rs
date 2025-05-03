@@ -1,6 +1,6 @@
 // mod group_track;
 // mod note;
-// mod section_track;
+// mod clip_track;
 
 use ahash::HashSetExt;
 use anyhow::Context;

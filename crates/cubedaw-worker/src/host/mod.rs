@@ -374,7 +374,7 @@ fn add_jobs(
         //         track_temp_map.insert(track_id, TrackTempData { sync_buffer, job });
 
         //     }
-        //     cubedaw_lib::TrackInner::Section(ref track_data) => {
+        //     cubedaw_lib::TrackInner::Clip(ref track_data) => {
         let worker_track_data = track_id_to_mutable_reference_to_track_data
             .remove(track_id)
             .unwrap();
@@ -407,16 +407,15 @@ fn add_jobs(
         {
             // add the notes that started in this range to the worker state...
             if let Some(song_range_that_we_will_process) = song_range_that_we_will_process {
-                for (section_range, section_id) in
-                    track.sections_intersecting(song_range_that_we_will_process)
+                for (clip_range, clip_id) in
+                    track.clips_intersecting(song_range_that_we_will_process)
                 {
-                    let section = track.section(section_id).unwrap();
-                    for (_start_pos, note_id, _note) in section.note_start_positions_in(
-                        section_range.intersect(song_range_that_we_will_process)
-                            - section_range.start,
+                    let clip = track.clip(clip_id).unwrap();
+                    for (_start_pos, note_id, _note) in clip.note_start_positions_in(
+                        clip_range.intersect(song_range_that_we_will_process) - clip_range.start,
                     ) {
                         worker_track_data.notes.insert(note_id, WorkerNoteState {
-                            section_id,
+                            clip_id,
                             nodes: worker_track_data.note_nodes.clone(),
                         });
                     }
@@ -426,7 +425,7 @@ fn add_jobs(
             // ...then process all notes
             for (note_id, note_state) in &mut worker_track_data.notes {
                 let (start_pos, note) = track
-                    .section(note_state.section_id)
+                    .clip(note_state.clip_id)
                     .unwrap()
                     .note(note_id)
                     .unwrap();

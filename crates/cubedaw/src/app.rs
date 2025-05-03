@@ -83,10 +83,10 @@ impl CubedawApp {
                 &mut ephemeral_state,
             );
 
-            let section_track_id = Id::arbitrary();
+            let clip_track_id = Id::arbitrary();
             execute(
                 crate::command::track::UiTrackAddOrRemove::add_generic_track(
-                    section_track_id,
+                    clip_track_id,
                     Some(state.root_track),
                     0,
                     &node_registry,
@@ -97,7 +97,7 @@ impl CubedawApp {
             );
 
             execute(
-                crate::command::track::UiTrackSelect::new(section_track_id, Select::Select),
+                crate::command::track::UiTrackSelect::new(clip_track_id, Select::Select),
                 &mut state,
                 &mut ui_state,
                 &mut ephemeral_state,

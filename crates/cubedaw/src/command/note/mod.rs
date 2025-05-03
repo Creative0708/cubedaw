@@ -1,5 +1,5 @@
 use cubedaw_command::note::NoteAddOrRemove;
-use cubedaw_lib::{Id, IdMap, Note, Section, Track};
+use cubedaw_lib::{Id, IdMap, Note, Clip, Track};
 
 use crate::{state::ui::NoteUiState, util::Select};
 
@@ -14,18 +14,18 @@ impl UiNoteAddOrRemove {
     pub fn addition(
         id: Id<Note>,
         track_id: Id<Track>,
-        section_id: Id<Section>,
+        clip_id: Id<Clip>,
         start_pos: i64,
         data: Note,
     ) -> Self {
         Self {
-            inner: NoteAddOrRemove::addition(id, track_id, section_id, start_pos, data),
+            inner: NoteAddOrRemove::addition(id, track_id, clip_id, start_pos, data),
             ui_data: None,
         }
     }
-    pub fn removal(track_id: Id<Track>, section_id: Id<Section>, id: Id<Note>) -> Self {
+    pub fn removal(track_id: Id<Track>, clip_id: Id<Clip>, id: Id<Note>) -> Self {
         Self {
-            inner: NoteAddOrRemove::removal(id, track_id, section_id),
+            inner: NoteAddOrRemove::removal(id, track_id, clip_id),
             ui_data: None,
         }
     }
@@ -35,9 +35,9 @@ impl UiNoteAddOrRemove {
             .tracks
             .get_mut(self.inner.track_id())
             .expect("tried to add note to nonexistent track")
-            .sections
-            .get_mut(self.inner.section_id())
-            .expect("tried to add note to nonexistent section")
+            .clips
+            .get_mut(self.inner.clip_id())
+            .expect("tried to add note to nonexistent clip")
             .notes
     }
 
@@ -81,16 +81,16 @@ impl UiStateCommand for UiNoteAddOrRemove {
 
 pub struct UiNoteSelect {
     track_id: Id<Track>,
-    section_id: Id<Section>,
+    clip_id: Id<Clip>,
     id: Id<Note>,
     select: Select,
 }
 
 impl UiNoteSelect {
-    pub fn new(track_id: Id<Track>, section_id: Id<Section>, id: Id<Note>, select: Select) -> Self {
+    pub fn new(track_id: Id<Track>, clip_id: Id<Clip>, id: Id<Note>, select: Select) -> Self {
         Self {
             track_id,
-            section_id,
+            clip_id,
             id,
             select,
         }
@@ -101,9 +101,9 @@ impl UiNoteSelect {
             .tracks
             .get_mut(self.track_id)
             .expect("tried to add note to nonexistent track")
-            .sections
-            .get_mut(self.section_id)
-            .expect("tried to add note to nonexistent section")
+            .clips
+            .get_mut(self.clip_id)
+            .expect("tried to add note to nonexistent clip")
             .notes
     }
 }

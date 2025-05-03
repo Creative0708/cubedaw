@@ -6,7 +6,7 @@ use crate::WorkerOptions;
 use super::{PreparedNodeGraph, WorkerState};
 
 #[derive(Debug, Clone)]
-/// Node graph for the non-per-note section
+/// Node graph for the non-per-note clip
 pub struct TrackNodeGraph(PreparedNodeGraph);
 
 impl TrackNodeGraph {

@@ -1,4 +1,4 @@
-use cubedaw_lib::{Id, IdMap, Node, Note, Section, Track};
+use cubedaw_lib::{Clip, Id, IdMap, Node, Note, Track};
 use egui::Pos2;
 
 use crate::util::Select;
@@ -52,7 +52,7 @@ pub struct TrackUiState {
     pub name: String,
     pub select: Select,
     pub patch: PatchUiState,
-    pub sections: IdMap<Section, SectionUiState>,
+    pub clips: IdMap<Clip, ClipUiState>,
 
     /// Whether the track has its children hidden or not.
     pub closed: bool,
@@ -67,7 +67,7 @@ impl Default for TrackUiState {
             name: "Unnamed Track".into(),
             select: Default::default(),
             patch: Default::default(),
-            sections: Default::default(),
+            clips: Default::default(),
 
             closed: false,
 
@@ -82,16 +82,16 @@ pub struct PatchUiState {
 }
 
 #[derive(Debug)]
-pub struct SectionUiState {
+pub struct ClipUiState {
     pub name: String,
     pub select: Select,
     pub notes: IdMap<Note, NoteUiState>,
 }
 
-impl Default for SectionUiState {
+impl Default for ClipUiState {
     fn default() -> Self {
         Self {
-            name: "Unnamed Section".into(),
+            name: "Unnamed Clip".into(),
             select: Select::Deselect,
             notes: IdMap::new(),
         }

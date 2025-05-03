@@ -1,16 +1,16 @@
-use cubedaw_lib::{Id, Range, Section, Track};
+use cubedaw_lib::{Clip, Id, Range, Track};
 
 use crate::StateCommand;
 
 #[derive(Clone)]
-pub struct SectionMove {
+pub struct ClipMove {
     track_from: Id<Track>,
     track_to: Id<Track>,
     starting_range: Range,
     new_start_pos: i64,
 }
 
-impl SectionMove {
+impl ClipMove {
     pub fn same(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
         Self {
             track_from: track_id,
@@ -43,16 +43,16 @@ fn move_between(
 ) {
     let track_from = state.tracks.force_get_mut(track_from_id);
     if track_from_id == track_to_id {
-        track_from.move_section(starting_range, new_start_pos);
+        track_from.move_clip(starting_range, new_start_pos);
     } else {
-        let (section_id, section) = track_from.remove_section_from_range(starting_range);
+        let (clip_id, clip) = track_from.remove_clip_from_range(starting_range);
 
         let track_to = state.tracks.force_get_mut(track_to_id);
-        track_to.add_section(section_id, new_start_pos, section);
+        track_to.add_clip(clip_id, new_start_pos, clip);
     }
 }
 
-impl StateCommand for SectionMove {
+impl StateCommand for ClipMove {
     fn execute(&mut self, state: &mut cubedaw_lib::State) {
         move_between(
             state,
@@ -75,16 +75,16 @@ impl StateCommand for SectionMove {
 
 // TODO see TrackAddOrRemove
 #[derive(Clone)]
-pub struct SectionAddOrRemove {
+pub struct ClipAddOrRemove {
     track_id: Id<Track>,
-    id: Id<Section>,
+    id: Id<Clip>,
     start_pos: i64,
-    data: Option<Section>,
+    data: Option<Clip>,
     is_removal: bool,
 }
 
-impl SectionAddOrRemove {
-    pub fn addition(id: Id<Section>, start_pos: i64, data: Section, track_id: Id<Track>) -> Self {
+impl ClipAddOrRemove {
+    pub fn addition(id: Id<Clip>, start_pos: i64, data: Clip, track_id: Id<Track>) -> Self {
         Self {
             id,
             start_pos,
@@ -93,7 +93,7 @@ impl SectionAddOrRemove {
             is_removal: false,
         }
     }
-    pub fn removal(id: Id<Section>, start_pos: i64, track_id: Id<Track>) -> Self {
+    pub fn removal(id: Id<Clip>, start_pos: i64, track_id: Id<Track>) -> Self {
         Self {
             start_pos,
             id,
@@ -106,7 +106,7 @@ impl SectionAddOrRemove {
     pub fn track_id(&self) -> Id<Track> {
         self.track_id
     }
-    pub fn id(&self) -> Id<Section> {
+    pub fn id(&self) -> Id<Clip> {
         self.id
     }
     pub fn is_removal(&self) -> bool {
@@ -117,13 +117,13 @@ impl SectionAddOrRemove {
         state
             .tracks
             .get_mut(self.track_id)
-            .expect("tried to add section to nonexistent track")
-            .add_section(
+            .expect("tried to add clip to nonexistent track")
+            .add_clip(
                 self.id,
                 self.start_pos,
                 self.data
                     .take()
-                    .expect("execute() called on empty SectionAddOrRemove"),
+                    .expect("execute() called on empty ClipAddOrRemove"),
             );
     }
     fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {
@@ -131,13 +131,13 @@ impl SectionAddOrRemove {
             state
                 .tracks
                 .get_mut(self.track_id)
-                .expect("tried to add section to nonexistent track")
-                .remove_section(self.id, self.start_pos),
+                .expect("tried to add clip to nonexistent track")
+                .remove_clip(self.id, self.start_pos),
         );
     }
 }
 
-impl StateCommand for SectionAddOrRemove {
+impl StateCommand for ClipAddOrRemove {
     fn execute(&mut self, state: &mut cubedaw_lib::State) {
         if self.is_removal {
             self.execute_remove(state);

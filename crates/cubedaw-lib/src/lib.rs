@@ -1,7 +1,7 @@
 mod note;
 pub use note::Note;
-mod section;
-pub use section::Section;
+mod clip;
+pub use clip::Clip;
 mod range;
 pub use range::Range;
 pub mod id;

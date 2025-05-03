@@ -6,10 +6,10 @@ use cubedaw_command::{StateCommand, StateCommandWrapper};
 
 use crate::{EphemeralState, UiState};
 
+pub mod clip;
 pub mod misc;
 pub mod node;
 pub mod note;
-pub mod section;
 pub mod track;
 
 pub trait UiStateCommand: 'static + Send {

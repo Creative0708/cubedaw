@@ -23,15 +23,15 @@ type Diff<T> = <<T as SelectablePath>::Pos as ops::Sub<<T as SelectablePath>::Po
 
 mod impls {
     use super::SelectablePath;
-    use cubedaw_lib::{Id, Node, Note, Section, Track};
+    use cubedaw_lib::{Id, Node, Note, Clip, Track};
     use egui::Pos2;
 
-    impl SelectablePath for (Id<Track>, Id<Section>, Id<Note>) {
+    impl SelectablePath for (Id<Track>, Id<Clip>, Id<Note>) {
         type Id = Id<Note>;
         type Pos = crate::tab::pianoroll::Note2DPos;
     }
-    impl SelectablePath for (Id<Track>, Id<Section>) {
-        type Id = Id<Section>;
+    impl SelectablePath for (Id<Track>, Id<Clip>) {
+        type Id = Id<Clip>;
         type Pos = crate::tab::track::Track2DPos;
     }
     impl SelectablePath for Id<Track> {

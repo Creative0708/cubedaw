@@ -6,7 +6,7 @@ macro_rules! declare_plugin {
     ) => {
         const _: &str = $value;
         $crate::__postcard_stringify::declare! {
-            #[link_section = "cubedaw:plugin_meta"]
+            #[link_clip = "cubedaw:plugin_meta"]
             static _CUBEDAWPLUGIN_ID = "id", $value;
         }
 
@@ -18,7 +18,7 @@ macro_rules! declare_plugin {
     ) => {
         const _: &str = $value;
         $crate::__postcard_stringify::declare! {
-            #[link_section = "cubedaw:plugin_meta"]
+            #[link_clip = "cubedaw:plugin_meta"]
             static _CUBEDAWPLUGIN_NAME = "name", $value;
         }
 
@@ -30,7 +30,7 @@ macro_rules! declare_plugin {
     ) => {
         const _: &str = $value;
         $crate::__postcard_stringify::declare! {
-            #[link_section = "cubedaw:plugin_meta"]
+            #[link_clip = "cubedaw:plugin_meta"]
             static _CUBEDAWPLUGIN_DESCRIPTION = "description", $value;
         }
 
@@ -55,7 +55,7 @@ macro_rules! declare_plugin {
 
     // TODO: more entries; license, version, etc etc
     ($($args:tt)*) => {
-        #[link_section = "cubedaw:plugin_version"]
+        #[link_clip = "cubedaw:plugin_version"]
         static _CUBEDAWPLUGIN_VERSION: [u8; 5] = *b"0.1.0";
 
         $crate::declare_plugin!(@1 $($args)*);
@@ -73,7 +73,7 @@ macro_rules! export_node {
 
         $crate::__paste::paste! {
             $crate::__postcard_stringify::declare! {
-                #[link_section = "cubedaw:node_list"]
+                #[link_clip = "cubedaw:node_list"]
                 static [<_CUBEDAWPLUGIN_ $function:upper>] = $name, stringify!($function);
             }
         }

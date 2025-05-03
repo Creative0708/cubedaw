@@ -1,6 +1,6 @@
 use std::cell::LazyCell;
 
-use cubedaw_lib::{Id, IdMap, Node, Note, Section, State, Track};
+use cubedaw_lib::{Clip, Id, IdMap, Node, Note, State, Track};
 use egui::Vec2;
 
 use crate::{
@@ -12,8 +12,8 @@ use crate::{
 
 #[derive(Debug)]
 pub struct EphemeralState {
-    pub note_drag: DragHandler<(Id<Track>, Id<Section>, Id<Note>)>,
-    pub section_drag: DragHandler<(Id<Track>, Id<Section>)>,
+    pub note_drag: DragHandler<(Id<Track>, Id<Clip>, Id<Note>)>,
+    pub clip_drag: DragHandler<(Id<Track>, Id<Clip>)>,
     pub track_drag: DragHandler<Id<Track>>,
 
     pub tracks: IdMap<Track, TrackEphemeralState>,
@@ -33,7 +33,7 @@ impl EphemeralState {
     pub(in crate::app) fn new() -> Self {
         Self {
             note_drag: Default::default(),
-            section_drag: Default::default(),
+            clip_drag: Default::default(),
             track_drag: Default::default(),
             tracks: Default::default(),
             selection_rect: Default::default(),
@@ -49,8 +49,8 @@ impl EphemeralState {
         ui_state: &UiState,
         tracker: &mut UiStateTracker,
     ) {
-        use crate::command::{note::UiNoteSelect, section::UiSectionSelect, track::UiTrackSelect};
-        use cubedaw_command::{note::NoteMove, section::SectionMove};
+        use crate::command::{clip::UiClipSelect, note::UiNoteSelect, track::UiTrackSelect};
+        use cubedaw_command::{clip::ClipMove, note::NoteMove};
 
         // track list for calculating y movement
         // this duplicates code with the track tab but the behavior is so different idt it's worth it
@@ -117,29 +117,29 @@ impl EphemeralState {
         }
 
         {
-            let result = self.section_drag.on_frame_end();
+            let result = self.clip_drag.on_frame_end();
 
             if let Some(target_select) = result.global_selection_action {
                 for (track_id, track_ui) in &ui_state.tracks {
-                    for (section_id2, section_ui) in &track_ui.sections {
+                    for (clip_id2, clip_ui) in &track_ui.clips {
                         let target_select_for_this = result
                             .selection_changes
-                            .get(&(track_id, section_id2))
+                            .get(&(track_id, clip_id2))
                             .copied()
                             .unwrap_or(target_select);
 
-                        if section_ui.select != target_select_for_this {
-                            tracker.add(UiSectionSelect::new(
+                        if clip_ui.select != target_select_for_this {
+                            tracker.add(UiClipSelect::new(
                                 track_id,
-                                section_id2,
+                                clip_id2,
                                 target_select_for_this,
                             ));
                         }
                     }
                 }
             } else {
-                for (&(track_id, section_id), &selected) in &result.selection_changes {
-                    tracker.add(UiSectionSelect::new(track_id, section_id, selected));
+                for (&(track_id, clip_id), &selected) in &result.selection_changes {
+                    tracker.add(UiClipSelect::new(track_id, clip_id, selected));
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
@@ -160,14 +160,14 @@ impl EphemeralState {
                     };
 
                     let track_ui = ui_state.tracks.force_get(track_id);
-                    for (section_range, section_id, _section) in track.sections() {
-                        let section_ui = track_ui.sections.force_get(section_id);
-                        if section_ui.select.is() {
-                            tracker.add(SectionMove::new(
+                    for (clip_range, clip_id, _clip) in track.clips() {
+                        let clip_ui = track_ui.clips.force_get(clip_id);
+                        if clip_ui.select.is() {
+                            tracker.add(ClipMove::new(
                                 track_id,
                                 new_track_id,
-                                section_range,
-                                section_range.start + finished_drag_offset.time,
+                                clip_range,
+                                clip_range.start + finished_drag_offset.time,
                             ));
                         }
                     }
@@ -180,17 +180,17 @@ impl EphemeralState {
 
             if let Some(target_select) = result.global_selection_action {
                 for (track_id, track_ui) in &ui_state.tracks {
-                    for (section_id, section_ui) in &track_ui.sections {
-                        for (note_id, note_ui) in &section_ui.notes {
+                    for (clip_id, clip_ui) in &track_ui.clips {
+                        for (note_id, note_ui) in &clip_ui.notes {
                             let target_select_for_this = result
                                 .selection_changes
-                                .get(&(track_id, section_id, note_id))
+                                .get(&(track_id, clip_id, note_id))
                                 .copied()
                                 .unwrap_or(target_select);
                             if note_ui.select != target_select_for_this {
                                 tracker.add(UiNoteSelect::new(
                                     track_id,
-                                    section_id,
+                                    clip_id,
                                     note_id,
                                     target_select_for_this,
                                 ));
@@ -199,18 +199,18 @@ impl EphemeralState {
                     }
                 }
             } else {
-                for (&(track_id, section_id, note_id), &selected) in &result.selection_changes {
-                    tracker.add(UiNoteSelect::new(track_id, section_id, note_id, selected));
+                for (&(track_id, clip_id, note_id), &selected) in &result.selection_changes {
+                    tracker.add(UiNoteSelect::new(track_id, clip_id, note_id, selected));
                 }
             }
             if let Some(offset) = result.movement {
                 for (track_id, track_ui) in &ui_state.tracks {
-                    for (section_id, section_ui) in &track_ui.sections {
-                        for (note_id, note_ui) in &section_ui.notes {
+                    for (clip_id, clip_ui) in &track_ui.clips {
+                        for (note_id, note_ui) in &clip_ui.notes {
                             if note_ui.select.is() {
                                 tracker.add(NoteMove::new(
                                     track_id,
-                                    section_id,
+                                    clip_id,
                                     note_id,
                                     offset.time,
                                     offset.pitch,
