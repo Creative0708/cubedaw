@@ -1,3 +1,5 @@
+use cubedaw_worker::command::ActionType;
+
 use super::UiStateCommand;
 
 pub struct UiSetPlayhead {
@@ -15,20 +17,21 @@ impl UiSetPlayhead {
 }
 
 impl UiStateCommand for UiSetPlayhead {
-    fn ui_execute(
+    fn run_ui(
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
+        action: ActionType,
     ) {
-        self.old_pos = ui_state.playhead_pos;
-        ui_state.playhead_pos = self.new_pos;
-    }
-    fn ui_rollback(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        ui_state.playhead_pos = self.old_pos;
+        match action {
+            ActionType::Execute => {
+                self.old_pos = ui_state.playhead_pos;
+                ui_state.playhead_pos = self.new_pos;
+            }
+            ActionType::Rollback => {
+                ui_state.playhead_pos = self.old_pos;
+            }
+        }
     }
 
     fn try_merge(&mut self, other: &Self) -> bool {

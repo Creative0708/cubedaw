@@ -13,7 +13,6 @@ bytemuck = { workspace = true }
 anyhow = { workspace = true }
 cubedaw-lib = { path = "../cubedaw-lib" }
 resourcekey = { path = "../resourcekey" }
-cubedaw-command = { path = "../cubedaw-command" }
 cubedaw-plugin = { path = "../cubedaw-plugin" }
 cubedaw-wasm = { path = "../cubedaw-wasm" }
 crossbeam-channel = { workspace = true }

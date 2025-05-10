@@ -6,7 +6,6 @@ version = "0.1.0"
 default-run = "cubedaw"
 
 [dependencies]
-cubedaw-command = { path = "../cubedaw-command" }
 egui = { workspace = true }
 anyhow = { workspace = true }
 eframe = "0.31.0"

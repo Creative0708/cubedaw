@@ -5,7 +5,11 @@ use egui::Vec2;
 
 use crate::{
     UiState,
-    command::node::{UiNodeMove, UiNodeSelect},
+    command::{
+        clip::ClipMove,
+        node::{NodeSelect, UiNodeMove},
+        note::NoteMove,
+    },
     context::UiStateTracker,
     util::{DragHandler, NodeSearch, SelectionRect},
 };
@@ -49,8 +53,8 @@ impl EphemeralState {
         ui_state: &UiState,
         tracker: &mut UiStateTracker,
     ) {
-        use crate::command::{clip::UiClipSelect, note::UiNoteSelect, track::UiTrackSelect};
-        use cubedaw_command::{clip::ClipMove, note::NoteMove};
+        use crate::command::{clip::UiClipSelect, note::NoteSelect, track::TrackSelect};
+        // use cubedaw_command::{clip::ClipMove, note::NoteMove};
 
         // track list for calculating y movement
         // this duplicates code with the track tab but the behavior is so different idt it's worth it
@@ -92,12 +96,12 @@ impl EphemeralState {
                         .unwrap_or(target_select);
 
                     if track_ui.select != target_select_for_this {
-                        tracker.add(UiTrackSelect::new(track_id, target_select_for_this));
+                        tracker.add(TrackSelect::new(track_id, target_select_for_this));
                     }
                 }
             } else {
                 for (&track_id, &selected) in &result.selection_changes {
-                    tracker.add(UiTrackSelect::new(track_id, selected));
+                    tracker.add(TrackSelect::new(track_id, selected));
                 }
             }
             if let Some(finished_drag_offset) = result.movement {
@@ -188,7 +192,7 @@ impl EphemeralState {
                                 .copied()
                                 .unwrap_or(target_select);
                             if note_ui.select != target_select_for_this {
-                                tracker.add(UiNoteSelect::new(
+                                tracker.add(NoteSelect::new(
                                     track_id,
                                     clip_id,
                                     note_id,
@@ -200,7 +204,7 @@ impl EphemeralState {
                 }
             } else {
                 for (&(track_id, clip_id, note_id), &selected) in &result.selection_changes {
-                    tracker.add(UiNoteSelect::new(track_id, clip_id, note_id, selected));
+                    tracker.add(NoteSelect::new(track_id, clip_id, note_id, selected));
                 }
             }
             if let Some(offset) = result.movement {
@@ -235,12 +239,12 @@ impl EphemeralState {
                         .unwrap_or(target_select);
 
                     if node_ui.select != target_select_for_this {
-                        tracker.add(UiNodeSelect::new(track_id, node_id, target_select_for_this));
+                        tracker.add(NodeSelect::new(track_id, node_id, target_select_for_this));
                     }
                 }
             } else {
                 for (&node_id, &selected) in &result.selection_changes {
-                    tracker.add(UiNodeSelect::new(track_id, node_id, selected));
+                    tracker.add(NodeSelect::new(track_id, node_id, selected));
                 }
             }
 

@@ -1,70 +1,175 @@
-use cubedaw_command::clip::ClipAddOrRemove;
-use cubedaw_lib::{Clip, Id, IdMap, Track};
+use cubedaw_lib::{Clip, Id, IdMap, Range, Track};
+use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
 
 use crate::{state::ui::ClipUiState, util::Select};
 
 use super::UiStateCommand;
 
-pub struct UiClipAddOrRemove {
-    inner: ClipAddOrRemove,
+#[derive(Clone)]
+pub struct ClipMove {
+    track_from: Id<Track>,
+    track_to: Id<Track>,
+    starting_range: Range,
+    new_start_pos: i64,
+}
+
+impl ClipMove {
+    pub fn same(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
+        Self {
+            track_from: track_id,
+            track_to: track_id,
+            starting_range,
+            new_start_pos,
+        }
+    }
+    pub fn new(
+        track_from: Id<Track>,
+        track_to: Id<Track>,
+        starting_range: Range,
+        new_start_pos: i64,
+    ) -> Self {
+        Self {
+            track_from,
+            track_to,
+            starting_range,
+            new_start_pos,
+        }
+    }
+}
+impl StateCommand for ClipMove {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+        let (track_from_id, track_to_id, starting_range, new_start_pos) = match action {
+            ActionType::Execute => (
+                self.track_from,
+                self.track_to,
+                self.starting_range,
+                self.new_start_pos,
+            ),
+            ActionType::Rollback => (
+                self.track_to,
+                self.track_from,
+                self.starting_range.with_start_pos(self.new_start_pos),
+                self.starting_range.start,
+            ),
+        };
+
+        let track_from = state.tracks.force_get_mut(track_from_id);
+        if track_from_id == track_to_id {
+            track_from.move_clip(starting_range, new_start_pos);
+        } else {
+            let (clip_id, clip) = track_from.remove_clip_from_range(starting_range);
+
+            let track_to = state.tracks.force_get_mut(track_to_id);
+            track_to.add_clip(clip_id, new_start_pos, clip);
+        }
+    }
+}
+
+// TODO see TrackAddOrRemove
+#[derive(Clone)]
+pub struct NoUiClipAddOrRemove {
+    track_id: Id<Track>,
+    id: Id<Clip>,
+    start_pos: i64,
+    data: Option<Clip>,
+    is_removal: bool,
+}
+
+impl NoUiClipAddOrRemove {
+    pub fn addition(id: Id<Clip>, start_pos: i64, data: Clip, track_id: Id<Track>) -> Self {
+        Self {
+            id,
+            start_pos,
+            track_id,
+            data: Some(data),
+            is_removal: false,
+        }
+    }
+    pub fn removal(id: Id<Clip>, start_pos: i64, track_id: Id<Track>) -> Self {
+        Self {
+            start_pos,
+            id,
+            track_id,
+            data: None,
+            is_removal: true,
+        }
+    }
+
+    pub fn track_id(&self) -> Id<Track> {
+        self.track_id
+    }
+    pub fn id(&self) -> Id<Clip> {
+        self.id
+    }
+    pub fn is_removal(&self) -> bool {
+        self.is_removal
+    }
+
+    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {}
+    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {}
+}
+
+impl StateCommand for NoUiClipAddOrRemove {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+        let track = state
+            .tracks
+            .get_mut(self.track_id)
+            .expect("tried to add clip to nonexistent track");
+
+        if self.is_removal ^ action.is_rollback() {
+            self.data = Some(track.remove_clip(self.id, self.start_pos));
+        } else {
+            track.add_clip(
+                self.id,
+                self.start_pos,
+                self.data
+                    .take()
+                    .expect("execute() called on empty ClipAddOrRemove"),
+            );
+        }
+    }
+}
+
+pub struct ClipAddOrRemove {
+    inner: NoUiClipAddOrRemove,
     ui_data: Option<ClipUiState>,
 }
 
-impl UiClipAddOrRemove {
+impl ClipAddOrRemove {
     pub fn addition(id: Id<Clip>, start_pos: i64, data: Clip, track_id: Id<Track>) -> Self {
         Self {
-            inner: ClipAddOrRemove::addition(id, start_pos, data, track_id),
+            inner: NoUiClipAddOrRemove::addition(id, start_pos, data, track_id),
             ui_data: None,
         }
     }
     pub fn removal(id: Id<Clip>, start_pos: i64, track_id: Id<Track>) -> Self {
         Self {
-            inner: ClipAddOrRemove::removal(id, start_pos, track_id),
+            inner: NoUiClipAddOrRemove::removal(id, start_pos, track_id),
             ui_data: None,
         }
     }
+}
 
-    fn clips<'a>(&self, ui_state: &'a mut crate::UiState) -> &'a mut IdMap<Clip, ClipUiState> {
-        &mut ui_state
+impl UiStateCommand for ClipAddOrRemove {
+    fn run_ui(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+        action: ActionType,
+    ) {
+        let clips = &mut ui_state
             .tracks
             .get_mut(self.inner.track_id())
             .expect("nonexistent track")
-            .clips
-    }
-
-    fn execute_add(&mut self, ui_state: &mut crate::UiState) {
-        self.clips(ui_state)
-            .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
-    }
-    fn execute_remove(&mut self, ui_state: &mut crate::UiState) {
-        self.ui_data = self.clips(ui_state).remove(self.inner.id());
-    }
-}
-
-impl UiStateCommand for UiClipAddOrRemove {
-    fn ui_execute(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        if self.inner.is_removal() {
-            self.execute_remove(ui_state);
+            .clips;
+        if self.inner.is_removal() ^ action.is_rollback() {
+            self.ui_data = clips.remove(self.inner.id());
         } else {
-            self.execute_add(ui_state);
+            clips.insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
         }
     }
-    fn ui_rollback(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        if self.inner.is_removal() {
-            self.execute_add(ui_state);
-        } else {
-            self.execute_remove(ui_state);
-        }
-    }
-    fn inner(&mut self) -> Option<&mut dyn cubedaw_command::StateCommandWrapper> {
+
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
         Some(&mut self.inner)
     }
 }
@@ -83,34 +188,25 @@ impl UiClipSelect {
             state,
         }
     }
+}
 
-    fn clip<'a>(&self, ui_state: &'a mut crate::UiState) -> Option<&'a mut ClipUiState> {
-        ui_state
+impl UiStateCommand for UiClipSelect {
+    fn run_ui(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        _ephemeral_state: &mut crate::EphemeralState,
+        action: ActionType,
+    ) {
+        let Some(ui_data) = ui_state
             .tracks
             .get_mut(self.track_id)
             .expect("tried selecting clip on nonexistent track")
             .clips
             .get_mut(self.id)
-    }
-}
+        else {
+            return;
+        };
 
-impl UiStateCommand for UiClipSelect {
-    fn ui_execute(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        if let Some(ui_data) = self.clip(ui_state) {
-            ui_data.select = self.state;
-        }
-    }
-    fn ui_rollback(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        if let Some(ui_data) = self.clip(ui_state) {
-            ui_data.select = !self.state;
-        }
+        ui_data.select = self.state ^ action.is_rollback();
     }
 }

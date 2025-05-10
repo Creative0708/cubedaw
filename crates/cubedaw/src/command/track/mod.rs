@@ -1,17 +1,98 @@
-use cubedaw_command::track::TrackAddOrRemove;
 use cubedaw_lib::{Id, NodeData, Track};
+use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
 
 use crate::{registry::NodeRegistry, state::ui::TrackUiState, util::Select};
 
 use super::UiStateCommand;
-pub struct UiTrackAddOrRemove {
-    inner: TrackAddOrRemove,
+
+#[derive(Clone)]
+pub struct NoUiTrackAddOrRemove {
+    id: Id<Track>,
+    data: Option<Track>,
+    parent_track: Option<Id<Track>>,
+    is_removal: bool,
+}
+
+impl NoUiTrackAddOrRemove {
+    pub fn addition(id: Id<Track>, data: Track, parent_track: Option<Id<Track>>) -> Self {
+        Self {
+            id,
+            data: Some(data),
+            parent_track,
+            is_removal: false,
+        }
+    }
+    pub fn removal(id: Id<Track>, parent_track: Option<Id<Track>>) -> Self {
+        Self {
+            id,
+            data: None,
+            parent_track,
+            is_removal: true,
+        }
+    }
+    pub const fn id(&self) -> Id<Track> {
+        self.id
+    }
+    pub const fn is_removal(&self) -> bool {
+        self.is_removal
+    }
+    pub const fn parent_track(&self) -> Option<Id<Track>> {
+        self.parent_track
+    }
+
+    fn get_parent_track<'a>(
+        &self,
+        state: &'a mut cubedaw_lib::State,
+    ) -> Option<&'a mut cubedaw_lib::Track> {
+        Some(state.tracks.force_get_mut(self.parent_track?))
+    }
+}
+
+impl StateCommand for NoUiTrackAddOrRemove {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+        if self.is_removal ^ action.is_rollback() {
+            if let Some(track) = self.get_parent_track(state) {
+                let did_remove = track.children.remove(&self.id);
+                assert!(did_remove, "tried to remove nonexistent child");
+            }
+            self.data = Some(
+                state
+                    .tracks
+                    .remove(self.id)
+                    .expect("tried to delete nonexistent track"),
+            );
+        } else {
+            state.tracks.insert(
+                self.id,
+                self.data
+                    .take()
+                    .expect("execute() called on empty TrackAddOrRemove"),
+            );
+            match self.get_parent_track(state) {
+                Some(track) => {
+                    let did_insert = track.children.insert(self.id);
+                    assert!(did_insert, "tried to add track as child twice");
+                }
+                None => {
+                    assert!(
+                        !state.tracks.has(state.root_track),
+                        "tried to override root track"
+                    );
+                    state.root_track = self.id;
+                }
+            }
+        }
+    }
+}
+
+pub struct TrackAddOrRemove {
+    inner: NoUiTrackAddOrRemove,
     ui_data: Option<TrackUiState>,
     // where the track is inserted in the track list
     insertion_pos: u32,
 }
 
-impl UiTrackAddOrRemove {
+impl TrackAddOrRemove {
     pub fn addition(
         id: Id<Track>,
         data: Track,
@@ -20,14 +101,14 @@ impl UiTrackAddOrRemove {
         insertion_pos: u32,
     ) -> Self {
         Self {
-            inner: TrackAddOrRemove::addition(id, data, parent_track),
+            inner: NoUiTrackAddOrRemove::addition(id, data, parent_track),
             ui_data: Some(ui_data),
             insertion_pos,
         }
     }
     pub fn removal(id: Id<Track>, parent_track: Option<Id<Track>>) -> Self {
         Self {
-            inner: TrackAddOrRemove::removal(id, parent_track),
+            inner: NoUiTrackAddOrRemove::removal(id, parent_track),
             ui_data: None,
             insertion_pos: 0,
         }
@@ -96,102 +177,69 @@ impl UiTrackAddOrRemove {
             insertion_pos,
         )
     }
-
-    fn execute_add(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        ui_state
-            .tracks
-            .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
-        if let Some(parent_track) = self.inner.parent_track() {
-            let parent_track_ui = ui_state.tracks.force_get_mut(parent_track);
-            parent_track_ui.track_list.insert(
-                (self.insertion_pos as usize).min(parent_track_ui.track_list.len()),
-                self.inner.id(),
-            );
-        }
-
-        ephemeral_state
-            .tracks
-            .insert(self.inner.id(), Default::default());
-    }
-    fn execute_remove(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        self.ui_data = ui_state.tracks.remove(self.inner.id());
-        if let Some(parent_track) = self.inner.parent_track() {
-            ui_state
-                .tracks
-                .force_get_mut(parent_track)
-                .track_list
-                .retain(|&id| id != self.inner.id());
-        }
-
-        ephemeral_state.tracks.remove(self.inner.id());
-    }
 }
 
-impl UiStateCommand for UiTrackAddOrRemove {
-    fn ui_execute(
+impl UiStateCommand for TrackAddOrRemove {
+    fn run_ui(
         &mut self,
         ui_state: &mut crate::UiState,
         ephemeral_state: &mut crate::EphemeralState,
+        action: ActionType,
     ) {
-        if self.inner.is_removal() {
-            self.execute_remove(ui_state, ephemeral_state);
+        if self.inner.is_removal() & action.is_rollback() {
+            self.ui_data = ui_state.tracks.remove(self.inner.id());
+            if let Some(parent_track) = self.inner.parent_track() {
+                ui_state
+                    .tracks
+                    .force_get_mut(parent_track)
+                    .track_list
+                    .retain(|&id| id != self.inner.id());
+            }
+
+            ephemeral_state.tracks.remove(self.inner.id());
         } else {
-            self.execute_add(ui_state, ephemeral_state);
-        }
-    }
-    fn ui_rollback(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        if self.inner.is_removal() {
-            self.execute_add(ui_state, ephemeral_state);
-        } else {
-            self.execute_remove(ui_state, ephemeral_state);
+            ui_state
+                .tracks
+                .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
+            if let Some(parent_track) = self.inner.parent_track() {
+                let parent_track_ui = ui_state.tracks.force_get_mut(parent_track);
+                parent_track_ui.track_list.insert(
+                    (self.insertion_pos as usize).min(parent_track_ui.track_list.len()),
+                    self.inner.id(),
+                );
+            }
+
+            ephemeral_state
+                .tracks
+                .insert(self.inner.id(), Default::default());
         }
     }
 
-    fn inner(&mut self) -> Option<&mut dyn cubedaw_command::StateCommandWrapper> {
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
         Some(&mut self.inner)
     }
 }
 
-pub struct UiTrackSelect {
+pub struct TrackSelect {
     id: Id<Track>,
     select: Select,
 }
 
-impl UiTrackSelect {
+impl TrackSelect {
     pub fn new(id: Id<Track>, select: Select) -> Self {
         Self { id, select }
     }
 }
 
-impl UiStateCommand for UiTrackSelect {
-    fn ui_execute(
+impl UiStateCommand for TrackSelect {
+    fn run_ui(
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
+        action: ActionType,
     ) {
         if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
-            ui_data.select = self.select;
-        }
-    }
-    fn ui_rollback(
-        &mut self,
-        ui_state: &mut crate::UiState,
-        _ephemeral_state: &mut crate::EphemeralState,
-    ) {
-        if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
-            ui_data.select = !self.select;
+            ui_data.select = self.select ^ action.is_rollback();
         }
     }
 }

@@ -10,6 +10,7 @@ pub use registry::{DynNodeFactory, NodeRegistry, NodeRegistryEntry, PluginData};
 mod worker;
 pub use host::WorkerHost;
 pub use worker::WorkerOptions;
+pub mod command;
 mod state;
 pub(crate) use state::WorkerState;
 

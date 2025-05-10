@@ -9,8 +9,8 @@ use egui::{
 use crate::{
     app::Tab,
     command::{
-        clip::UiClipAddOrRemove,
-        note::{UiNoteAddOrRemove, UiNoteSelect},
+        clip::ClipAddOrRemove,
+        note::{NoteAddOrRemove, NoteSelect},
     },
     context::UiStateTracker,
     state::ui::{ClipUiState, TrackUiState},
@@ -387,12 +387,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             .is_some_and(|rect| rect.intersects(note_rect))
         {
             if let Some((clip_id, note_id)) = note_path {
-                tracker.add(UiNoteSelect::new(
-                    track_id,
-                    clip_id,
-                    note_id,
-                    Select::Select,
-                ));
+                tracker.add(NoteSelect::new(track_id, clip_id, note_id, Select::Select));
             }
         }
 
@@ -506,7 +501,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                             let clip_range = Range::surrounding_pos(start_pos);
                             let clip = Clip::empty("New Clip".into(), clip_range.length() as _);
                             track.check_overlap_with(clip_range);
-                            ctx.tracker.add(UiClipAddOrRemove::addition(
+                            ctx.tracker.add(ClipAddOrRemove::addition(
                                 clip_id,
                                 clip_range.start,
                                 clip,
@@ -515,7 +510,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                             (clip_range, clip_id)
                         }
                     };
-                    ctx.tracker.add(UiNoteAddOrRemove::addition(
+                    ctx.tracker.add(NoteAddOrRemove::addition(
                         Id::arbitrary(),
                         track_id,
                         clip_id,

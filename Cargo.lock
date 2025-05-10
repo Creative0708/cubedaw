@@ -1029,7 +1029,6 @@ dependencies = [
  "bytemuck",
  "cpal",
  "crossbeam-channel",
- "cubedaw-command",
  "cubedaw-lib",
  "cubedaw-plugin",
  "cubedaw-worker",
@@ -1043,13 +1042,6 @@ dependencies = [
  "tracing-subscriber",
  "unwrap_todo",
  "zerocopy 0.8.17",
-]
-
-[[package]]
-name = "cubedaw-command"
-version = "0.1.0"
-dependencies = [
- "cubedaw-lib",
 ]
 
 [[package]]
@@ -1108,7 +1100,6 @@ dependencies = [
  "bumpalo",
  "bytemuck",
  "crossbeam-channel",
- "cubedaw-command",
  "cubedaw-lib",
  "cubedaw-plugin",
  "cubedaw-wasm",

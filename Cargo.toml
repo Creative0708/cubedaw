@@ -7,7 +7,6 @@ members = [
     "crates/cubedaw-lib",
     "crates/cubedaw-worker",
     "crates/cubedaw-wasm",
-    "crates/cubedaw-command",
     "crates/cubedaw-plugin",
     "crates/resourcekey",
     "xtask",

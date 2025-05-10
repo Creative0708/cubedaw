@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::registry::NodeRegistry;
 use cpal::traits::HostTrait;
 use cubedaw_lib::Id;
+use cubedaw_worker::command::ActionType;
 use egui_dock::{DockArea, DockState};
 use util::Select;
 
@@ -54,15 +55,15 @@ impl CubedawApp {
             let mut ephemeral_state = crate::EphemeralState::new();
 
             fn execute(
-                mut command: impl UiStateCommand,
+                command: &mut dyn UiStateCommandWrapper,
                 state: &mut cubedaw_lib::State,
                 ui_state: &mut crate::UiState,
                 ephemeral_state: &mut crate::EphemeralState,
             ) {
                 if let Some(inner) = command.inner() {
-                    inner.execute(state);
+                    inner.run(state, ActionType::Execute);
                 }
-                command.ui_execute(ui_state, ephemeral_state);
+                command.run_ui(ui_state, ephemeral_state, ActionType::Execute);
             }
 
             let node_registry = Arc::new({
@@ -72,7 +73,7 @@ impl CubedawApp {
             });
 
             execute(
-                crate::command::track::UiTrackAddOrRemove::add_generic_track(
+                &mut crate::command::track::TrackAddOrRemove::add_generic_track(
                     Id::arbitrary(),
                     None,
                     0,
@@ -85,7 +86,7 @@ impl CubedawApp {
 
             let clip_track_id = Id::arbitrary();
             execute(
-                crate::command::track::UiTrackAddOrRemove::add_generic_track(
+                &mut crate::command::track::TrackAddOrRemove::add_generic_track(
                     clip_track_id,
                     Some(state.root_track),
                     0,
@@ -97,7 +98,7 @@ impl CubedawApp {
             );
 
             execute(
-                crate::command::track::UiTrackSelect::new(clip_track_id, Select::Select),
+                &mut crate::command::track::TrackSelect::new(clip_track_id, Select::Select),
                 &mut state,
                 &mut ui_state,
                 &mut ephemeral_state,
@@ -190,19 +191,19 @@ impl CubedawApp {
                 break 'handle_tracker;
             }
 
-            let mut state_commands = Vec::new();
+            let mut worker_commands = Vec::new();
             for event in &mut commands {
-                event.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
+                event.execute_ui(&mut self.ui_state, &mut self.ephemeral_state);
                 if let Some(inner) = event.inner() {
                     if self.worker_host.is_init() {
-                        state_commands.push(inner.clone());
+                        worker_commands.push(inner.clone());
                     }
                     inner.execute(&mut self.state);
                 }
             }
-            if self.worker_host.is_init() && !state_commands.is_empty() {
+            if self.worker_host.is_init() && !worker_commands.is_empty() {
                 self.worker_host
-                    .send_commands(state_commands.into_boxed_slice(), false);
+                    .send_commands(worker_commands.into_boxed_slice(), false);
             }
 
             if self.undo_index < self.undo_stack.len() {
@@ -355,7 +356,7 @@ impl eframe::App for CubedawApp {
             if is_redo {
                 if let Some(actions_being_redone) = self.undo_stack.get_mut(self.undo_index) {
                     for action in actions_being_redone.iter_mut() {
-                        action.ui_execute(&mut self.ui_state, &mut self.ephemeral_state);
+                        action.execute_ui(&mut self.ui_state, &mut self.ephemeral_state);
                         if let Some(state_action) = action.inner() {
                             if self.worker_host.is_init() {
                                 state_commands.push(state_action.clone());
@@ -370,7 +371,7 @@ impl eframe::App for CubedawApp {
             {
                 // do undo actions in the opposite order
                 for action in actions_being_undone.iter_mut().rev() {
-                    action.ui_rollback(&mut self.ui_state, &mut self.ephemeral_state);
+                    action.rollback_ui(&mut self.ui_state, &mut self.ephemeral_state);
                     if let Some(state_action) = action.inner() {
                         if self.worker_host.is_init() {
                             state_commands.push(state_action.clone());

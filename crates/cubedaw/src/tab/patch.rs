@@ -3,7 +3,7 @@ use std::iter;
 use ahash::HashSetExt;
 use anyhow::Result;
 
-use cubedaw_command::{node::NodeStateUpdate, patch::CableAddOrRemove};
+use crate::command::{node::NodeStateUpdate, patch::CableAddOrRemove};
 use cubedaw_lib::{
     Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, Node, NodeData, Track,
 };
@@ -1086,7 +1086,7 @@ impl<'a> CubedawNodeUiContext<'a> {
                 for deleted_input in &self.node_data.inputs()[num_inputs..old_num_inputs] {
                     // do in reverse order because removing elements one-by-one from the vec is faster if you remove from last to first
                     for &(cable_id, _) in deleted_input.connections.iter().rev() {
-                        tracker.add_weak(cubedaw_command::patch::CableAddOrRemove::removal(
+                        tracker.add_weak(crate::command::patch::CableAddOrRemove::removal(
                             cable_id,
                             self.track_id,
                         ));
@@ -1131,7 +1131,7 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
         );
 
         if let Some(id) = self.node_id {
-            let command = cubedaw_command::node::NodeBiasChange::new(
+            let command = crate::command::node::NodeBiasChange::new(
                 id,
                 self.track_id,
                 input_index,
@@ -1231,7 +1231,7 @@ impl crate::node::NodeUiContext for CubedawNodeUiContext<'_> {
                 );
 
                 if let Some(id) = self.node_id {
-                    let command = cubedaw_command::node::NodeMultiplierChange::new(
+                    let command = crate::command::node::NodeMultiplierChange::new(
                         id,
                         self.track_id,
                         input_index,

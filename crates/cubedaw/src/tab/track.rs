@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 
 use anyhow::Result;
 use cubedaw_lib::{Id, IdMap, Range, Track};
+use cubedaw_worker::command::ActionType;
 use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder};
 
 use crate::{
@@ -194,7 +195,7 @@ impl TrackListEntry<'_> {
             tracker.add(
                 move |ui_state: &mut crate::UiState,
                       _ephemeral_state: &mut crate::EphemeralState,
-                      _action: crate::command::UiActionType| {
+                      _action: ActionType| {
                     core::mem::swap(
                         &mut new_track_name,
                         &mut ui_state.tracks.force_get_mut(track_id).name,
@@ -434,14 +435,13 @@ impl<'ctx> Prepared<'ctx> {
             let mut b = ctx.ui_state.show_root_track;
             ui.checkbox(&mut b, "Show Master Track");
             if b != ctx.ui_state.show_root_track {
-                use crate::command::UiActionType;
                 ctx.tracker.add_weak(
                     move |ui_state: &mut crate::UiState,
                           _ephemeral_state: &mut crate::EphemeralState,
-                          action: UiActionType| {
+                          action: cubedaw_worker::command::ActionType| {
                         ui_state.show_root_track = match action {
-                            UiActionType::Execute => b,
-                            UiActionType::Rollback => !b,
+                            ActionType::Execute => b,
+                            ActionType::Rollback => !b,
                         };
                     },
                 );

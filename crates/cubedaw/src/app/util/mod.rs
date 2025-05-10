@@ -1,5 +1,5 @@
 mod selection_rect;
-use std::ops;
+use std::ops::{self, BitXor};
 
 pub use selection_rect::SelectionRect;
 mod node_search;
@@ -29,5 +29,12 @@ impl Select {
             Self::Select => true,
             Self::Deselect => false,
         }
+    }
+}
+
+impl BitXor<bool> for Select {
+    type Output = Self;
+    fn bitxor(self, rhs: bool) -> Self::Output {
+        if rhs { !self } else { self }
     }
 }

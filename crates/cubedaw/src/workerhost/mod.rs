@@ -1,9 +1,9 @@
 use std::{sync::mpsc, thread};
 
 use anyhow::Result;
-use cubedaw_command::StateCommandWrapper;
 use cubedaw_lib::Buffer;
 use cubedaw_worker::WorkerOptions;
+use cubedaw_worker::command::StateCommandWrapper;
 
 mod audio;
 
