@@ -3,7 +3,6 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use cubedaw_lib::Buffer;
 use resourcekey::ResourceKey;
-use unwrap_todo::UnwrapTodo;
 
 use crate::{
     WorkerJob, WorkerState,
@@ -120,7 +119,9 @@ impl WorkerOptions {
             let factory = arc_ptr_to_standalone_plugin_factory
                 .entry(Arc::as_ptr(plugin_data))
                 .or_insert_with(|| {
-                    Arc::new(StandalonePluginFactory::new(&plugin_data.plugin, &this).todo())
+                    Arc::new(
+                        StandalonePluginFactory::new(&plugin_data.plugin, &this).expect("todo!()"),
+                    )
                 });
             standalone_plugin_factories.insert(key.clone(), factory.clone());
         }

@@ -1,14 +1,17 @@
 use std::cell::LazyCell;
 
-use cubedaw_lib::{Clip, Id, IdMap, Node, Note, State, Track};
+use ahash::HashSetExt;
+use cubedaw_lib::{Clip, Id, IdMap, IdSet, Node, Note, State, Track};
 use egui::Vec2;
 
 use crate::{
     UiState,
     command::{
-        clip::ClipMove,
-        node::{NodeSelect, UiNodeMove},
-        note::NoteMove,
+        clip::{ClipAddOrRemove, ClipMove},
+        node::{NodeAddOrRemove, NodeSelect, UiNodeMove},
+        note::{NoteAddOrRemove, NoteMove},
+        patch::CableAddOrRemove,
+        track::TrackAddOrRemove,
     },
     context::UiStateTracker,
     util::{DragHandler, NodeSearch, SelectionRect},
@@ -79,24 +82,26 @@ impl EphemeralState {
 
         // roughly the same template for everything:
         // - if there's a global selection action:
-        //   - iterate through every existing "thing" and set it to whether it needs to be selected
+        //   - iterate through every existing "thing":
+        //     - set it to whether it needs to be selected
         // - otherwise:
         //   - iterate through every thing in the selection changes and set the selection state
-        // - finally, handle movement
+        // - handle movement
+        // - handle deletions
 
         {
             let result = self.track_drag.on_frame_end();
 
-            if let Some(target_select) = result.global_selection_action {
+            if let Some(global_select) = result.global_selection_action {
                 for (track_id, track_ui) in &ui_state.tracks {
-                    let target_select_for_this = result
+                    let new_select = result
                         .selection_changes
                         .get(&track_id)
                         .copied()
-                        .unwrap_or(target_select);
+                        .unwrap_or(global_select);
 
-                    if track_ui.select != target_select_for_this {
-                        tracker.add(TrackSelect::new(track_id, target_select_for_this));
+                    if track_ui.select != new_select {
+                        tracker.add(TrackSelect::new(track_id, new_select));
                     }
                 }
             } else {
@@ -117,6 +122,27 @@ impl EphemeralState {
 
                 // TODO
                 let _ = finished_drag_offset;
+            }
+            if result.delete_selected {
+                // usually you'd have a link from a child back to the parent but doubly linked structures would be awful to debug
+                // and this is gonna be O(n) anyways so this doesn't really matter
+                let parent_map = {
+                    let mut parent_map = IdMap::new();
+                    for (track_id, track_state) in &state.tracks {
+                        for &child_id in &track_state.children {
+                            parent_map.insert(child_id, track_id);
+                        }
+                    }
+                    parent_map
+                };
+                for (track_id, track_ui) in &ui_state.tracks {
+                    if track_ui.select.is() {
+                        // parent_map.get(_) can return None if track_id is the root track, in which case don't remove it lol
+                        if let Some(&parent_track) = parent_map.get(track_id) {
+                            tracker.add(TrackAddOrRemove::removal(track_id, Some(parent_track)));
+                        }
+                    }
+                }
             }
         }
 
@@ -146,7 +172,9 @@ impl EphemeralState {
                     tracker.add(UiClipSelect::new(track_id, clip_id, selected));
                 }
             }
-            if let Some(finished_drag_offset) = result.movement {
+            if let Some(finished_drag_offset) = result.movement
+                && (finished_drag_offset.idx != 0 || finished_drag_offset.time != 0)
+            {
                 for (track_id, track) in &state.tracks {
                     let new_track_id = if finished_drag_offset.idx == 0 {
                         track_id
@@ -177,8 +205,25 @@ impl EphemeralState {
                     }
                 }
             }
+
+            if result.delete_selected {
+                for (track_id, track) in &state.tracks {
+                    let track_ui = ui_state.tracks.force_get(track_id);
+                    for (clip_range, clip_id, _clip) in track.clips() {
+                        let clip_ui = track_ui.clips.force_get(clip_id);
+                        if clip_ui.select.is() {
+                            tracker.add(ClipAddOrRemove::removal(
+                                clip_id,
+                                clip_range.start,
+                                track_id,
+                            ));
+                        }
+                    }
+                }
+            }
         }
 
+        // notes
         {
             let result = self.note_drag.on_frame_end();
 
@@ -224,34 +269,64 @@ impl EphemeralState {
                     }
                 }
             }
-        }
-
-        for (track_id, track_ephem) in &mut self.tracks {
-            let patch_ui = &ui_state.tracks.force_get(track_id).patch;
-            let result = track_ephem.patch.node_drag.on_frame_end();
-
-            if let Some(target_select) = result.global_selection_action {
-                for (node_id, node_ui) in &patch_ui.nodes {
-                    let target_select_for_this = result
-                        .selection_changes
-                        .get(&node_id)
-                        .copied()
-                        .unwrap_or(target_select);
-
-                    if node_ui.select != target_select_for_this {
-                        tracker.add(NodeSelect::new(track_id, node_id, target_select_for_this));
+            if result.delete_selected {
+                for (track_id, track_ui) in &ui_state.tracks {
+                    for (clip_id, clip_ui) in &track_ui.clips {
+                        for (note_id, note_ui) in &clip_ui.notes {
+                            if note_ui.select.is() {
+                                tracker.add(NoteAddOrRemove::removal(track_id, clip_id, note_id));
+                            }
+                        }
                     }
                 }
-            } else {
-                for (&node_id, &selected) in &result.selection_changes {
-                    tracker.add(NodeSelect::new(track_id, node_id, selected));
-                }
             }
+        }
 
-            if let Some(finished_drag_offset) = result.movement {
-                for (node_id, node_ui) in &patch_ui.nodes {
-                    if node_ui.select.is() {
-                        tracker.add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
+        {
+            // nodes
+            for (track_id, track_ephem) in &mut self.tracks {
+                let patch = &state.tracks.force_get(track_id).patch;
+                let patch_ui = &ui_state.tracks.force_get(track_id).patch;
+                let result = track_ephem.patch.node_drag.on_frame_end();
+
+                if let Some(target_select) = result.global_selection_action {
+                    for (node_id, node_ui) in &patch_ui.nodes {
+                        let target_select_for_this = result
+                            .selection_changes
+                            .get(&node_id)
+                            .copied()
+                            .unwrap_or(target_select);
+
+                        if node_ui.select != target_select_for_this {
+                            tracker.add(NodeSelect::new(track_id, node_id, target_select_for_this));
+                        }
+                    }
+                } else {
+                    for (&node_id, &selected) in &result.selection_changes {
+                        tracker.add(NodeSelect::new(track_id, node_id, selected));
+                    }
+                }
+
+                if let Some(finished_drag_offset) = result.movement {
+                    for (node_id, node_ui) in &patch_ui.nodes {
+                        if node_ui.select.is() {
+                            tracker.add(UiNodeMove::new(node_id, track_id, finished_drag_offset));
+                        }
+                    }
+                }
+                if result.delete_selected {
+                    let mut deleted_cables = IdSet::new();
+                    for (node_id, node_ui) in &patch_ui.nodes {
+                        if node_ui.select.is() {
+                            let node = patch.node_entry(node_id).expect("state/ui state desync");
+
+                            for cable_id in node.connected_cables() {
+                                if deleted_cables.insert(cable_id) {
+                                    tracker.add(CableAddOrRemove::removal(cable_id, track_id));
+                                }
+                            }
+                            tracker.add(NodeAddOrRemove::removal(node_id, track_id));
+                        }
                     }
                 }
             }

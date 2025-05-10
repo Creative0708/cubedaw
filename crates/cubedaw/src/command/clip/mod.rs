@@ -67,7 +67,7 @@ impl StateCommand for ClipMove {
 
 // TODO see TrackAddOrRemove
 #[derive(Clone)]
-pub struct NoUiClipAddOrRemove {
+struct NoUiClipAddOrRemove {
     track_id: Id<Track>,
     id: Id<Clip>,
     start_pos: i64,
@@ -93,16 +93,6 @@ impl NoUiClipAddOrRemove {
             data: None,
             is_removal: true,
         }
-    }
-
-    pub fn track_id(&self) -> Id<Track> {
-        self.track_id
-    }
-    pub fn id(&self) -> Id<Clip> {
-        self.id
-    }
-    pub fn is_removal(&self) -> bool {
-        self.is_removal
     }
 }
 
@@ -156,13 +146,13 @@ impl UiStateCommand for ClipAddOrRemove {
     ) {
         let clips = &mut ui_state
             .tracks
-            .get_mut(self.inner.track_id())
+            .get_mut(self.inner.track_id)
             .expect("nonexistent track")
             .clips;
-        if self.inner.is_removal() ^ action.is_rollback() {
-            self.ui_data = clips.remove(self.inner.id());
+        if self.inner.is_removal ^ action.is_rollback() {
+            self.ui_data = clips.remove(self.inner.id);
         } else {
-            clips.insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
+            clips.insert(self.inner.id, self.ui_data.take().unwrap_or_default());
         }
     }
 

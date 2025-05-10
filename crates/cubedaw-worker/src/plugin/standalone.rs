@@ -6,7 +6,6 @@ use cubedaw_lib::InternalBufferType;
 use cubedaw_plugin::{CubedawPluginImport, Instruction};
 use cubedaw_wasm::{ValType, Value};
 use resourcekey::ResourceKey;
-use unwrap_todo::UnwrapTodo;
 
 use crate::{WorkerOptions, plugin::Attribute};
 
@@ -67,7 +66,8 @@ impl StandalonePluginFactory {
         module.export_memory("mem", 0);
         let wasm_module = module.finish();
 
-        let module = cubedaw_wasm::Module::new(options.registry.engine(), &wasm_module).todo();
+        let module =
+            cubedaw_wasm::Module::new(options.registry.engine(), &wasm_module).expect("todo!()");
 
         Ok(Self {
             memory_location: module

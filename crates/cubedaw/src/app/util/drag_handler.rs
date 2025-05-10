@@ -23,7 +23,7 @@ type Diff<T> = <<T as SelectablePath>::Pos as ops::Sub<<T as SelectablePath>::Po
 
 mod impls {
     use super::SelectablePath;
-    use cubedaw_lib::{Id, Node, Note, Clip, Track};
+    use cubedaw_lib::{Clip, Id, Node, Note, Track};
     use egui::Pos2;
 
     impl SelectablePath for (Id<Track>, Id<Clip>, Id<Note>) {
@@ -133,7 +133,7 @@ impl<T: SelectablePath> DragHandler<T> {
         r
     }
 
-    pub fn on_frame_end(&mut self) -> DragHandlerResult<T> {
+    pub(in crate::app) fn on_frame_end(&mut self) -> DragHandlerResult<T> {
         let result = mem::take(&mut self.result);
 
         if self.marked_reset {
@@ -153,6 +153,7 @@ impl<T: SelectablePath> Default for DragHandler<T> {
             extra: Default::default(),
 
             result: Default::default(),
+
             marked_reset: false,
         }
     }
@@ -194,6 +195,9 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
     pub fn deselect_all(&mut self) {
         self.handler.result.global_selection_action = Some(Select::Deselect);
     }
+    pub fn delete_selected(&mut self) {
+        self.handler.result.delete_selected = true;
+    }
 
     pub fn process_interaction(
         &mut self,
@@ -220,6 +224,9 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
             self.new_drag_movement = Some(Default::default());
         }
         if resp.clicked() || (resp.drag_started() && !select.is()) {
+            // clicking/dragging won't focus the widget apparently
+            resp.request_focus();
+
             if resp.ctx.input(|i| i.modifiers.shift) {
                 // if user shift-clicks, toggle the selectedness without affecting anything else
                 self.handler.result.selection_changes.insert(path, !select);
@@ -234,6 +241,13 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         }
         if resp.secondary_clicked() {
             self.mark_reset();
+        }
+        if resp.has_focus()
+            && resp
+                .ctx
+                .input(|i| i.key_pressed(egui::Key::Delete) | i.key_pressed(egui::Key::X))
+        {
+            self.delete_selected();
         }
         if resp.dragged() {
             self.new_drag_movement = Some(resp.drag_delta());
@@ -268,6 +282,8 @@ pub struct DragHandlerResult<T: SelectablePath> {
     pub global_selection_action: Option<Select>,
 
     pub selection_changes: HashMap<T, Select>,
+
+    pub delete_selected: bool,
 }
 
 impl<T: SelectablePath> Default for DragHandlerResult<T> {
@@ -276,6 +292,7 @@ impl<T: SelectablePath> Default for DragHandlerResult<T> {
             movement: None,
             global_selection_action: None,
             selection_changes: HashMap::new(),
+            delete_selected: false,
         }
     }
 }

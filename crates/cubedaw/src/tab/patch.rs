@@ -1,22 +1,18 @@
 use std::iter;
 
-use ahash::HashSetExt;
 use anyhow::Result;
 
 use crate::command::{node::NodeStateUpdate, patch::CableAddOrRemove};
-use cubedaw_lib::{
-    Buffer, Cable, CableConnection, CableTag, Id, IdMap, IdSet, Node, NodeData, Track,
-};
+use cubedaw_lib::{Buffer, Cable, CableConnection, CableTag, Id, IdMap, Node, NodeData, Track};
 use egui::{
     Align, Area, CentralPanel, Color32, CornerRadius, CursorIcon, Direction, Frame, Layout, Pos2,
     Rangef, Rect, Response, Sense, Shape, Stroke, Ui, UiBuilder, Vec2, WidgetText,
     emath::TSTransform, epaint, layers::ShapeIdx, pos2, vec2,
 };
 use resourcekey::ResourceKey;
-use unwrap_todo::UnwrapTodo;
 
 use crate::{
-    command::node::UiNodeAddOrRemove,
+    command::node::NodeAddOrRemove,
     context::UiStateTracker,
     state::{ephemeral::NodeEphemeralState, ui::NodeUiState},
     util::Select,
@@ -90,17 +86,19 @@ impl crate::Screen for PatchTab {
 
         CentralPanel::default()
             .show_inside(ui, |ui| -> Result<()> {
+                let parent_layer_id = ui.layer_id();
+                let area_id = parent_layer_id.id.with((parent_layer_id.order, id));
+                let area = Area::new(area_id)
+                    .movable(false)
+                    .order(parent_layer_id.order);
+
                 if track_id.is_some() {
-                    let parent_layer_id = ui.layer_id();
                     let screen_viewport = ui.max_rect();
                     let transform = transform_viewport(self.transform, screen_viewport);
 
                     // we use an area here because it's the only way to render something with custom transforms above another layer.
                     // kinda jank (and there doesn't seem to be a way to delete an area), but oh well.
-                    Area::new(parent_layer_id.id.with((parent_layer_id.order, id)))
-                        .movable(false)
-                        .constrain_to(screen_viewport)
-                        .order(parent_layer_id.order)
+                    area.constrain_to(screen_viewport)
                         .show(ui.ctx(), |ui| -> Result<()> {
                             let layer_id = ui.layer_id();
 
@@ -115,6 +113,10 @@ impl crate::Screen for PatchTab {
                             if viewport_interaction.contains_pointer() {
                                 let (scroll_delta, zoom) =
                                     ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
+
+                                let zoom = (self.transform.scaling * zoom).clamp(0.2, 4.0)
+                                    / self.transform.scaling;
+
                                 if scroll_delta != Vec2::ZERO {
                                     self.transform.translation += scroll_delta;
                                 }
@@ -243,7 +245,9 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         const DOT_RADIUS: f32 = 1.5;
 
         // don't draw too many dots
-        if viewport.width().max(viewport.height()) < 960.0 {
+        let max_dim = viewport.width().max(viewport.height());
+        const MAX_MAX_DIM: f32 = 960.0;
+        if max_dim < MAX_MAX_DIM {
             for x in (viewport.left() / DOT_SPACING - DOT_RADIUS).ceil() as i32.. {
                 if x as f32 * DOT_SPACING > viewport.right() + DOT_RADIUS {
                     break;
@@ -256,7 +260,10 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     painter.circle_filled(
                         pos2(x as f32 * DOT_SPACING, y as f32 * DOT_SPACING),
                         DOT_RADIUS,
-                        ui.visuals().faint_bg_color,
+                        // cleanly fade out dots
+                        ui.visuals()
+                            .faint_bg_color
+                            .gamma_multiply(f32::min(4.0 - max_dim * (4.0 / MAX_MAX_DIM), 2.0)),
                     );
                 }
             }
@@ -422,7 +429,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             let node_thingy = ctx
                 .node_registry
                 .get(&node_data.data.key)
-                .todo()
+                .expect("todo!()")
                 .node_thingy
                 .as_ref();
 
@@ -642,7 +649,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     let node_data = fake_entry.data;
                     if primary_clicked {
                         // place the node
-                        ctx.tracker.add(UiNodeAddOrRemove::addition(
+                        ctx.tracker.add(NodeAddOrRemove::addition(
                             Id::arbitrary(),
                             node_data,
                             result.inputs.into_iter().map(|input| input.value).collect(),
@@ -671,36 +678,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
 
         ctx.ephemeral_state.tracks.insert(track_id, track_ephem);
 
-        // TODO make configurable, as usual...
-        if ui.input(|input| input.key_pressed(egui::Key::X)) {
-            self.delete_selected_nodes(ctx);
-        }
-
         Ok(result)
-    }
-
-    fn delete_selected_nodes(&mut self, ctx: &mut crate::Context<'ctx>) {
-        let Self {
-            patch_ui,
-            patch,
-            track_id,
-            ..
-        } = *self;
-        let mut deleted_cables: IdSet<Cable> = IdSet::new();
-        for (node_id, node_ui) in &patch_ui.nodes {
-            if node_ui.select.is() {
-                let node = patch.node_entry(node_id).todo();
-
-                for cable_id in node.connected_cables() {
-                    if deleted_cables.insert(cable_id) {
-                        ctx.tracker
-                            .add(CableAddOrRemove::removal(cable_id, track_id));
-                    }
-                }
-                ctx.tracker
-                    .add(UiNodeAddOrRemove::removal(node_id, track_id));
-            }
-        }
     }
 
     fn do_cable_interactions(
@@ -734,7 +712,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         }) = *dragged_node_slot
         {
             if response.drag_started() {
-                let node_data = patch.node_entry(descriptor.node_id()).todo();
+                let node_data = patch.node_entry(descriptor.node_id()).expect("todo!()");
 
                 match descriptor {
                     NodeSlotDescriptor::Input {

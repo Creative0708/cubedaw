@@ -21,7 +21,6 @@ smallvec = { workspace = true }
 bytemuck = { workspace = true }
 zerocopy = { workspace = true }
 tracing = { workspace = true }
-unwrap_todo = { workspace = true }
 bitflags = "2.8.0"
 
 cpal = "0.15.3"

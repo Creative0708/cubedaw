@@ -92,7 +92,7 @@ impl StateCommand for NodeStateUpdate {
 }
 
 #[derive(Clone)]
-pub struct NoUiNodeAddOrRemove {
+struct NoUiNodeAddOrRemove {
     id: Id<Node>,
     track_id: Id<Track>,
     data: Option<NodeData>,
@@ -127,16 +127,6 @@ impl NoUiNodeAddOrRemove {
             num_outputs: 0,
             is_removal: true,
         }
-    }
-
-    pub fn id(&self) -> Id<Node> {
-        self.id
-    }
-    pub fn track_id(&self) -> Id<Track> {
-        self.track_id
-    }
-    pub fn is_removal(&self) -> bool {
-        self.is_removal
     }
 
     fn get_patch<'a>(&self, state: &'a mut cubedaw_lib::State) -> &'a mut cubedaw_lib::Patch {
@@ -310,12 +300,12 @@ impl StateCommand for NodeMultiplierChange {
     }
 }
 
-pub struct UiNodeAddOrRemove {
+pub struct NodeAddOrRemove {
     inner: NoUiNodeAddOrRemove,
     ui_data: Option<NodeUiState>,
 }
 
-impl UiNodeAddOrRemove {
+impl NodeAddOrRemove {
     pub fn addition(
         id: Id<Node>,
         data: NodeData,
@@ -337,7 +327,7 @@ impl UiNodeAddOrRemove {
     }
 }
 
-impl UiStateCommand for UiNodeAddOrRemove {
+impl UiStateCommand for NodeAddOrRemove {
     fn run_ui(
         &mut self,
         ui_state: &mut crate::UiState,
@@ -346,29 +336,26 @@ impl UiStateCommand for UiNodeAddOrRemove {
     ) {
         let nodes = &mut ui_state
             .tracks
-            .get_mut(self.inner.track_id())
+            .get_mut(self.inner.track_id)
             .expect("nonexistent track")
             .patch
             .nodes;
-        if self.inner.is_removal() ^ action.is_rollback() {
-            self.ui_data = nodes.remove(self.inner.id());
+        if self.inner.is_removal ^ action.is_rollback() {
+            self.ui_data = nodes.remove(self.inner.id);
 
-            if let Some(track) = ephemeral_state.tracks.get_mut(self.inner.track_id()) {
-                track.patch.nodes.remove(self.inner.id());
+            if let Some(track) = ephemeral_state.tracks.get_mut(self.inner.track_id) {
+                track.patch.nodes.remove(self.inner.id);
             }
         } else {
             nodes.insert(
-                self.inner.id(),
+                self.inner.id,
                 self.ui_data
                     .take()
                     .expect("called execute_add() on empty UiNodeAddOrRemove"),
             );
 
-            if let Some(track) = ephemeral_state.tracks.get_mut(self.inner.track_id()) {
-                track
-                    .patch
-                    .nodes
-                    .insert(self.inner.id(), Default::default());
+            if let Some(track) = ephemeral_state.tracks.get_mut(self.inner.track_id) {
+                track.patch.nodes.insert(self.inner.id, Default::default());
             }
         }
     }

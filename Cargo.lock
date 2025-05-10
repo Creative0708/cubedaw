@@ -1040,7 +1040,6 @@ dependencies = [
  "smallvec",
  "tracing",
  "tracing-subscriber",
- "unwrap_todo",
  "zerocopy 0.8.17",
 ]
 
@@ -1071,7 +1070,6 @@ dependencies = [
  "serde",
  "smallvec",
  "tracing",
- "unwrap_todo",
  "wasm-encoder 0.225.0",
  "wasmparser 0.225.0",
 ]
@@ -1108,7 +1106,6 @@ dependencies = [
  "resourcekey",
  "smallvec",
  "tracing",
- "unwrap_todo",
  "work-queue",
 ]
 
@@ -3794,12 +3791,6 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
-
-[[package]]
-name = "unwrap_todo"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f1e6450649219312625ed458e726bb3f41e5123d5d9fdc4bd83af2ea7b8d4fa"
 
 [[package]]
 name = "url"

@@ -68,6 +68,8 @@ impl crate::Screen for TrackTab {
 }
 
 struct Prepared<'ctx> {
+    tab_has_focus: bool,
+
     /// If the user is dragging and released the drag, would the drag succeed?
     ///
     /// Basically, is the drag in range of the track headers.
@@ -262,12 +264,11 @@ impl<'ctx> Prepared<'ctx> {
 
         let mut dragging_would_succeed = false;
 
-        let drag = &ctx.ephemeral_state.track_drag;
         let width_of_track_header_panel = ui.max_rect().width();
         if let Some(egui::Vec2 {
             x: raw_movement_x,
             y: raw_movement_y,
-        }) = drag.raw_movement()
+        }) = ctx.ephemeral_state.track_drag.raw_movement()
             && (-width_of_track_header_panel..=width_of_track_header_panel)
                 .contains(&raw_movement_x)
         {
@@ -323,6 +324,7 @@ impl<'ctx> Prepared<'ctx> {
         }
 
         Self {
+            tab_has_focus: ctx.focused_tab() == Some(tab.id),
             dragging_would_succeed,
             track_list,
         }

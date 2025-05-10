@@ -57,7 +57,7 @@ impl StateCommand for NoteMove {
 
 // TODO see TrackAddOrRemove
 #[derive(Clone)]
-pub struct NoUiNoteAddOrRemove {
+struct NoUiNoteAddOrRemove {
     id: Id<Note>,
     start_pos: i64,
     track_id: Id<Track>,
@@ -92,19 +92,6 @@ impl NoUiNoteAddOrRemove {
             data: None,
             is_removal: true,
         }
-    }
-
-    pub fn track_id(&self) -> Id<Track> {
-        self.track_id
-    }
-    pub fn clip_id(&self) -> Id<Clip> {
-        self.clip_id
-    }
-    pub fn id(&self) -> Id<Note> {
-        self.id
-    }
-    pub fn is_removal(&self) -> bool {
-        self.is_removal
     }
 
     fn clip<'a>(&self, state: &'a mut cubedaw_lib::State) -> Option<&'a mut cubedaw_lib::Clip> {
@@ -173,15 +160,15 @@ impl UiStateCommand for NoteAddOrRemove {
     ) {
         let notes = &mut ui_state
             .tracks
-            .force_get_mut(self.inner.track_id())
+            .force_get_mut(self.inner.track_id)
             .clips
-            .force_get_mut(self.inner.clip_id())
+            .force_get_mut(self.inner.clip_id)
             .notes;
-        if self.inner.is_removal() ^ action.is_rollback() {
-            self.ui_data = notes.remove(self.inner.id());
+        if self.inner.is_removal ^ action.is_rollback() {
+            self.ui_data = notes.remove(self.inner.id);
             assert!(self.ui_data.is_some(), "tried to remove nonexistent note");
         } else {
-            notes.insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
+            notes.insert(self.inner.id, self.ui_data.take().unwrap_or_default());
         }
     }
     fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {

@@ -149,6 +149,8 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         tab: &mut PianoRollTab,
     ) -> Option<Self> {
         let track_id = tab.track_id?;
+        // don't reset track_id here bc if the user undoes a track deletion we still want the track to be used
+        let track = ctx.state.tracks.get(track_id)?;
 
         let bg_response = view.ui_background(
             ctx,
@@ -165,7 +167,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
 
         Some(Self {
             track_id,
-            track: ctx.state.tracks.get(track_id)?,
+            track,
             track_ui: ctx.ui_state.tracks.force_get(track_id),
             tab_id: tab.id,
 
@@ -333,7 +335,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         selection_rect: &mut SelectionRect,
         tracker: &mut UiStateTracker,
 
-        prepared: &mut crate::util::Prepared<
+        drag: &mut crate::util::Prepared<
             (Id<Track>, Id<Clip>, Id<Note>),
             impl Fn(Pos2) -> Note2DPos,
         >,
@@ -354,7 +356,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
         let Note2DOffset {
             time: movement_time,
             pitch: movement_pitch,
-        } = prepared.movement().unwrap_or_default();
+        } = drag.movement().unwrap_or_default();
 
         let mut note_range = note.range_with(relative_start_pos);
         let mut note_pitch = note.pitch;
@@ -405,7 +407,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
             if note_interaction.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
             }
-            prepared.process_interaction(
+            drag.process_interaction(
                 note_id.cast(),
                 &note_interaction,
                 (track_id, clip_id, note_id),
@@ -427,9 +429,12 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                 time: view.input_screen_x_to_song_x(x),
                 pitch: ntspc.screen_y_to_note_y(y),
             },
-            |prepared| {
+            |drag| {
                 if self.bg_response.clicked() {
-                    prepared.deselect_all();
+                    drag.deselect_all();
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::Delete) | i.key_pressed(egui::Key::X)) {
+                    drag.delete_selected();
                 }
 
                 for &RenderedClip {
@@ -445,7 +450,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                             ui,
                             &mut ctx.ephemeral_state.selection_rect,
                             &mut ctx.tracker,
-                            prepared,
+                            drag,
                             range.start + note_start,
                             note,
                             Some((clip_id, note_id)),
@@ -458,7 +463,7 @@ impl<'ctx, 'arg> Prepared<'ctx, 'arg> {
                         ui,
                         &mut ctx.ephemeral_state.selection_rect,
                         &mut ctx.tracker,
-                        prepared,
+                        drag,
                         start_pos,
                         note,
                         None,

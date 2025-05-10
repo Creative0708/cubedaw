@@ -46,7 +46,6 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         state: &'a State,
         ui_state: &'a UiState,

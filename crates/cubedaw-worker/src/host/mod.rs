@@ -2,7 +2,6 @@ use std::{fmt::Debug, sync::Arc, thread};
 
 use anyhow::Context;
 use cubedaw_lib::{Buffer, IdMap, InternalBufferType, PreciseSongPos, Range, State};
-use unwrap_todo::UnwrapTodo;
 
 use crate::{
     WorkerJob, WorkerOptions,
@@ -71,7 +70,7 @@ impl WorkerHost {
         self.worker_state
             .sync_with(state, worker_options)
             .with_context(|| format!("state is {state:?}"))
-            .todo();
+            .expect("todo!()");
     }
 
     /// Delete all currently processing jobs. This will result in silence
@@ -414,10 +413,13 @@ fn add_jobs(
                     for (_start_pos, note_id, _note) in clip.note_start_positions_in(
                         clip_range.intersect(song_range_that_we_will_process) - clip_range.start,
                     ) {
-                        worker_track_data.notes.insert(note_id, WorkerNoteState {
-                            clip_id,
-                            nodes: worker_track_data.note_nodes.clone(),
-                        });
+                        worker_track_data.notes.insert(
+                            note_id,
+                            WorkerNoteState {
+                                clip_id,
+                                nodes: worker_track_data.note_nodes.clone(),
+                            },
+                        );
                     }
                 }
             }

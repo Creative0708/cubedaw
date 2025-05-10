@@ -45,5 +45,3 @@ serde = "1.0.217"
 # however there doesn't seem to be a viable alternative for a low-dependency mutable interval tree already on crates.io
 # possibly contribute back to meminterval if they're fine with it or fork it?
 meminterval = "0.4.1"
-
-unwrap_todo = "0.1.2"

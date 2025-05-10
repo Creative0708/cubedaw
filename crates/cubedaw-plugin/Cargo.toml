@@ -23,7 +23,6 @@ serde = { workspace = true }
 wasm-encoder = { version = "0.225.0", features = ["wasmparser"] }
 anyhow = { workspace = true }
 semver = { workspace = true }
-unwrap_todo = { workspace = true }
 
 [dev-dependencies]
 cubedaw-wasm = { path = "../cubedaw-wasm", features = ["v128"] }

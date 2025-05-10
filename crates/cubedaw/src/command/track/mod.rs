@@ -6,7 +6,7 @@ use crate::{registry::NodeRegistry, state::ui::TrackUiState, util::Select};
 use super::UiStateCommand;
 
 #[derive(Clone)]
-pub struct NoUiTrackAddOrRemove {
+struct NoUiTrackAddOrRemove {
     id: Id<Track>,
     data: Option<Track>,
     parent_track: Option<Id<Track>>,
@@ -29,15 +29,6 @@ impl NoUiTrackAddOrRemove {
             parent_track,
             is_removal: true,
         }
-    }
-    pub const fn id(&self) -> Id<Track> {
-        self.id
-    }
-    pub const fn is_removal(&self) -> bool {
-        self.is_removal
-    }
-    pub const fn parent_track(&self) -> Option<Id<Track>> {
-        self.parent_track
     }
 
     fn get_parent_track<'a>(
@@ -158,16 +149,22 @@ impl TrackAddOrRemove {
                 patch: crate::state::ui::PatchUiState {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
-                        map.insert(id_note_output, crate::state::ui::NodeUiState {
-                            select: Select::Deselect,
-                            pos: egui::pos2(-80.0, 0.0),
-                            width: 128.0,
-                        });
-                        map.insert(id_track_output, crate::state::ui::NodeUiState {
-                            select: Select::Deselect,
-                            pos: egui::pos2(240.0, 0.0),
-                            width: 128.0,
-                        });
+                        map.insert(
+                            id_note_output,
+                            crate::state::ui::NodeUiState {
+                                select: Select::Deselect,
+                                pos: egui::pos2(-80.0, 0.0),
+                                width: 128.0,
+                            },
+                        );
+                        map.insert(
+                            id_track_output,
+                            crate::state::ui::NodeUiState {
+                                select: Select::Deselect,
+                                pos: egui::pos2(240.0, 0.0),
+                                width: 128.0,
+                            },
+                        );
                         map
                     },
                 },
@@ -186,32 +183,32 @@ impl UiStateCommand for TrackAddOrRemove {
         ephemeral_state: &mut crate::EphemeralState,
         action: ActionType,
     ) {
-        if self.inner.is_removal() & action.is_rollback() {
-            self.ui_data = ui_state.tracks.remove(self.inner.id());
-            if let Some(parent_track) = self.inner.parent_track() {
+        if self.inner.is_removal ^ action.is_rollback() {
+            self.ui_data = ui_state.tracks.remove(self.inner.id);
+            if let Some(parent_track) = self.inner.parent_track {
                 ui_state
                     .tracks
                     .force_get_mut(parent_track)
                     .track_list
-                    .retain(|&id| id != self.inner.id());
+                    .retain(|&id| id != self.inner.id);
             }
 
-            ephemeral_state.tracks.remove(self.inner.id());
+            ephemeral_state.tracks.remove(self.inner.id);
         } else {
             ui_state
                 .tracks
-                .insert(self.inner.id(), self.ui_data.take().unwrap_or_default());
-            if let Some(parent_track) = self.inner.parent_track() {
+                .insert(self.inner.id, self.ui_data.take().unwrap_or_default());
+            if let Some(parent_track) = self.inner.parent_track {
                 let parent_track_ui = ui_state.tracks.force_get_mut(parent_track);
                 parent_track_ui.track_list.insert(
                     (self.insertion_pos as usize).min(parent_track_ui.track_list.len()),
-                    self.inner.id(),
+                    self.inner.id,
                 );
             }
 
             ephemeral_state
                 .tracks
-                .insert(self.inner.id(), Default::default());
+                .insert(self.inner.id, Default::default());
         }
     }
 

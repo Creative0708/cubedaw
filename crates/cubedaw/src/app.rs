@@ -263,7 +263,7 @@ impl eframe::App for CubedawApp {
                         panic!("PANIC!!!!!");
                     };
                 });
-                ui.menu_button("Window", |ui| {
+                ui.menu_button("Tabs", |ui| {
                     if ui.button("Tracks").clicked() {
                         ctx.tabs
                             .create_tab::<crate::tab::track::TrackTab>(ctx.state, ctx.ui_state);
