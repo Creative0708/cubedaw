@@ -1,4 +1,4 @@
-use cubedaw_lib::{Clip, Id, IdMap, Note, Track};
+use cubedaw_lib::{Clip, Id, Note, Track};
 use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
 
 use crate::{state::ui::NoteUiState, util::Select};
@@ -115,9 +115,6 @@ impl NoUiNoteAddOrRemove {
                 .clip_mut(self.clip_id)?,
         )
     }
-
-    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {}
-    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {}
 }
 
 impl StateCommand for NoUiNoteAddOrRemove {

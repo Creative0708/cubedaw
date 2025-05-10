@@ -31,19 +31,6 @@ impl CableAddOrRemove {
             is_removal: true,
         }
     }
-
-    pub fn id(&self) -> Id<Cable> {
-        self.id
-    }
-    pub fn track_id(&self) -> Id<Track> {
-        self.track_id
-    }
-    pub fn is_removal(&self) -> bool {
-        self.is_removal
-    }
-
-    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {}
-    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {}
 }
 
 impl StateCommand for CableAddOrRemove {

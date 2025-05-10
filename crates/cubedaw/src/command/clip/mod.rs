@@ -1,4 +1,4 @@
-use cubedaw_lib::{Clip, Id, IdMap, Range, Track};
+use cubedaw_lib::{Clip, Id, Range, Track};
 use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
 
 use crate::{state::ui::ClipUiState, util::Select};
@@ -14,14 +14,14 @@ pub struct ClipMove {
 }
 
 impl ClipMove {
-    pub fn same(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
-        Self {
-            track_from: track_id,
-            track_to: track_id,
-            starting_range,
-            new_start_pos,
-        }
-    }
+    // pub fn same(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
+    //     Self {
+    //         track_from: track_id,
+    //         track_to: track_id,
+    //         starting_range,
+    //         new_start_pos,
+    //     }
+    // }
     pub fn new(
         track_from: Id<Track>,
         track_to: Id<Track>,
@@ -104,9 +104,6 @@ impl NoUiClipAddOrRemove {
     pub fn is_removal(&self) -> bool {
         self.is_removal
     }
-
-    fn execute_add(&mut self, state: &mut cubedaw_lib::State) {}
-    fn execute_remove(&mut self, state: &mut cubedaw_lib::State) {}
 }
 
 impl StateCommand for NoUiClipAddOrRemove {

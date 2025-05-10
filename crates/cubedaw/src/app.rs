@@ -7,11 +7,7 @@ use cubedaw_worker::command::ActionType;
 use egui_dock::{DockArea, DockState};
 use util::Select;
 
-use crate::{
-    Context, Screen,
-    command::{UiStateCommand, UiStateCommandWrapper},
-    node,
-};
+use crate::{Context, Screen, command::UiStateCommandWrapper, node};
 
 pub mod context;
 pub mod state;

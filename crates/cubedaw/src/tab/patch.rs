@@ -16,13 +16,9 @@ use resourcekey::ResourceKey;
 use unwrap_todo::UnwrapTodo;
 
 use crate::{
-    EphemeralState,
     command::node::UiNodeAddOrRemove,
     context::UiStateTracker,
-    state::{
-        ephemeral::{NodeEphemeralState, PatchEphemeralState},
-        ui::NodeUiState,
-    },
+    state::{ephemeral::NodeEphemeralState, ui::NodeUiState},
     util::Select,
     widget::DragValue,
 };
@@ -235,13 +231,6 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             primary_clicked,
             secondary_clicked,
         }
-    }
-
-    fn patch_ephemeral(
-        &self,
-        ephemeral: &'ctx mut EphemeralState,
-    ) -> &'ctx mut PatchEphemeralState {
-        &mut ephemeral.tracks.force_get_mut(self.track_id).patch
     }
 
     pub fn background(&mut self, ui: &mut Ui, _ctx: &mut crate::Context<'ctx>) {
@@ -985,11 +974,14 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         let mut cable_shapes: Vec<Shape> = Vec::new();
         let mut draw_cable = |input_pos: Pos2, output_pos: Pos2, tag: CableTag| {
             // TODO make this configurable
-            let cable_stroke = Stroke::new(4.0, match tag {
-                CableTag::Invalid => ui.visuals().error_fg_color,
-                CableTag::Valid => Color32::from_gray(128),
-                CableTag::Disconnected => Color32::from_gray(100),
-            });
+            let cable_stroke = Stroke::new(
+                4.0,
+                match tag {
+                    CableTag::Invalid => ui.visuals().error_fg_color,
+                    CableTag::Valid => Color32::from_gray(128),
+                    CableTag::Disconnected => Color32::from_gray(100),
+                },
+            );
 
             if !viewport.intersects(Rect::from_points(&[input_pos, output_pos])) {
                 return;

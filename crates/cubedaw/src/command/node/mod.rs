@@ -1,4 +1,4 @@
-use cubedaw_lib::{Buffer, Id, IdMap, Node, NodeData, Track};
+use cubedaw_lib::{Buffer, Id, Node, NodeData, Track};
 use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
 use egui::Vec2;
 
@@ -40,13 +40,6 @@ impl NodeStateUpdate {
 }
 
 impl NodeStateUpdate {
-    pub fn track_id(&self) -> Id<Track> {
-        self.track_id
-    }
-    pub fn id(&self) -> Id<Node> {
-        self.id
-    }
-
     fn node<'a>(&mut self, state: &'a mut cubedaw_lib::State) -> Option<&'a mut Node> {
         Some(
             state

@@ -22,23 +22,27 @@ impl PreciseSongPos {
         }
     }
     pub fn from_song_pos_f32(song_pos: f32) -> Self {
+        // 18446744e19 == 2 ** 64
         let floor = song_pos.floor();
         Self {
             song_pos: floor as i64,
-            fraction: ((song_pos - floor) * 18446744073709552000_f32) as u64,
+            fraction: ((song_pos - floor) * 1.8446744e19_f32) as u64,
         }
     }
     pub fn from_song_pos_f64(song_pos: f64) -> Self {
+        // 8446744073709552e19 == 2 ** 64
         let floor = song_pos.floor();
         Self {
             song_pos: floor as i64,
-            fraction: ((song_pos - floor) * 18446744073709552000_f64) as u64,
+            fraction: ((song_pos - floor) * 1.8446744073709552e19_f64) as u64,
         }
     }
     pub fn to_song_pos_f32(self) -> f32 {
+        // 5.421011e-20 == 2 ** -64
         self.song_pos as f32 + self.fraction as f32 * 5.421011e-20_f32
     }
     pub fn to_song_pos_f64(self) -> f64 {
+        // 5.421010862427522e-20 == 2 ** -64
         self.song_pos as f64 + self.fraction as f64 * 5.421010862427522e-20_f64
     }
 
@@ -46,9 +50,9 @@ impl PreciseSongPos {
         self.song_pos + if self.fraction > 0 { 1 } else { 0 }
     }
     pub fn round_to_song_pos(self) -> i64 {
-        // 9223372036854775808 == 2 ** 63
+        // 0x8000000000000000 == 2 ** 63
         self.song_pos
-            + if self.fraction >= 9223372036854775808 {
+            + if self.fraction >= 0x8000000000000000 {
                 1
             } else {
                 0

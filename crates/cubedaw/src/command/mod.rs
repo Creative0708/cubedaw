@@ -1,6 +1,6 @@
 //! Like cubedaw-command, but with `UiState` support.
 
-use std::any::{Any, TypeId};
+use std::any::Any;
 
 use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
 
