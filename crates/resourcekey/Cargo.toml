@@ -9,8 +9,7 @@ version = "0.1.0"
 ascii = { workspace = true }
 ahash = { workspace = true }
 serde = { workspace = true, optional = true }
-ctor = "0.4.2"
-libc = "0.2.172"
+arcstr = "1.2.0"
 
 [features]
 serde = ["dep:serde"]
