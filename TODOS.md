@@ -7,10 +7,16 @@
   - [ ] how LFO?
     - [ ] Either merge LFO with the oscillator (<-- probably best solution) or make a new node
       - Most user-ergonomic: make the frequency slider go below 0 into the lfo range
-
-- [ ] Rename clips to clips
-
-  - This is how they're called in FL Studio and "clip" is a stupid name anyways
+  - [ ] Distortion (hard & soft)
+    - [ ] Optionally, a waveshaper (take blender's node curve editor)
+  - [ ] Chorus (!!!)
+  - [ ] Delay (Echo)
+  - [ ] Filters (If nothing else, the ones at https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html)
+  - [ ] Simple compressor
+    - Attack, Release, Ratio, Threshold, Gain
+  - [ ] Envelope
+  - [ ] EQ
+  - [ ] Bitcrusher
 
 - [x] convert `log` to `tracing`
 
@@ -37,5 +43,4 @@
   - [ ] add a hashset for selected notes/clips/whatever that's kept in sync with everything
 - [ ] Add tempo automation
   - Have to use a curve that's easily integratable so we don't run into timing performance issues (see [https://ardour.org/timing.html])
-- [ ] _Investigate_ whether allowing multiple clips at the same time on a track (like piano roll notes) would be a good idea
-  - When audio clips are
+- [ ] Add node graph paralellization (compile node )

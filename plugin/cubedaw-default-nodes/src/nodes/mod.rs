@@ -1,4 +1,5 @@
 mod math;
+mod distortion
 mod oscillator;
 
 #[derive(

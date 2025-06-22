@@ -9,7 +9,8 @@ version = "0.1.0"
 ascii = { workspace = true }
 ahash = { workspace = true }
 serde = { workspace = true, optional = true }
-const-fnv1a-hash = "1.1.0"
+ctor = "0.4.2"
+libc = "0.2.172"
 
 [features]
 serde = ["dep:serde"]

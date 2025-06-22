@@ -9,6 +9,7 @@ use util::Select;
 
 use crate::{Context, Screen, command::UiStateCommandWrapper, node};
 
+pub mod config;
 pub mod context;
 pub mod state;
 pub mod util;
@@ -210,10 +211,9 @@ impl CubedawApp {
                 let mut starting_index = 0;
                 if let (Some(last_command), Some(first_command)) =
                     (last.first_mut(), commands.first_mut())
+                    && last_command.try_merge(first_command.as_ref())
                 {
-                    if last_command.try_merge(first_command.as_ref()) {
-                        starting_index = 1;
-                    }
+                    starting_index = 1;
                 }
                 last.extend(commands.drain(starting_index..));
             } else if !commands.is_empty() {

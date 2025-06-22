@@ -6,7 +6,7 @@ rust-version.workspace = true
 version = "0.1.0"
 
 [dependencies]
-wasmparser = { version = "0.225.0", default-features = false, features = [
+wasmparser = { version = "0.231.0", default-features = false, features = [
     "component-model",
 ] }
 cubedaw-wasm = { path = "../cubedaw-wasm", default-features = false, features = [
@@ -20,7 +20,7 @@ smallvec = { workspace = true }
 tracing = { workspace = true }
 postcard = "1.1.1"
 serde = { workspace = true }
-wasm-encoder = { version = "0.225.0", features = ["wasmparser"] }
+wasm-encoder = { version = "0.231.0", features = ["wasmparser"] }
 anyhow = { workspace = true }
 semver = { workspace = true }
 

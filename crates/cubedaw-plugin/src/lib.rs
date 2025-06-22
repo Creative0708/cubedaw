@@ -229,7 +229,7 @@ impl Plugin {
                     assert!(!mem.memory64, "validator didn't validate");
                     assert!(!mem.shared, "validator didn't validate");
 
-                    memory = Some(reencoder.memory_type(mem));
+                    memory = Some(reencoder.memory_type(mem)?);
                 }
                 wasmparser::Payload::TagSection(_) => {
                     todo!("sorry i don't know what a tag section is")
@@ -626,12 +626,15 @@ impl CubedawPluginImport {
     pub fn ty(self) -> wasm_encoder::FuncType {
         match self {
             Self::SampleRate => wasm_encoder::FuncType::new([], [wasm_encoder::ValType::I32]),
-            Self::Input => wasm_encoder::FuncType::new([wasm_encoder::ValType::I32], [
-                wasm_encoder::ValType::V128,
-                wasm_encoder::ValType::V128,
-                wasm_encoder::ValType::V128,
-                wasm_encoder::ValType::V128,
-            ]),
+            Self::Input => wasm_encoder::FuncType::new(
+                [wasm_encoder::ValType::I32],
+                [
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                ],
+            ),
             Self::Output => wasm_encoder::FuncType::new(
                 [
                     wasm_encoder::ValType::V128,
@@ -642,12 +645,15 @@ impl CubedawPluginImport {
                 ],
                 [],
             ),
-            Self::Attribute => wasm_encoder::FuncType::new([wasm_encoder::ValType::I32], [
-                wasm_encoder::ValType::V128,
-                wasm_encoder::ValType::V128,
-                wasm_encoder::ValType::V128,
-                wasm_encoder::ValType::V128,
-            ]),
+            Self::Attribute => wasm_encoder::FuncType::new(
+                [wasm_encoder::ValType::I32],
+                [
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                    wasm_encoder::ValType::V128,
+                ],
+            ),
         }
     }
 }
