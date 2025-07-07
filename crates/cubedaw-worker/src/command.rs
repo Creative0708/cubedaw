@@ -3,7 +3,7 @@ use std::any::Any;
 use cubedaw_lib::State;
 
 pub trait StateCommand: 'static + Send + Clone {
-    fn run(&mut self, state: &mut State, action: ActionType);
+    fn run(&mut self, state: &mut State, action: ActionDirection);
 
     fn try_merge(&mut self, _other: &Self) -> bool {
         false
@@ -11,7 +11,7 @@ pub trait StateCommand: 'static + Send + Clone {
 }
 
 pub trait StateCommandWrapper: 'static + Sealed + Send + Any {
-    fn run(&mut self, state: &mut State, action: ActionType);
+    fn run(&mut self, state: &mut State, action: ActionDirection);
 
     fn try_merge(&mut self, other: &dyn StateCommandWrapper) -> bool;
 
@@ -20,7 +20,7 @@ pub trait StateCommandWrapper: 'static + Sealed + Send + Any {
 
 impl<T: StateCommand> Sealed for T {}
 impl<T: StateCommand> StateCommandWrapper for T {
-    fn run(&mut self, state: &mut State, action: ActionType) {
+    fn run(&mut self, state: &mut State, action: ActionDirection) {
         StateCommand::run(self, state, action)
     }
 
@@ -39,11 +39,11 @@ impl<T: StateCommand> StateCommandWrapper for T {
 
 impl dyn StateCommandWrapper {
     pub fn execute(&mut self, state: &mut State) {
-        self.run(state, ActionType::Execute)
+        self.run(state, ActionDirection::Forward)
     }
 
     pub fn rollback(&mut self, state: &mut State) {
-        self.run(state, ActionType::Rollback)
+        self.run(state, ActionDirection::Reverse)
     }
 }
 
@@ -60,16 +60,16 @@ impl std::fmt::Debug for dyn StateCommandWrapper {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ActionType {
-    Execute,
-    Rollback,
+pub enum ActionDirection {
+    Forward,
+    Reverse,
 }
-impl ActionType {
+impl ActionDirection {
     pub fn is_execute(self) -> bool {
-        matches!(self, ActionType::Execute)
+        matches!(self, ActionDirection::Forward)
     }
     pub fn is_rollback(self) -> bool {
-        matches!(self, ActionType::Rollback)
+        matches!(self, ActionDirection::Reverse)
     }
 }
 

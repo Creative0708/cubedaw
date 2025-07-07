@@ -183,7 +183,6 @@ impl EphemeralState {
                         let Some(curr_idx) = track_list.iter().position(|&i| i == track_id) else {
                             continue;
                         };
-                        dbg!(finished_drag_offset);
                         let new_idx = curr_idx
                             .saturating_add_signed(finished_drag_offset.idx as isize)
                             .min(track_list.len() - 1);
@@ -196,6 +195,7 @@ impl EphemeralState {
                         let clip_ui = track_ui.clips.force_get(clip_id);
                         if clip_ui.select.is() {
                             tracker.add(ClipMove::new(
+                                clip_id,
                                 track_id,
                                 new_track_id,
                                 clip_range,

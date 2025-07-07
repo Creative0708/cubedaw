@@ -34,7 +34,7 @@ impl CableAddOrRemove {
 }
 
 impl StateCommand for CableAddOrRemove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: cubedaw_worker::command::ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: cubedaw_worker::command::ActionDirection) {
         let track = state
             .tracks
             .get_mut(self.track_id)

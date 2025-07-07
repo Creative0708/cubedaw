@@ -36,6 +36,14 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "cubedaw",
         eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_app_id("cubedaw")
+                .with_title("cubedaw")
+                .with_icon(egui::IconData {
+                    rgba: include_bytes!("res/icon/icon.bin").into(),
+                    width: 32,
+                    height: 32,
+                }),
             ..Default::default()
         },
         Box::new(|cc| Ok(Box::new(CubedawApp::new(cc)))),

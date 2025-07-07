@@ -9,6 +9,8 @@ pub struct Track {
     pub patch: Patch,
 
     polyphony: u32,
+
+    // these two fields are kept synchronized with one another
     clip_map: IdMap<Clip>,
     clips: BTreeMap<Range, Id<Clip>>,
 

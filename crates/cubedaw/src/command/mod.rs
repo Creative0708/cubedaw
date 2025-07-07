@@ -2,7 +2,7 @@
 
 use std::any::Any;
 
-use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
+use cubedaw_worker::command::{ActionDirection, StateCommand, StateCommandWrapper};
 
 use crate::{EphemeralState, UiState};
 
@@ -18,7 +18,7 @@ pub trait UiStateCommand: 'static + Send {
         &mut self,
         ui_state: &mut UiState,
         ephemeral_state: &mut EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     );
 
     fn try_merge(&mut self, _other: &Self) -> bool {
@@ -36,7 +36,7 @@ pub trait UiStateCommandWrapper: 'static + Send + Any {
         &mut self,
         ui_state: &mut UiState,
         ephemeral_state: &mut EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     );
 
     fn try_merge(&mut self, other: &dyn UiStateCommandWrapper) -> bool;
@@ -48,7 +48,7 @@ impl<T: UiStateCommand> UiStateCommandWrapper for T {
         &mut self,
         ui_state: &mut UiState,
         ephemeral_state: &mut EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         UiStateCommand::run_ui(self, ui_state, ephemeral_state, action)
     }
@@ -68,18 +68,18 @@ impl<T: UiStateCommand> UiStateCommandWrapper for T {
 
 impl dyn UiStateCommandWrapper {
     pub fn execute_ui(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState) {
-        self.run_ui(ui_state, ephemeral_state, ActionType::Execute)
+        self.run_ui(ui_state, ephemeral_state, ActionDirection::Forward)
     }
 
     pub fn rollback_ui(&mut self, ui_state: &mut UiState, ephemeral_state: &mut EphemeralState) {
-        self.run_ui(ui_state, ephemeral_state, ActionType::Rollback)
+        self.run_ui(ui_state, ephemeral_state, ActionDirection::Reverse)
     }
 }
 
 pub struct UiStateCommandNoop<T: StateCommand>(pub T);
 
 impl<T: StateCommand> UiStateCommand for UiStateCommandNoop<T> {
-    fn run_ui(&mut self, _: &mut UiState, _: &mut EphemeralState, _: ActionType) {}
+    fn run_ui(&mut self, _: &mut UiState, _: &mut EphemeralState, _: ActionDirection) {}
 
     fn try_merge(&mut self, other: &Self) -> bool {
         StateCommand::try_merge(&mut self.0, &other.0)
@@ -107,17 +107,17 @@ impl<T: UiStateCommand> IntoUiStateCommand<T> for T {
 }
 
 pub struct FunctionUiStateCommand<
-    F: FnMut(&mut UiState, &mut EphemeralState, ActionType) + Send + 'static,
+    F: FnMut(&mut UiState, &mut EphemeralState, ActionDirection) + Send + 'static,
 >(F);
 
-impl<F: FnMut(&mut UiState, &mut EphemeralState, ActionType) + Send + 'static> UiStateCommand
+impl<F: FnMut(&mut UiState, &mut EphemeralState, ActionDirection) + Send + 'static> UiStateCommand
     for FunctionUiStateCommand<F>
 {
     fn run_ui(
         &mut self,
         ui_state: &mut UiState,
         ephemeral_state: &mut EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         (self.0)(ui_state, ephemeral_state, action);
     }
@@ -131,7 +131,7 @@ impl<F: FnMut(&mut UiState, &mut EphemeralState, ActionType) + Send + 'static> U
 }
 
 // convenience impl for "inline" state commands
-impl<F: FnMut(&mut UiState, &mut EphemeralState, ActionType) + Send + 'static>
+impl<F: FnMut(&mut UiState, &mut EphemeralState, ActionDirection) + Send + 'static>
     IntoUiStateCommand<FunctionUiStateCommand<F>> for F
 {
     fn into_ui_state_command(self) -> FunctionUiStateCommand<F> {
@@ -142,5 +142,5 @@ impl<F: FnMut(&mut UiState, &mut EphemeralState, ActionType) + Send + 'static>
 pub struct Noop;
 
 impl UiStateCommand for Noop {
-    fn run_ui(&mut self, _: &mut UiState, _: &mut EphemeralState, _: ActionType) {}
+    fn run_ui(&mut self, _: &mut UiState, _: &mut EphemeralState, _: ActionDirection) {}
 }

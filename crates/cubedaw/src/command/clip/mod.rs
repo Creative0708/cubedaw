@@ -1,5 +1,5 @@
 use cubedaw_lib::{Clip, Id, Range, Track};
-use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
+use cubedaw_worker::command::{ActionDirection, StateCommand, StateCommandWrapper};
 
 use crate::{state::ui::ClipUiState, util::Select};
 
@@ -7,13 +7,63 @@ use super::UiStateCommand;
 
 #[derive(Clone)]
 pub struct ClipMove {
+    inner: NoUiClipMove,
+}
+impl ClipMove {
+    pub fn new(
+        id: Id<Clip>,
+
+        track_from: Id<Track>,
+        track_to: Id<Track>,
+        starting_range: Range,
+        new_start_pos: i64,
+    ) -> Self {
+        Self {
+            inner: NoUiClipMove {
+                id,
+
+                track_from,
+                track_to,
+                starting_range,
+                new_start_pos,
+            },
+        }
+    }
+}
+impl UiStateCommand for ClipMove {
+    fn run_ui(
+        &mut self,
+        ui_state: &mut crate::UiState,
+        ephemeral_state: &mut crate::EphemeralState,
+        action: ActionDirection,
+    ) {
+        let (track_from_id, track_to_id) = match action {
+            ActionDirection::Forward => (self.inner.track_from, self.inner.track_to),
+            ActionDirection::Reverse => (self.inner.track_to, self.inner.track_from),
+        };
+
+        let track_from = ui_state.tracks.force_get_mut(track_from_id);
+        let clip_state = track_from.clips.take(self.inner.id);
+        let track_to = ui_state.tracks.force_get_mut(track_to_id);
+        track_to.clips.insert(self.inner.id, clip_state);
+    }
+
+    fn inner(&mut self) -> Option<&mut dyn StateCommandWrapper> {
+        Some(&mut self.inner)
+    }
+}
+
+#[derive(Clone)]
+struct NoUiClipMove {
+    id: Id<Clip>,
+
     track_from: Id<Track>,
     track_to: Id<Track>,
     starting_range: Range,
     new_start_pos: i64,
 }
 
-impl ClipMove {
+impl NoUiClipMove {
     // pub fn same(track_id: Id<Track>, starting_range: Range, new_start_pos: i64) -> Self {
     //     Self {
     //         track_from: track_id,
@@ -22,30 +72,17 @@ impl ClipMove {
     //         new_start_pos,
     //     }
     // }
-    pub fn new(
-        track_from: Id<Track>,
-        track_to: Id<Track>,
-        starting_range: Range,
-        new_start_pos: i64,
-    ) -> Self {
-        Self {
-            track_from,
-            track_to,
-            starting_range,
-            new_start_pos,
-        }
-    }
 }
-impl StateCommand for ClipMove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+impl StateCommand for NoUiClipMove {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         let (track_from_id, track_to_id, starting_range, new_start_pos) = match action {
-            ActionType::Execute => (
+            ActionDirection::Forward => (
                 self.track_from,
                 self.track_to,
                 self.starting_range,
                 self.new_start_pos,
             ),
-            ActionType::Rollback => (
+            ActionDirection::Reverse => (
                 self.track_to,
                 self.track_from,
                 self.starting_range.with_start_pos(self.new_start_pos),
@@ -58,6 +95,7 @@ impl StateCommand for ClipMove {
             track_from.move_clip(starting_range, new_start_pos);
         } else {
             let (clip_id, clip) = track_from.remove_clip_from_range(starting_range);
+            assert_eq!(clip_id, self.id);
 
             let track_to = state.tracks.force_get_mut(track_to_id);
             track_to.add_clip(clip_id, new_start_pos, clip);
@@ -97,7 +135,7 @@ impl NoUiClipAddOrRemove {
 }
 
 impl StateCommand for NoUiClipAddOrRemove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         let track = state
             .tracks
             .get_mut(self.track_id)
@@ -142,7 +180,7 @@ impl UiStateCommand for ClipAddOrRemove {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         let clips = &mut ui_state
             .tracks
@@ -182,7 +220,7 @@ impl UiStateCommand for UiClipSelect {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         let Some(ui_data) = ui_state
             .tracks

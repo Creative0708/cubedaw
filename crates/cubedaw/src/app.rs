@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::registry::NodeRegistry;
 use cpal::traits::HostTrait;
 use cubedaw_lib::Id;
-use cubedaw_worker::command::ActionType;
+use cubedaw_worker::command::ActionDirection;
 use egui_dock::{DockArea, DockState};
 use util::Select;
 
@@ -58,9 +58,9 @@ impl CubedawApp {
                 ephemeral_state: &mut crate::EphemeralState,
             ) {
                 if let Some(inner) = command.inner() {
-                    inner.run(state, ActionType::Execute);
+                    inner.run(state, ActionDirection::Forward);
                 }
-                command.run_ui(ui_state, ephemeral_state, ActionType::Execute);
+                command.run_ui(ui_state, ephemeral_state, ActionDirection::Forward);
             }
 
             let node_registry = Arc::new({

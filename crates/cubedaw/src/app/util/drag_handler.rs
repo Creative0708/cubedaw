@@ -259,7 +259,6 @@ impl<T: SelectablePath, F: Fn(Pos2) -> T::Pos> Prepared<'_, T, F> {
         }
     }
 
-    // this probably should be a Drop impl
     pub fn end(self) {
         if let (Some(new_drag_movement), Some(data)) =
             (self.new_drag_movement, &mut self.handler.dragged_data)

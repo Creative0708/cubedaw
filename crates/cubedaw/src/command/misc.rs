@@ -1,4 +1,4 @@
-use cubedaw_worker::command::ActionType;
+use cubedaw_worker::command::ActionDirection;
 
 use super::UiStateCommand;
 
@@ -21,14 +21,14 @@ impl UiStateCommand for UiSetPlayhead {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         match action {
-            ActionType::Execute => {
+            ActionDirection::Forward => {
                 self.old_pos = ui_state.playhead_pos;
                 ui_state.playhead_pos = self.new_pos;
             }
-            ActionType::Rollback => {
+            ActionDirection::Reverse => {
                 ui_state.playhead_pos = self.old_pos;
             }
         }

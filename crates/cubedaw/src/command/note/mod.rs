@@ -1,5 +1,5 @@
 use cubedaw_lib::{Clip, Id, Note, Track};
-use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
+use cubedaw_worker::command::{ActionDirection, StateCommand, StateCommandWrapper};
 
 use crate::{state::ui::NoteUiState, util::Select};
 
@@ -42,13 +42,13 @@ impl NoteMove {
 }
 
 impl StateCommand for NoteMove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         let Some(clip) = self.clip(state) else { return };
         match action {
-            ActionType::Execute => {
+            ActionDirection::Forward => {
                 clip.move_note(self.note_id, self.pos_offset, self.pitch_offset);
             }
-            ActionType::Rollback => {
+            ActionDirection::Reverse => {
                 clip.move_note(self.note_id, -self.pos_offset, -self.pitch_offset);
             }
         }
@@ -105,7 +105,7 @@ impl NoUiNoteAddOrRemove {
 }
 
 impl StateCommand for NoUiNoteAddOrRemove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         let Some(clip) = self.clip(state) else { return };
         if self.is_removal ^ action.is_rollback() {
             let (start_pos, note_data) = clip.remove_note(self.id);
@@ -156,7 +156,7 @@ impl UiStateCommand for NoteAddOrRemove {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         let notes = &mut ui_state
             .tracks
@@ -199,7 +199,7 @@ impl UiStateCommand for NoteSelect {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         let notes = &mut ui_state
             .tracks

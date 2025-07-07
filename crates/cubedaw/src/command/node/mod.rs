@@ -1,5 +1,5 @@
 use cubedaw_lib::{Buffer, Id, Node, NodeData, Track};
-use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
+use cubedaw_worker::command::{ActionDirection, StateCommand, StateCommandWrapper};
 use egui::Vec2;
 
 use crate::{state::ui::NodeUiState, util::Select};
@@ -52,11 +52,11 @@ impl NodeStateUpdate {
 }
 
 impl StateCommand for NodeStateUpdate {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         if let Some(node) = self.node(state) {
             let (input_values, num_outputs) = match action {
-                ActionType::Execute => (&mut self.input_values, self.num_outputs),
-                ActionType::Rollback => (&mut self.old_input_values, self.old_num_outputs),
+                ActionDirection::Forward => (&mut self.input_values, self.num_outputs),
+                ActionDirection::Reverse => (&mut self.old_input_values, self.old_num_outputs),
             };
 
             {
@@ -139,7 +139,7 @@ impl NoUiNodeAddOrRemove {
 }
 
 impl StateCommand for NoUiNodeAddOrRemove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         if self.is_removal ^ action.is_rollback() {
             let node_data = self
                 .get_patch(state)
@@ -213,13 +213,13 @@ impl NodeBiasChange {
 }
 
 impl StateCommand for NodeBiasChange {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         let Some(input) = self.get_input(state) else {
             return;
         };
         input.bias = match action {
-            ActionType::Execute => self.new_value,
-            ActionType::Rollback => self.old_value,
+            ActionDirection::Forward => self.new_value,
+            ActionDirection::Reverse => self.old_value,
         }
     }
 
@@ -280,13 +280,13 @@ impl NodeMultiplierChange {
 }
 
 impl StateCommand for NodeMultiplierChange {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         let Some(multiplier) = self.get_multiplier(state) else {
             return;
         };
         *multiplier = match action {
-            ActionType::Execute => self.new_value,
-            ActionType::Rollback => self.old_value,
+            ActionDirection::Forward => self.new_value,
+            ActionDirection::Reverse => self.old_value,
         }
     }
 
@@ -332,7 +332,7 @@ impl UiStateCommand for NodeAddOrRemove {
         &mut self,
         ui_state: &mut crate::UiState,
         ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         let nodes = &mut ui_state
             .tracks
@@ -385,7 +385,7 @@ impl UiStateCommand for NodeSelect {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         let Some(node_ui) = ui_state
             .tracks
@@ -433,12 +433,12 @@ impl UiStateCommand for UiNodeMove {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         if let Some(node) = self.node_ui(ui_state) {
             node.pos += match action {
-                ActionType::Execute => self.offset,
-                ActionType::Rollback => -self.offset,
+                ActionDirection::Forward => self.offset,
+                ActionDirection::Reverse => -self.offset,
             }
         }
     }

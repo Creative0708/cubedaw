@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use anyhow::Result;
 use cubedaw_lib::{Id, IdMap, Range, Track};
-use cubedaw_worker::command::ActionType;
+use cubedaw_worker::command::ActionDirection;
 use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder};
 
 use crate::{
@@ -81,8 +81,6 @@ struct Prepared<'ctx> {
 struct TrackList<'ctx> {
     list: Vec<TrackListEntry<'ctx>>,
     top: f32,
-    total_height: f32,
-    /// `bottom` = `top` + `total_height`,
     bottom: f32,
 }
 
@@ -92,26 +90,26 @@ impl<'ctx> TrackList<'ctx> {
             Some(first) => first.actual_pos,
             None => bottom,
         };
-        Self {
-            list,
-            top,
-            total_height: bottom - top,
-            bottom,
-        }
+        Self { list, top, bottom }
     }
 
     fn entry_at_y(&self, y: f32) -> Option<(u32, &TrackListEntry<'ctx>)> {
-        if y >= self.bottom {
+        let last = self.list.last()?;
+        if !(self.top..last.actual_bottom()).contains(&y) {
             return None;
         }
 
         // the index of the first entry whose top is lower on the screen than the y (it doesn't contain the y)
-        let index_of_first_lower = self.list.partition_point(|entry| entry.actual_pos > y);
+        let index_of_first_lower = self.list.partition_point(|entry| y > entry.actual_pos);
         let index_of_entry = index_of_first_lower.checked_sub(1)?;
         Some((
             index_of_entry.try_into().unwrap(),
             &self.list[index_of_entry],
         ))
+    }
+
+    fn total_height(&self) -> f32 {
+        self.bottom - self.top
     }
 
     fn len(&self) -> usize {
@@ -135,6 +133,11 @@ struct TrackListEntry<'a> {
     position: f32,
     height: f32,
     indentation: f32,
+}
+impl<'a> TrackListEntry<'a> {
+    pub fn actual_bottom(&self) -> f32 {
+        self.actual_pos + self.height
+    }
 }
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Track2DPos {
@@ -197,7 +200,7 @@ impl TrackListEntry<'_> {
             tracker.add(
                 move |ui_state: &mut crate::UiState,
                       _ephemeral_state: &mut crate::EphemeralState,
-                      _action: ActionType| {
+                      _action: ActionDirection| {
                     core::mem::swap(
                         &mut new_track_name,
                         &mut ui_state.tracks.force_get_mut(track_id).name,
@@ -440,10 +443,10 @@ impl<'ctx> Prepared<'ctx> {
                 ctx.tracker.add_weak(
                     move |ui_state: &mut crate::UiState,
                           _ephemeral_state: &mut crate::EphemeralState,
-                          action: cubedaw_worker::command::ActionType| {
+                          action: cubedaw_worker::command::ActionDirection| {
                         ui_state.show_root_track = match action {
-                            ActionType::Execute => b,
-                            ActionType::Rollback => !b,
+                            ActionDirection::Forward => b,
+                            ActionDirection::Reverse => !b,
                         };
                     },
                 );
@@ -469,7 +472,7 @@ impl<'ctx> Prepared<'ctx> {
 
         let screen_rect = view.screen_rect;
 
-        view.ui_background(ctx, ui, track_list.total_height);
+        view.ui_background(ctx, ui, track_list.total_height());
 
         let bg_response = ui.response();
 
@@ -512,22 +515,27 @@ impl<'ctx> Prepared<'ctx> {
                 );
             }
 
+            // dbg!(
+            //     ui.input(|i| i.pointer.hover_pos())
+            //         .and_then(|p| track_list.entry_at_y(p.y))
+            //         .map(|e| e.0)
+            // );
+
             // clips
             ctx.ephemeral_state.clip_drag.handle(
                 |Pos2 { x, y }| Track2DPos {
                     time: view.input_screen_x_to_song_x(x),
                     idx: {
                         if let Some((idx, _)) = track_list.entry_at_y(y) {
-                            dbg!(idx);
                             idx.try_into().unwrap()
                         } else {
                             // assume there are tracks of a certain height above and below the actual list
                             let track_height = DEFAULT_TRACK_HEIGHT;
-                            dbg!(y, track_list.top);
                             if y < track_list.top {
                                 ((y - track_list.top) / track_height).floor() as i32
                             } else {
                                 ((y - track_list.bottom) / track_height) as i32
+                                    + track_list.len() as i32
                             }
                         }
                     },

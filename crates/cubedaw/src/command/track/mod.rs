@@ -1,5 +1,5 @@
 use cubedaw_lib::{Id, NodeData, Track};
-use cubedaw_worker::command::{ActionType, StateCommand, StateCommandWrapper};
+use cubedaw_worker::command::{ActionDirection, StateCommand, StateCommandWrapper};
 
 use crate::{registry::NodeRegistry, state::ui::TrackUiState, util::Select};
 
@@ -40,7 +40,7 @@ impl NoUiTrackAddOrRemove {
 }
 
 impl StateCommand for NoUiTrackAddOrRemove {
-    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionType) {
+    fn run(&mut self, state: &mut cubedaw_lib::State, action: ActionDirection) {
         if self.is_removal ^ action.is_rollback() {
             if let Some(track) = self.get_parent_track(state) {
                 let did_remove = track.children.remove(&self.id);
@@ -181,7 +181,7 @@ impl UiStateCommand for TrackAddOrRemove {
         &mut self,
         ui_state: &mut crate::UiState,
         ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         if self.inner.is_removal ^ action.is_rollback() {
             self.ui_data = ui_state.tracks.remove(self.inner.id);
@@ -233,7 +233,7 @@ impl UiStateCommand for TrackSelect {
         &mut self,
         ui_state: &mut crate::UiState,
         _ephemeral_state: &mut crate::EphemeralState,
-        action: ActionType,
+        action: ActionDirection,
     ) {
         if let Some(ui_data) = ui_state.tracks.get_mut(self.id) {
             ui_data.select = self.select ^ action.is_rollback();
