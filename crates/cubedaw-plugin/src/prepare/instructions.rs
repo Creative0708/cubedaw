@@ -61,7 +61,7 @@ impl PreparedInstructionList {
     ) -> Result<Self, wasmparser::BinaryReaderError> {
         Self::new(
             ctx,
-            expr.get_operators_reader().into_iter(),
+            expr.get_operators_reader(),
             &mut wasm_encoder::reencode::RoundtripReencoder,
         )
     }
@@ -97,7 +97,7 @@ impl PreparedInstructionList {
                     }
                 }
 
-                func.add_instruction(&inst, info);
+                func.add_instruction(inst, info);
                 instructions_iter.next();
             }
         }

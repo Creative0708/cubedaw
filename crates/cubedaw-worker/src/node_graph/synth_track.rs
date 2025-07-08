@@ -18,7 +18,7 @@ impl TrackNodeGraph {
             .get_active_node(&resourcekey::literal!("builtin:track_output"))
             .context("no track output exists")?;
         let note_output = patch
-            .get_active_node(&resourcekey::literal!("builtin:track_input"))
+            .get_active_node(&resourcekey::literal!("builtin:output"))
             .context("no note output exists")?;
 
         self.0

@@ -157,7 +157,7 @@ impl WorkerTrackState {
                 id
             };
         let input = insert_node(
-            resourcekey::literal!("builtin:track_input"),
+            resourcekey::literal!("builtin:output"),
             1,
             1,
             Default::default(),

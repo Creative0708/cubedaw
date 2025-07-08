@@ -18,7 +18,7 @@ impl NoteNodeGraph {
     }
     pub fn sync_with(&mut self, patch: &Patch, options: &WorkerOptions) -> anyhow::Result<()> {
         let note_output = patch
-            .get_active_node(&resourcekey::literal!("builtin:track_input"))
+            .get_active_node(&resourcekey::literal!("builtin:output"))
             .context("no note output exists")?;
 
         self.0.sync_with(patch, options, None, note_output);

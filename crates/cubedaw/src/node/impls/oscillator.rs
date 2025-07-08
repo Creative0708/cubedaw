@@ -3,8 +3,9 @@ use cubedaw_lib::Buffer;
 use zerocopy::{IntoBytes, TryFromBytes};
 
 use crate::{
+    Context,
     node::{NodeInputUiOptions, ui::PitchState},
-    registry::NodeThingy,
+    registry::NodeUi,
 };
 
 mod schema;
@@ -35,7 +36,7 @@ impl OscillatorNodeType {
 
 pub struct OscillatorNode;
 
-impl NodeThingy for OscillatorNode {
+impl NodeUi for OscillatorNode {
     fn create(&self, ctx: &crate::node::NodeCreationContext) -> Box<Buffer> {
         OscillatorNodeArgs {
             node_type: ctx
@@ -49,7 +50,7 @@ impl NodeThingy for OscillatorNode {
         .as_bytes()
         .into()
     }
-    fn title(&self, state_buf: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
+    fn title(&self, state_buf: &Buffer, _ctx: &Context) -> Result<std::borrow::Cow<'_, str>> {
         let (state, _) = OscillatorNodeArgs::try_ref_from_prefix(state_buf.as_bytes()).anyhow()?;
         Ok(state.node_type.to_str().into())
     }
@@ -87,7 +88,7 @@ impl NodeThingy for OscillatorNode {
         Ok(())
     }
 
-    fn make_nodefactory(&self) -> cubedaw_worker::DynNodeFactory {
+    fn make_node_factory(&self) -> cubedaw_worker::DynNodeFactory {
         cubedaw_worker::DynNodeFactory::new_castable(|_| 0.0f32)
     }
 }

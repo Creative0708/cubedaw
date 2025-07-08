@@ -41,6 +41,7 @@ mod ffi {
         pub fn input(index: u32) -> f32x16;
         pub fn output(val: f32x16, index: u32);
         pub fn attribute(attr: super::Attribute) -> f32x16;
+        pub fn kick();
     }
 }
 #[cfg(test)]
@@ -59,6 +60,7 @@ mod ffi {
     pub unsafe extern "C" fn attribute(_attr: super::Attribute) -> f32x16 {
         f32x16::splat(42.0)
     }
+    pub unsafe extern "C" fn kick() {}
 }
 
 #[inline(always)]

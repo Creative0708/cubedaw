@@ -2,7 +2,7 @@ use anyhow::Result;
 use cubedaw_lib::Buffer;
 use zerocopy::{IntoBytes, TryFromBytes};
 
-use crate::registry::NodeThingy;
+use crate::{Context, registry::NodeUi};
 
 use super::ZerocopyTryFromExt;
 
@@ -46,7 +46,7 @@ struct MathNodeState {
 
 pub struct MathNode;
 
-impl NodeThingy for MathNode {
+impl NodeUi for MathNode {
     fn create(&self, ctx: &crate::node::NodeCreationContext) -> Box<Buffer> {
         let node_type = match ctx.alias.as_deref() {
             Some("add") => MathNodeType::Add,
@@ -58,7 +58,7 @@ impl NodeThingy for MathNode {
         };
         MathNodeState { node_type }.as_bytes().into()
     }
-    fn title(&self, state: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
+    fn title(&self, state: &Buffer, _ctx: &Context) -> Result<std::borrow::Cow<'_, str>> {
         let (node_state, _) = MathNodeState::try_ref_from_prefix(state.as_bytes()).anyhow()?;
         Ok(node_state.node_type.to_str().into())
     }
@@ -69,8 +69,6 @@ impl NodeThingy for MathNode {
         ctx: &mut dyn crate::node::NodeUiContext,
     ) -> Result<()> {
         let (node_state, _) = MathNodeState::try_mut_from_prefix(state.as_bytes_mut()).anyhow()?;
-
-        ctx.output_ui(ui, "Out");
 
         egui::ComboBox::from_id_salt(0)
             .selected_text(node_state.node_type.to_str())
@@ -84,8 +82,6 @@ impl NodeThingy for MathNode {
                     ui.selectable_value(&mut node_state.node_type, ty, ty.to_str());
                 }
             });
-
-        // TODO implement plot
 
         ctx.input_ui(ui, "A", Default::default());
         ctx.input_ui(ui, "B", Default::default());

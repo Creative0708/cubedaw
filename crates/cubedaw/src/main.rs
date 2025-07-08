@@ -20,6 +20,7 @@ pub use app::{
 pub use screen::Screen;
 mod command;
 pub mod dbg;
+mod math;
 mod node;
 pub mod tab;
 pub use node::registry;

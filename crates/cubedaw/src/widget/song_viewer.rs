@@ -1,5 +1,5 @@
 use cubedaw_lib::{PreciseSongPos, Range};
-use egui::{CornerRadius, NumExt, Pos2, Rangef, Rect, Response, Vec2};
+use egui::{CornerRadius, NumExt, Pos2, Rangef, Rect, Response, Sense, UiBuilder, Vec2};
 
 // TODO make these not hardcoded
 const BEATS_PER_BAR: i64 = 4;
@@ -28,6 +28,7 @@ impl SongViewer {
     {
         egui::ScrollArea::both()
             .show_viewport(ui, |ui, viewport| {
+                let ui = &mut ui.new_child(UiBuilder::new().sense(Sense::click_and_drag()));
                 let prepared = SongViewerPrepared::new(self, ctx, ui, viewport);
 
                 f(ctx, ui, &prepared)
@@ -162,6 +163,7 @@ impl<'a> SongViewerPrepared<'a> {
             ui.visuals().extreme_bg_color,
         );
 
+        // ui.response() doesn't work for some reason, todo!()
         let bg_response = ui.allocate_rect(
             Rect::from_min_size(
                 self.anchor(),

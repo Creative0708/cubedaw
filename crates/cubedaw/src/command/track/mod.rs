@@ -111,26 +111,26 @@ impl TrackAddOrRemove {
         insertion_pos: u32,
         _node_registry: &NodeRegistry,
     ) -> Self {
-        let id_note_output = Id::arbitrary();
-        let id_track_output = Id::arbitrary();
+        let id_downmix = Id::arbitrary();
+        let id_output = Id::arbitrary();
         Self::addition(
             id,
             cubedaw_lib::Track::new({
                 let mut patch = cubedaw_lib::Patch::default();
 
                 patch.insert_node(
-                    id_note_output,
+                    id_downmix,
                     NodeData::new_disconnected(
-                        resourcekey::literal!("builtin:track_input"),
+                        resourcekey::literal!("builtin:downmix"),
                         Default::default(),
                     ),
                     vec![0.0],
                     1,
                 );
                 patch.insert_node(
-                    id_track_output,
+                    id_output,
                     NodeData::new_disconnected(
-                        resourcekey::literal!("builtin:track_output"),
+                        resourcekey::literal!("builtin:output"),
                         Default::default(),
                     ),
                     vec![0.0],
@@ -138,7 +138,7 @@ impl TrackAddOrRemove {
                 );
                 patch.insert_cable(
                     Id::arbitrary(),
-                    cubedaw_lib::Cable::one(id_note_output, id_track_output),
+                    cubedaw_lib::Cable::one(id_downmix, id_output),
                     cubedaw_lib::CableConnection { multiplier: 1.0 },
                 );
 
@@ -150,7 +150,7 @@ impl TrackAddOrRemove {
                     nodes: {
                         let mut map = cubedaw_lib::IdMap::new();
                         map.insert(
-                            id_note_output,
+                            id_downmix,
                             crate::state::ui::NodeUiState {
                                 select: Select::Deselect,
                                 pos: egui::pos2(-80.0, 0.0),
@@ -158,7 +158,7 @@ impl TrackAddOrRemove {
                             },
                         );
                         map.insert(
-                            id_track_output,
+                            id_output,
                             crate::state::ui::NodeUiState {
                                 select: Select::Deselect,
                                 pos: egui::pos2(240.0, 0.0),

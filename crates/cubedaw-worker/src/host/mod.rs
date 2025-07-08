@@ -205,13 +205,10 @@ impl WorkerHost {
             let track = worker_state.tracks.force_get_mut(track_id);
             match note_descriptor {
                 crate::NoteDescriptor::Live { note_id, .. } => {
-                    track
-                        .live_notes
-                        .remove(note_id)
-                        .expect("tried to remove nonexistent note");
+                    track.live_notes.take(note_id);
                 }
                 crate::NoteDescriptor::State { note_id, .. } => {
-                    track.notes.remove(note_id);
+                    track.notes.take(note_id);
                 }
             }
         }
@@ -232,18 +229,7 @@ impl WorkerHost {
     }
 
     pub fn join(self) {
-        let WorkerHost {
-            state: _,
-            worker_handles,
-            worker_options: _,
-            worker_state: _,
-
-            worker_tx: _,
-            rx: _,
-
-            work_tx: _,
-            work_rx: _,
-        } = self;
+        let WorkerHost { worker_handles, .. } = self;
 
         let mut join_handles = Vec::with_capacity(worker_handles.len());
         for worker_handle in worker_handles.into_vec() {

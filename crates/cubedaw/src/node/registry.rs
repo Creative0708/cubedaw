@@ -5,21 +5,25 @@ use anyhow::Result;
 use cubedaw_lib::{Buffer, ResourceKey};
 use cubedaw_worker::DynNodeFactory;
 
-use crate::node::{NodeCreationContext, NodeUiContext};
+use crate::{
+    Context,
+    node::{NodeCreationContext, NodeUiContext},
+};
 
-// TODO get a better name
-pub trait NodeThingy: 'static + Send + Sync {
+/// This trait represents an instance of a node, as known by the UI of the app.
+/// It is responsible
+pub trait NodeUi: 'static + Send + Sync {
     fn create(&self, ctx: &NodeCreationContext) -> Box<Buffer>;
-    fn title(&self, state: &Buffer) -> Result<std::borrow::Cow<'_, str>>;
+    fn title(&self, state: &Buffer, ctx: &Context) -> Result<std::borrow::Cow<'_, str>>;
     fn ui(&self, state: &mut Buffer, ui: &mut egui::Ui, ctx: &mut dyn NodeUiContext) -> Result<()>;
 
-    fn make_nodefactory(&self) -> DynNodeFactory {
+    fn make_node_factory(&self) -> DynNodeFactory {
         DynNodeFactory(Box::new(|_| Box::new([])))
     }
 }
-impl std::fmt::Debug for dyn NodeThingy {
+impl std::fmt::Debug for dyn NodeUi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("dyn NodeThingy").finish_non_exhaustive()
+        f.debug_struct("dyn NodeUi").finish_non_exhaustive()
     }
 }
 
@@ -54,29 +58,32 @@ impl NodeRegistry {
         &self.inner
     }
 
-    pub fn register_node(&mut self, key: ResourceKey, name: &str, node_thingy: impl NodeThingy) {
-        self.register_node_dyn(key, name.into(), Box::new(node_thingy));
+    pub fn register_node(&mut self, key: ResourceKey, name: &str, node_thingy: impl NodeUi) {
+        self.register_node_dyn(key, name, Box::new(node_thingy));
     }
     pub fn register_node_dyn(
         &mut self,
         key: ResourceKey,
         name: &str,
-        node_thingy: Box<dyn NodeThingy>,
+        node_thingy: Box<dyn NodeUi>,
     ) {
         self.dyn_node_factories
-            .insert(key.clone(), node_thingy.make_nodefactory());
-        self.register_node_no_inner(key, name, node_thingy);
+            .insert(key.clone(), node_thingy.make_node_factory());
+        self.register_node_without_factory(key, name, node_thingy);
     }
-    pub(super) fn register_node_no_inner(
+    pub(super) fn register_node_without_factory(
         &mut self,
         key: ResourceKey,
         name: &str,
-        node_thingy: Box<dyn NodeThingy>,
+        ui: Box<dyn NodeUi>,
     ) {
-        self.entries.insert(key.clone(), NodeRegistryEntry {
-            key: key.clone(),
-            node_thingy,
-        });
+        self.entries.insert(
+            key.clone(),
+            NodeRegistryEntry {
+                key: key.clone(),
+                ui,
+            },
+        );
         self.name_entries.push(NameEntry {
             name: name.into(),
             node_key: key,
@@ -110,7 +117,7 @@ impl Default for NodeRegistry {
 #[derive(Debug)]
 pub struct NodeRegistryEntry {
     pub key: ResourceKey,
-    pub node_thingy: Box<dyn NodeThingy>,
+    pub ui: Box<dyn NodeUi>,
 }
 
 #[derive(Debug)]

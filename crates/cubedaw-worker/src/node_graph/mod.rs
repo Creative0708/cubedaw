@@ -106,7 +106,7 @@ impl PreparedNodeGraph {
                     self.nodes.push(NodeGraphEntry {
                         inputs: Vec::new(),
                         outputs: Vec::new(),
-                        key: patch.node(input_node).expect("unreachable").key.clone(),
+                        key: patch[input_node].data.key.clone(),
                         node_id: input_node,
                         args: Default::default(),
                         state: Default::default(),

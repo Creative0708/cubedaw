@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, ops};
 
-use ahash::{HashSet, HashSetExt};
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 
 use crate::{Buffer, Id, IdMap, IdSet, ResourceKey};
 
@@ -18,20 +18,16 @@ impl Patch {
     /// If the provided node was added, what would its tag be?
     pub fn get_node_tag_if_added(&self, node: &NodeData) -> NodeTag {
         // nodes have no tag on their own but certain special nodes have their own NodeTag
-        static SPECIAL_NODES: std::sync::LazyLock<HashSet<ResourceKey>> =
+        static SPECIAL_NODES: std::sync::LazyLock<HashMap<ResourceKey, NodeTag>> =
             std::sync::LazyLock::new(|| {
-                let mut map = HashSet::new();
-                map.insert(ResourceKey::new("builtin:track_input").unwrap());
-                map.insert(ResourceKey::new("builtin:track_input").unwrap());
-                map.insert(ResourceKey::new("builtin:track_output").unwrap());
+                let mut map = HashMap::new();
+                map.insert(resourcekey::literal!("builtin:input"), NodeTag::Monophonic);
+                map.insert(resourcekey::literal!("builtin:downmix"), NodeTag::Downmix);
+                map.insert(resourcekey::literal!("builtin:output"), NodeTag::Monophonic);
                 map
             });
 
-        if SPECIAL_NODES.contains(&node.key) {
-            NodeTag::Special
-        } else {
-            NodeTag::Disconnected
-        }
+        SPECIAL_NODES.get(&node.key).copied().unwrap_or_default()
     }
 
     pub fn insert_node(
@@ -47,24 +43,27 @@ impl Patch {
             u32::MAX
         );
 
-        self.nodes.insert(node_id, Node {
-            tag: self.get_node_tag_if_added(&node),
+        self.nodes.insert(
+            node_id,
+            Node {
+                tag: self.get_node_tag_if_added(&node),
 
-            data: node,
-            inputs: inputs
-                .into_iter()
-                .map(|bias| NodeInput {
-                    bias,
-                    connections: Vec::new(),
-                })
-                .collect(),
-            outputs: vec![
-                NodeOutput {
-                    connections: Vec::new(),
-                };
-                num_outputs as usize
-            ],
-        });
+                data: node,
+                inputs: inputs
+                    .into_iter()
+                    .map(|bias| NodeInput {
+                        bias,
+                        connections: Vec::new(),
+                    })
+                    .collect(),
+                outputs: vec![
+                    NodeOutput {
+                        connections: Vec::new(),
+                    };
+                    num_outputs as usize
+                ],
+            },
+        );
     }
     pub fn remove_node(&mut self, node_id: Id<Node>) -> Option<NodeData> {
         Some(self.remove_entry(node_id)?.data)
@@ -103,19 +102,18 @@ impl Patch {
         self.cables.get_mut(id)
     }
 
+    pub fn get_nodes(&self, key: &ResourceKey) -> Vec<Id<Node>> {
+        self.nodes()
+            .filter_map(|(id, val)| (&val.data.key == key).then_some(id))
+            .collect()
+    }
     pub fn get_active_node(&self, key: &ResourceKey) -> Option<Id<Node>> {
-        let mut found = None;
-
-        for (node_id, node) in self.nodes() {
-            if &node.data.key == key {
-                let old = found.replace(node_id);
-                if old.is_some() {
-                    todo!("multiple nodes aren't implemented yet. (found multiple {key:?} nodes)");
-                }
-            }
+        let nodes = self.get_nodes(key);
+        match *nodes {
+            [] => None,
+            [id] => Some(id),
+            _ => todo!("multiple nodes aren't implemented yet. (found multiple {key:?} nodes)"),
         }
-
-        found
     }
 
     /// If the provided cable was added, what would its tag be?
@@ -123,9 +121,9 @@ impl Patch {
         let input_node = self.nodes.force_get(cable.input_node);
         let output_node = self.nodes.force_get(cable.output_node);
 
-        if !input_node.tag.is_compatible_with(output_node.tag) {
+        let Some(cable_tag) = input_node.tag.get_cable_tag_between(output_node.tag) else {
             return CableTag::Invalid;
-        }
+        };
 
         // check if output node is before input node.
         // this is just BFS on a graph. i told you competitive programming would come in handy someday!
@@ -151,11 +149,7 @@ impl Patch {
             }
         }
         // output node is not before input node. there are no cycles and it is valid!
-        if input_node.tag == NodeTag::Disconnected && output_node.tag == NodeTag::Disconnected {
-            CableTag::Disconnected
-        } else {
-            CableTag::Valid
-        }
+        cable_tag
     }
 
     pub fn insert_cable(
@@ -231,31 +225,38 @@ impl Patch {
     }
 
     // TODO: this is O(n). possibly change to incremental updates later?
-    // again, rendering is also O(n) so this isn't needed in most cases. this also isn't needed if the number of nodes is like < 10000.
+    // again, rendering is also O(n) so this isn't needed in most cases. optimization also isn't needed if the number of nodes is like < 10000.
     fn recalculate_tags(&mut self) {
         // also TODO: multiple of the same special nodes aren't implemented yet. we should be like blender where you can choose which node is actually "active"
+        // or: make it so that adding a special node deletes the previous one
 
-        let track_input = self.get_active_node(&resourcekey::literal!("builtin:track_input"));
-        let track_output = self.get_active_node(&resourcekey::literal!("builtin:track_output"));
-
-        #[derive(Clone, Copy)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         enum VisitedState {
-            Inactive,
+            // the node is currently being visited
             Active,
+            // the node has been visited already and has this tag
+            Inactive(NodeTag),
         }
 
-        let mut visited: IdMap<Node, VisitedState> = IdMap::new();
+        // reset everything
+        for node in self.nodes.values_mut() {
+            node.tag = NodeTag::Disconnected;
+        }
+        for cable in self.cables.values_mut() {
+            cable.tag = CableTag::Disconnected;
+        }
 
-        fn do_dfs(
+        fn do_dfs_backwards(
             patch: &mut Patch,
             visited: &mut IdMap<Node, VisitedState>,
 
             start_id: Id<Node>,
-            tag: NodeTag,
+            node_tag: NodeTag,
+            cable_tag: CableTag,
         ) {
-            visited.replace(start_id, VisitedState::Active);
+            visited.insert(start_id, VisitedState::Active);
             let node = patch.nodes.force_get_mut(start_id);
-            node.tag = tag;
+            node.tag = node_tag;
 
             let connections: Vec<(Id<Cable>, CableConnection)> = node
                 .inputs
@@ -264,55 +265,58 @@ impl Patch {
                 .collect();
 
             for (cable_id, _conn) in connections {
-                let Cable {
-                    input_node,
-                    tag: ref mut cable_tag,
-                    ..
-                } = *patch.cables.force_get_mut(cable_id);
+                let cable = &mut patch.cables[cable_id];
+                let other_node = cable.input_node;
 
-                match visited.get(input_node).copied() {
-                    Some(VisitedState::Active) => {
-                        *cable_tag = CableTag::Invalid;
-                    }
-                    Some(VisitedState::Inactive) => {
-                        *cable_tag = CableTag::Valid;
-                    }
+                match visited.get(other_node).copied() {
                     None => {
-                        *cable_tag = CableTag::Valid;
-                        do_dfs(patch, visited, input_node, tag);
+                        // new node!
+                        cable.tag = cable_tag;
+                        do_dfs_backwards(patch, visited, other_node, node_tag, cable_tag);
+                    }
+                    Some(VisitedState::Inactive(other))
+                        if other.cable_tag_for_output() == cable_tag =>
+                    {
+                        // cycle-less node connection in the same graph
+                        cable.tag = cable_tag;
+                    }
+                    Some(VisitedState::Active | VisitedState::Inactive(_)) => {
+                        // we either found a cycle (VisitedState::Active) or a visited node from another node type. this cable is invalid
+                        cable.tag = CableTag::Invalid;
                     }
                 }
             }
-            visited.replace(start_id, VisitedState::Inactive);
-        }
-        if let Some(track_output) = track_output {
-            if let Some(note_output) = track_input {
-                do_dfs(self, &mut visited, note_output, NodeTag::Note);
 
-                for value in visited.values_mut() {
-                    *value = VisitedState::Active;
-                }
-                visited.replace(note_output, VisitedState::Inactive);
-            }
-
-            do_dfs(self, &mut visited, track_output, NodeTag::Track);
-
-            for value in visited.values_mut() {
-                *value = VisitedState::Inactive;
-            }
+            assert_eq!(
+                visited.replace(start_id, VisitedState::Inactive(node_tag)),
+                Some(VisitedState::Active)
+            );
         }
 
-        let node_ids: Vec<Id<Node>> = self.nodes.keys().collect();
-        for node_id in node_ids {
-            if visited.replace(node_id, VisitedState::Inactive).is_some() {
-                continue;
-            }
-            do_dfs(self, &mut visited, node_id, NodeTag::Disconnected);
-        }
+        let mut visited = IdMap::new();
 
-        // special nodes
-        for special_node in [track_input, track_output].into_iter().flatten() {
-            self.nodes.force_get_mut(special_node).tag = NodeTag::Special;
+        if let Some(node) = self.get_active_node(&resourcekey::literal!("builtin:input")) {
+            visited.insert(node, VisitedState::Inactive(NodeTag::Monophonic));
+            self[node].tag = NodeTag::Monophonic;
+        }
+        if let Some(node) = self.get_active_node(&resourcekey::literal!("builtin:downmix")) {
+            do_dfs_backwards(
+                self,
+                &mut visited,
+                node,
+                NodeTag::Multiphonic,
+                CableTag::Multiphonic,
+            );
+            visited.replace(node, VisitedState::Inactive(NodeTag::Downmix));
+        }
+        if let Some(node) = self.get_active_node(&resourcekey::literal!("builtin:output")) {
+            do_dfs_backwards(
+                self,
+                &mut visited,
+                node,
+                NodeTag::Monophonic,
+                CableTag::Monophonic,
+            );
         }
     }
 
@@ -328,6 +332,18 @@ impl Patch {
         for (_, cable) in &self.cables {
             cable.assert_valid(self);
         }
+    }
+}
+
+impl ops::Index<Id<Node>> for Patch {
+    type Output = Node;
+    fn index(&self, id: Id<Node>) -> &Self::Output {
+        &self.nodes[id]
+    }
+}
+impl ops::IndexMut<Id<Node>> for Patch {
+    fn index_mut(&mut self, id: Id<Node>) -> &mut Self::Output {
+        &mut self.nodes[id]
     }
 }
 
@@ -443,28 +459,20 @@ impl Cable {
     }
 
     pub fn assert_valid(&self, patch: &Patch) {
-        let (input_node, output_node) = (
-            patch
-                .node_entry(self.input_node)
-                .expect("nonexistent input node"),
-            patch
-                .node_entry(self.output_node)
-                .expect("nonexistent output node"),
-        );
+        let input_node = &patch[self.input_node];
+        let output_node = &patch[self.output_node];
 
-        #[allow(clippy::match_like_matches_macro)]
-        if match (self.tag, input_node.tag(), output_node.tag()) {
-            (
-                CableTag::Valid,
-                NodeTag::Disconnected,
-                NodeTag::Note | NodeTag::Track | NodeTag::Special,
-            ) => true,
-            (CableTag::Disconnected, _, NodeTag::Note | NodeTag::Track | NodeTag::Special) => true,
-            _ => false,
-        } {
-            panic!(
+        match (self.tag, input_node.tag(), output_node.tag()) {
+            (CableTag::Monophonic, NodeTag::Monophonic | NodeTag::Downmix, NodeTag::Monophonic)
+            | (
+                CableTag::Multiphonic,
+                NodeTag::Multiphonic,
+                NodeTag::Multiphonic | NodeTag::Downmix,
+            )
+            | (CableTag::Disconnected, _, NodeTag::Disconnected) => (),
+            _ => panic!(
                 "incompatible node tags for cable {self:?}\ninput: {input_node:#?}\noutput: {output_node:#?}"
-            );
+            ),
         }
     }
 }
@@ -472,9 +480,12 @@ impl Cable {
 /// What status a cable can be in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CableTag {
-    /// Nothing's wrong with the cable! :D
-    Valid,
-    /// The cable, if added, would result in an invalid patch (i.e. having cycles or the like).
+    /// The cable is multiphonic (each note has one instance of this cable).
+    Multiphonic,
+    /// The cable is monophonic (each track has one instance of this cable).
+    Monophonic,
+
+    /// The cable, if added, would result in an invalid patch (i.e. having cycles or connecting multiphonic and monophonic channels).
     Invalid,
     /// The cable doesn't cause an invalid patch but is unused when processing audio.
     Disconnected,
@@ -482,10 +493,7 @@ pub enum CableTag {
 impl CableTag {
     /// Whether the cable is in one of the valid states.
     pub fn is_valid(self) -> bool {
-        match self {
-            Self::Valid | Self::Disconnected => true,
-            Self::Invalid => false,
-        }
+        self != Self::Invalid
     }
 }
 
@@ -638,27 +646,37 @@ pub enum NodeTag {
     #[default]
     /// The node is disconnected from the rest of the patch and doesn't contribute anything.
     Disconnected,
-    /// The node is part of the per-note node graph. This only applies to clip tracks.
-    Note,
-    /// The node is part of the per-track node graph. This applies to both clip and group tracks.
-    Track,
-    /// The node is a special node! i.e. it's a note output, track input, or track output node.
-    Special,
+    /// The node is multiphonic and has one instance per note. This only applies to clip tracks.
+    Multiphonic,
+    /// The node is monophonic and has one instance per track. This applies to both clip and group tracks.
+    Monophonic,
+    /// The node is a downmix node (the input is multiphonic and the output is monophonic).
+    Downmix,
 }
 
 impl NodeTag {
-    fn is_compatible_with(self, other: Self) -> bool {
-        match (self, other) {
-            (Self::Special, _) | (_, Self::Special) => true,
-            (a, b) if a == b => true,
-            _ => false,
+    pub fn cable_tag_for_input(self) -> CableTag {
+        match self {
+            Self::Disconnected => CableTag::Disconnected,
+            Self::Multiphonic | Self::Downmix => CableTag::Multiphonic,
+            Self::Monophonic => CableTag::Monophonic,
+        }
+    }
+    pub fn cable_tag_for_output(self) -> CableTag {
+        match self {
+            Self::Disconnected => CableTag::Disconnected,
+            Self::Multiphonic => CableTag::Multiphonic,
+            Self::Monophonic | Self::Downmix => CableTag::Monophonic,
+        }
+    }
+
+    fn get_cable_tag_between(self, other: Self) -> Option<CableTag> {
+        let this_cable_tag = self.cable_tag_for_output();
+        let other_cable_tag = other.cable_tag_for_input();
+        if other_cable_tag == CableTag::Disconnected || this_cable_tag == other_cable_tag {
+            Some(this_cable_tag)
+        } else {
+            None
         }
     }
 }
-
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-// pub enum NodeRelation {
-//     Ancestor,
-//     Descendant,
-//     Disconnected
-// }

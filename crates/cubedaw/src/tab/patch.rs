@@ -2,12 +2,18 @@ use std::iter;
 
 use anyhow::Result;
 
-use crate::command::{node::NodeStateUpdate, patch::CableAddOrRemove};
+use crate::{
+    command::{node::NodeStateUpdate, patch::CableAddOrRemove},
+    math,
+};
 use cubedaw_lib::{Buffer, Cable, CableConnection, CableTag, Id, IdMap, Node, NodeData, Track};
 use egui::{
     Align, Area, CentralPanel, Color32, CornerRadius, CursorIcon, Direction, Frame, Layout, Pos2,
     Rangef, Rect, Response, Sense, Shape, Stroke, Ui, UiBuilder, Vec2, WidgetText,
-    emath::TSTransform, epaint, layers::ShapeIdx, pos2, vec2,
+    emath::TSTransform,
+    epaint::{CubicBezierShape, PathStroke},
+    layers::ShapeIdx,
+    pos2, vec2,
 };
 use resourcekey::ResourceKey;
 
@@ -200,10 +206,9 @@ struct Prepared<'tab, 'ctx> {
 
     viewport: Rect,
     viewport_interaction: Response,
+    // i don't know why this is necessary but removing it breaks everything apparently
+    // todo!()
     pointer_pos: Option<Pos2>,
-
-    primary_clicked: bool,
-    secondary_clicked: bool,
 }
 
 impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
@@ -218,9 +223,6 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
 
         let track_id = tab.track_id.expect("unreachable");
 
-        let (primary_clicked, secondary_clicked) =
-            ui.input(|i| (i.pointer.primary_clicked(), i.pointer.secondary_clicked()));
-
         Self {
             tab,
             track_id,
@@ -230,40 +232,44 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             viewport,
             viewport_interaction,
             pointer_pos,
-            primary_clicked,
-            secondary_clicked,
         }
     }
 
     pub fn background(&mut self, ui: &mut Ui, _ctx: &mut crate::Context<'ctx>) {
-        let Self { viewport, .. } = *self;
+        let Self {
+            viewport,
+            ref viewport_interaction,
+            ..
+        } = *self;
 
         let painter = ui.painter();
 
         painter.rect_filled(viewport, CornerRadius::ZERO, ui.visuals().extreme_bg_color);
-        const DOT_SPACING: f32 = 16.0;
-        const DOT_RADIUS: f32 = 1.5;
+
+        const DOT_SPACING: f32 = 24.0;
+        const DOT_RADIUS: f32 = 3.0;
 
         // don't draw too many dots
-        let max_dim = viewport.width().max(viewport.height());
-        const MAX_MAX_DIM: f32 = 960.0;
-        if max_dim < MAX_MAX_DIM {
-            for x in (viewport.left() / DOT_SPACING - DOT_RADIUS).ceil() as i32.. {
-                if x as f32 * DOT_SPACING > viewport.right() + DOT_RADIUS {
-                    break;
-                }
-                for y in (viewport.top() / DOT_SPACING - DOT_RADIUS).ceil() as i32.. {
-                    if y as f32 * DOT_SPACING > viewport.bottom() + DOT_RADIUS {
-                        break;
-                    }
-
+        const MAX_DOTS: f32 = 10000.0;
+        let num_dots = viewport.area() / (DOT_SPACING * DOT_SPACING);
+        if num_dots < MAX_DOTS {
+            for x in math::frange_snapped(
+                viewport.left() - DOT_RADIUS,
+                viewport.right() + DOT_RADIUS,
+                DOT_SPACING,
+            ) {
+                for y in math::frange_snapped(
+                    viewport.top() - DOT_RADIUS,
+                    viewport.bottom() + DOT_RADIUS,
+                    DOT_SPACING,
+                ) {
                     painter.circle_filled(
-                        pos2(x as f32 * DOT_SPACING, y as f32 * DOT_SPACING),
+                        pos2(x, y),
                         DOT_RADIUS,
                         // cleanly fade out dots
                         ui.visuals()
                             .faint_bg_color
-                            .gamma_multiply(f32::min(4.0 - max_dim * (4.0 / MAX_MAX_DIM), 2.0)),
+                            .gamma_multiply(f32::min(2.0 * (1.0 - num_dots / MAX_DOTS), 1.5)),
                     );
                 }
             }
@@ -288,7 +294,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     node_added = Some(resourcekey::literal!("cubedaw:oscillator"));
                 }
                 if ui.button("Note Output").clicked() {
-                    node_added = Some(resourcekey::literal!("builtin:track_input"));
+                    node_added = Some(resourcekey::literal!("builtin:output"));
                 }
                 if ui.button("Track Output").clicked() {
                     node_added = Some(resourcekey::literal!("builtin:track_output"));
@@ -301,7 +307,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                     tab.currently_held_node = Some(NodeData::new_disconnected(
                         key,
                         entry
-                            .node_thingy
+                            .ui
                             .create(&crate::node::NodeCreationContext::default())
                             .as_ref()
                             .into(),
@@ -429,13 +435,13 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             let node_thingy = ctx
                 .node_registry
                 .get(&node_data.data.key)
-                .expect("todo!()")
-                .node_thingy
+                .unwrap_or_else(|| panic!("unknown node encountered: {:?}", node_data.data.key))
+                .ui
                 .as_ref();
 
             frame_prepared
                 .content_ui
-                .label(node_thingy.title(node_state)?);
+                .label(node_thingy.title(node_state, ctx)?);
             frame_prepared.content_ui.separator();
             node_thingy.ui(
                 &mut node_state_copy,
@@ -588,8 +594,6 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             track_id,
             patch,
             patch_ui,
-            primary_clicked,
-            secondary_clicked,
             ..
         } = *self;
 
@@ -598,6 +602,10 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
         let result = track_ephem.patch.node_drag.handle::<fn(Pos2) -> Pos2, _>(
             |pos| pos,
             |prepared| -> Result<_> {
+                if self.viewport_interaction.clicked() {
+                    prepared.deselect_all();
+                }
+
                 let mut dragged_node_slot: Option<InteractedNodeSlot> = None;
                 let mut hovered_node_slot: Option<InteractedNodeSlot> = None;
 
@@ -647,7 +655,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                         },
                     )?;
                     let node_data = fake_entry.data;
-                    if primary_clicked {
+                    if self.viewport_interaction.clicked() {
                         // place the node
                         ctx.tracker.add(NodeAddOrRemove::addition(
                             Id::arbitrary(),
@@ -661,7 +669,7 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                                 width: 128.0, // TODO impl node widths
                             },
                         ))
-                    } else if secondary_clicked {
+                    } else if self.viewport_interaction.secondary_clicked() {
                         // do nothing; since we're never setting currently_held_node to Some(_) after the take(), this deletes the node
                     } else {
                         self.tab.currently_held_node = Some(node_data);
@@ -710,54 +718,51 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
             descriptor,
             ref response,
         }) = *dragged_node_slot
+            && response.drag_started()
         {
-            if response.drag_started() {
-                let node_data = patch.node_entry(descriptor.node_id()).expect("todo!()");
+            let node_data = patch.node_entry(descriptor.node_id()).expect("todo!()");
 
-                match descriptor {
-                    NodeSlotDescriptor::Input {
-                        conn_index: Some(conn_index),
-                        input_index,
-                        ..
-                    } if let Some(&(cable_id, ref conn)) = node_data
-                        .inputs()
-                        .get(input_index as usize)
-                        .expect("unreachable")
-                        .connections
-                        .get(conn_index as usize) =>
-                    {
-                        // if the slot is an input and there already is a cable there, take control of it
-                        let cable = patch.cable(cable_id).expect("unreachable");
+            match descriptor {
+                NodeSlotDescriptor::Input {
+                    conn_index: Some(conn_index),
+                    input_index,
+                    ..
+                } if let Some(&(cable_id, ref conn)) = node_data.inputs()[input_index as usize]
+                    .connections
+                    .get(conn_index as usize) =>
+                {
+                    // if the slot is an input and there already is a cable there, take control of it
+                    let cable = patch.cable(cable_id).expect("unreachable");
 
-                        tab.currently_drawn_cable = Some(CurrentlyDrawnCable {
-                            id: cable_id,
-                            attached: NodeSlotDescriptor::Output {
-                                node_id: cable.input_node,
-                                output_index: cable.input_output_index,
-                            },
-                            originally_attached: Some((descriptor, conn.clone())),
-                            cable_that_this_replaces: None,
-                            tag: CableTag::Valid,
-                        });
+                    tab.currently_drawn_cable = Some(CurrentlyDrawnCable {
+                        id: cable_id,
+                        attached: NodeSlotDescriptor::Output {
+                            node_id: cable.input_node,
+                            output_index: cable.input_output_index,
+                        },
+                        originally_attached: Some((descriptor, conn.clone())),
+                        cable_that_this_replaces: None,
 
-                        // no need to remove the cable now; the code below will automatically remove the cable when it's not connected
-                    }
-                    _ => {
-                        // create a new cable
-                        tab.currently_drawn_cable = Some(CurrentlyDrawnCable {
-                            id: Id::arbitrary(),
-                            attached: descriptor,
-                            originally_attached: None,
+                        tag: cable.input_node(patch).tag().cable_tag_for_output(),
+                    });
 
-                            cable_that_this_replaces: None,
-                            tag: CableTag::Disconnected,
-                        });
-                    }
+                    // no need to remove the cable now; the code below will automatically remove the cable when it's not connected
                 }
+                _ => {
+                    // create a new cable
+                    tab.currently_drawn_cable = Some(CurrentlyDrawnCable {
+                        id: Id::arbitrary(),
+                        attached: descriptor,
+                        originally_attached: None,
 
-                // add a strong command to allow for possible deletion later (so we don't delete another state command accidentally)
-                tracker.add(crate::command::Noop);
+                        cable_that_this_replaces: None,
+                        tag: CableTag::Disconnected,
+                    });
+                }
             }
+
+            // add a strong command to allow for possible deletion later (so we don't delete another state command accidentally)
+            tracker.add(crate::command::Noop);
         }
 
         let mut result = None;
@@ -951,16 +956,6 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
 
         let mut cable_shapes: Vec<Shape> = Vec::new();
         let mut draw_cable = |input_pos: Pos2, output_pos: Pos2, tag: CableTag| {
-            // TODO make this configurable
-            let cable_stroke = Stroke::new(
-                4.0,
-                match tag {
-                    CableTag::Invalid => ui.visuals().error_fg_color,
-                    CableTag::Valid => Color32::from_gray(128),
-                    CableTag::Disconnected => Color32::from_gray(100),
-                },
-            );
-
             if !viewport.intersects(Rect::from_points(&[input_pos, output_pos])) {
                 return;
             }
@@ -971,20 +966,48 @@ impl<'tab, 'ctx> Prepared<'tab, 'ctx> {
                 control_point_distance = MIN_BEZIER_DISTANCE.copysign(control_point_distance);
             }
 
-            cable_shapes.push(
-                epaint::CubicBezierShape {
-                    points: [
-                        output_pos,
-                        output_pos + Vec2::new(control_point_distance, 0.0),
-                        input_pos - Vec2::new(control_point_distance, 0.0),
-                        input_pos,
-                    ],
-                    closed: false,
-                    fill: Color32::TRANSPARENT,
-                    stroke: cable_stroke.into(),
+            let base_shape = CubicBezierShape {
+                points: [
+                    output_pos,
+                    output_pos + Vec2::new(control_point_distance, 0.0),
+                    input_pos - Vec2::new(control_point_distance, 0.0),
+                    input_pos,
+                ],
+                closed: false,
+                fill: Color32::TRANSPARENT,
+                stroke: PathStroke::NONE,
+            };
+
+            let mut bezier_with_stroke = |stroke: Stroke| {
+                cable_shapes.push(
+                    CubicBezierShape {
+                        stroke: stroke.into(),
+                        ..base_shape
+                    }
+                    .into(),
+                )
+            };
+
+            match tag {
+                CableTag::Invalid => {
+                    bezier_with_stroke(Stroke::new(4.0, ui.visuals().error_fg_color))
                 }
-                .into(),
-            );
+                CableTag::Monophonic => {
+                    bezier_with_stroke(Stroke::new(4.0, Color32::from_gray(128)))
+                }
+                CableTag::Multiphonic => {
+                    // draw several beziers on top of each other to make it look like there's multiple cables
+                    bezier_with_stroke(Stroke::new(10.0, Color32::from_gray(100)));
+                    bezier_with_stroke(Stroke::new(
+                        6.0,
+                        ui.visuals().widgets.noninteractive.bg_fill,
+                    ));
+                    bezier_with_stroke(Stroke::new(2.0, Color32::from_gray(128)));
+                }
+                CableTag::Disconnected => {
+                    bezier_with_stroke(Stroke::new(4.0, Color32::from_gray(60)))
+                }
+            }
         };
 
         for (_cable_id, cable) in patch.cables() {

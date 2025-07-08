@@ -4,6 +4,7 @@ use std::{
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
     num::{NonZero, NonZeroU64},
+    ops,
     thread::ThreadId,
 };
 
@@ -270,6 +271,18 @@ impl<T, V> IdMap<T, V> {
     }
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
+    }
+}
+
+impl<T, V> ops::Index<Id<T>> for IdMap<T, V> {
+    type Output = V;
+    fn index(&self, id: Id<T>) -> &Self::Output {
+        self.force_get(id)
+    }
+}
+impl<T, V> ops::IndexMut<Id<T>> for IdMap<T, V> {
+    fn index_mut(&mut self, id: Id<T>) -> &mut Self::Output {
+        self.force_get_mut(id)
     }
 }
 

@@ -26,7 +26,6 @@ impl CpalAudioHandler {
             other => other,
         });
     }
-    /// Deletes the `cpal::Device`.
     pub fn make_offline(&mut self) {
         self.inner = CpalAudioHandlerState::Offline;
     }

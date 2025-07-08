@@ -1,62 +1,72 @@
-use anyhow::Result;
-use cubedaw_lib::Buffer;
+use std::{borrow::Cow, num::NonZero};
+
+use anyhow::{Context as _, Result};
+use cubedaw_lib::{Buffer, Id, Track};
 
 use crate::{
+    Context,
     node::{NodeCreationContext, NodeInputUiOptions, NodeUiContext},
-    registry::NodeThingy,
+    registry::NodeUi,
 };
 
-pub struct TrackInputNodeThingy;
-impl NodeThingy for TrackInputNodeThingy {
+pub struct TrackInputNodeUi;
+impl NodeUi for TrackInputNodeUi {
     fn create(&self, _creation_context: &NodeCreationContext) -> Box<Buffer> {
         Default::default()
     }
-    fn title(&self, _: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
-        Ok("Track Input".into())
+    fn title(&self, buf: &Buffer, ctx: &Context) -> Result<Cow<'_, str>> {
+        let track_id = Id::from_raw(
+            NonZero::new(u64::from_le_bytes(buf.as_bytes().try_into()?))
+                .context("null track id")?,
+        );
+        Ok(match ctx.ui_state.tracks.get(track_id) {
+            Some(track) => Cow::Owned(track.name.clone()),
+            None => Cow::Borrowed("<invalid track>"),
+        })
     }
     fn ui(&self, _: &mut Buffer, ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
         node_ui.output_ui(ui, "Track Input");
         Ok(())
     }
 
-    fn make_nodefactory(&self) -> cubedaw_worker::DynNodeFactory {
+    fn make_node_factory(&self) -> cubedaw_worker::DynNodeFactory {
         unreachable!("builtin nodes don't have node factories");
     }
 }
 
-pub struct TrackOutputNodeThingy;
-impl NodeThingy for TrackOutputNodeThingy {
+pub struct OutputNodeUi;
+impl NodeUi for OutputNodeUi {
     fn create(&self, _creation_context: &NodeCreationContext) -> Box<Buffer> {
         Default::default()
     }
-    fn title(&self, _: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
-        Ok("Track Output".into())
+    fn title(&self, _: &Buffer, _ctx: &Context) -> Result<std::borrow::Cow<'_, str>> {
+        Ok("Output".into())
     }
     fn ui(&self, _: &mut Buffer, ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
-        node_ui.input_ui(ui, "Track Output", NodeInputUiOptions::uninteractable());
+        node_ui.input_ui(ui, "Output", NodeInputUiOptions::uninteractable());
         Ok(())
     }
 
-    fn make_nodefactory(&self) -> cubedaw_worker::DynNodeFactory {
+    fn make_node_factory(&self) -> cubedaw_worker::DynNodeFactory {
         unreachable!("builtin nodes don't have node factories");
     }
 }
 
-pub struct NoteInputNodeThingy;
-impl NodeThingy for NoteInputNodeThingy {
+pub struct DownmixNodeUi;
+impl NodeUi for DownmixNodeUi {
     fn create(&self, _creation_context: &NodeCreationContext) -> Box<Buffer> {
         Default::default()
     }
-    fn title(&self, _: &Buffer) -> Result<std::borrow::Cow<'_, str>> {
-        Ok("Note Input".into())
+    fn title(&self, _: &Buffer, _ctx: &Context) -> Result<std::borrow::Cow<'_, str>> {
+        Ok("Downmix".into())
     }
     fn ui(&self, _: &mut Buffer, ui: &mut egui::Ui, node_ui: &mut dyn NodeUiContext) -> Result<()> {
-        node_ui.input_ui(ui, "Note Output", NodeInputUiOptions::uninteractable());
-        node_ui.output_ui(ui, "Track Input");
+        node_ui.input_ui(ui, "Input", NodeInputUiOptions::uninteractable());
+        node_ui.output_ui(ui, "Output");
         Ok(())
     }
 
-    fn make_nodefactory(&self) -> cubedaw_worker::DynNodeFactory {
+    fn make_node_factory(&self) -> cubedaw_worker::DynNodeFactory {
         unreachable!("builtin nodes don't have node factories");
     }
 }

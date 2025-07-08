@@ -84,7 +84,7 @@ impl ResourceKey {
             }
             i += 1;
         }
-        let Some(divider_pos) = colon_position else {
+        if colon_position.is_none() {
             bail!(str, ResourceKeyParseErrorKind::NoColon);
         };
 
@@ -241,7 +241,7 @@ pub enum ResourceKeyParseErrorKind {
 #[macro_export]
 macro_rules! literal {
     ($text:literal $(,)?) => {
-        $crate::ResourceKey::new_static($text, $crate::__arcstr::literal!($text))
+        const { $crate::ResourceKey::new_static($text, $crate::__arcstr::literal!($text)) }
     };
 }
 

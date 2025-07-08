@@ -162,12 +162,12 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
     let mut duration_per_frame =
         Duration::from_secs_f64(options.buffer_size as f64 / options.sample_rate as f64);
 
-    let mut idle_host = cubedaw_worker::WorkerHost::new(state, options);
+    let mut host = cubedaw_worker::WorkerHost::new(state, options);
     let mut is_playing = false;
 
     let mut playhead_pos = Default::default();
 
-    let mut output_buffer = Buffer::new_box_zeroed(idle_host.options().buffer_size);
+    let mut output_buffer = Buffer::new_box_zeroed(host.options().buffer_size);
     let mut audio_handler = audio::CpalAudioHandler::new();
 
     'outer: loop {
@@ -181,17 +181,17 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
 
             match event {
                 AppToWorkerHostEvent::Init { state, options } => {
-                    idle_host.join();
+                    host.join();
 
                     time_to_wait_until = Instant::now();
                     duration_per_frame = Duration::from_secs_f64(
                         options.buffer_size as f64 / options.sample_rate as f64,
                     );
 
-                    idle_host = cubedaw_worker::WorkerHost::new(state, options);
+                    host = cubedaw_worker::WorkerHost::new(state, options);
                 }
                 AppToWorkerHostEvent::SwitchAudioDevice(device) => match device {
-                    Some(device) => audio_handler.set_device(device, idle_host.options()),
+                    Some(device) => audio_handler.set_device(device, host.options()),
                     None => audio_handler.close(),
                 },
                 AppToWorkerHostEvent::StartPlaying { from } => {
@@ -202,7 +202,7 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                     is_playing = false;
                 }
                 AppToWorkerHostEvent::Reset => {
-                    idle_host.stop_all_processing();
+                    host.stop_all_processing();
                 }
                 AppToWorkerHostEvent::UpdatePlayheadPos(pos) => {
                     playhead_pos = cubedaw_lib::PreciseSongPos::from_song_pos(pos);
@@ -210,9 +210,9 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
                 AppToWorkerHostEvent::Commands { commands, is_undo } => {
                     for mut command in commands.into_vec() {
                         if is_undo {
-                            command.rollback(idle_host.state_mut());
+                            command.rollback(host.state_mut());
                         } else {
-                            command.execute(idle_host.state_mut());
+                            command.execute(host.state_mut());
                         }
                     }
                 }
@@ -221,7 +221,7 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
         let live_playhead_pos = playhead_pos;
 
         // process the audio
-        idle_host = idle_host.process(
+        host = host.process(
             if is_playing {
                 Some(&mut playhead_pos)
             } else {
@@ -232,7 +232,7 @@ fn worker_host(rx: mpsc::Receiver<AppToWorkerHostEvent>, tx: mpsc::Sender<Worker
         );
 
         // play the audio!
-        audio_handler.open(idle_host.options());
+        audio_handler.open(host.options());
         for data in output_buffer.as_internal() {
             audio_handler.send(*data);
         }

@@ -9,20 +9,20 @@ mod impls;
 pub mod registry;
 
 pub fn register_builtin_nodes(registry: &mut NodeRegistry) {
-    registry.register_node_no_inner(
-        resourcekey::literal!("builtin:track_input"),
+    registry.register_node_without_factory(
+        resourcekey::literal!("builtin:input"),
         "Track Input",
-        Box::new(impls::builtin::TrackInputNodeThingy),
+        Box::new(impls::builtin::TrackInputNodeUi),
     );
-    registry.register_node_no_inner(
-        resourcekey::literal!("builtin:track_output"),
+    registry.register_node_without_factory(
+        resourcekey::literal!("builtin:output"),
         "Track Output",
-        Box::new(impls::builtin::TrackOutputNodeThingy),
+        Box::new(impls::builtin::OutputNodeUi),
     );
-    registry.register_node_no_inner(
-        resourcekey::literal!("builtin:track_input"),
+    registry.register_node_without_factory(
+        resourcekey::literal!("builtin:downmix"),
         "Note Output",
-        Box::new(impls::builtin::NoteInputNodeThingy),
+        Box::new(impls::builtin::DownmixNodeUi),
     );
 }
 
